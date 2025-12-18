@@ -6,7 +6,9 @@
     "build": "vite build",
     "preview": "wrangler pages dev",
     "deploy": "npm run build && wrangler pages deploy",
-    "cf-typegen": "wrangler types --env-interface CloudflareBindings"
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
+    "db:migrate:local": "wrangler d1 migrations apply smart-measure-db --local",
+    "db:migrate:prod": "wrangler d1 migrations apply smart-measure-db"
   },
   "dependencies": {
     "hono": "^4.11.1"
