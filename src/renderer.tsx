@@ -14,6 +14,8 @@ export const renderer = jsxRenderer(({ children, title }) => {
         <link href="/static/style.css" rel="stylesheet" />
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
         <script src="https://npmcdn.com/flatpickr/dist/l10n/ja.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
         <style dangerouslySetInnerHTML={{ __html: `
           body { font-family: 'Noto Sans JP', sans-serif; }
           /* Custom scrollbar for better look */

@@ -1,12 +1,18 @@
 import { Hono } from 'hono'
+import { cors } from 'hono/cors'
 import { renderer } from './renderer'
 import { Layout } from './components'
+import { Buffer } from 'node:buffer'
 
 type Bindings = {
   DB: D1Database
+  FAL_API_KEY?: string
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
+
+// Enable CORS for all routes
+app.use('/*', cors())
 
 app.use(renderer)
 
@@ -67,6 +73,41 @@ app.get('/init', async (c) => {
   }
   
   return c.text('Database initialized and seeded!');
+})
+
+// --- Helper: Fix Schema (Apply migration 0002 manually if needed) ---
+app.get('/fix-schema', async (c) => {
+    const alterations = [
+        "ALTER TABLE products ADD COLUMN brand TEXT",
+        "ALTER TABLE products ADD COLUMN brand_kana TEXT",
+        "ALTER TABLE products ADD COLUMN size TEXT",
+        "ALTER TABLE products ADD COLUMN color TEXT",
+        "ALTER TABLE products ADD COLUMN category_sub TEXT",
+        "ALTER TABLE products ADD COLUMN price_cost INTEGER",
+        "ALTER TABLE products ADD COLUMN season TEXT",
+        "ALTER TABLE products ADD COLUMN rank TEXT",
+        "ALTER TABLE products ADD COLUMN release_date TEXT",
+        "ALTER TABLE products ADD COLUMN buyer TEXT",
+        "ALTER TABLE products ADD COLUMN store_name TEXT",
+        "ALTER TABLE products ADD COLUMN price_ref INTEGER",
+        "ALTER TABLE products ADD COLUMN price_sale INTEGER",
+        "ALTER TABLE products ADD COLUMN price_list INTEGER",
+        "ALTER TABLE products ADD COLUMN location TEXT",
+        "ALTER TABLE products ADD COLUMN stock_quantity INTEGER",
+        "ALTER TABLE products ADD COLUMN barcode TEXT",
+        "ALTER TABLE products ADD COLUMN status TEXT"
+    ];
+
+    const results = [];
+    for (const sql of alterations) {
+        try {
+            await c.env.DB.prepare(sql).run();
+            results.push(`Success: ${sql}`);
+        } catch (e: any) {
+            results.push(`Skipped (or error): ${sql} -> ${e.message}`);
+        }
+    }
+    return c.json(results);
 })
 
 // --- Login Page (Screenshot 1) ---
@@ -172,28 +213,458 @@ app.post('/login', (c) => {
 
 // --- Dashboard / Product List (Screenshot 2) ---
 app.get('/dashboard', async (c) => {
-  // Fetch products and images from D1
-  const products = await c.env.DB.prepare(`
-    SELECT p.*, i.original_url, i.processed_url, i.status as image_status, i.id as image_id 
-    FROM products p 
-    LEFT JOIN images i ON p.id = i.product_id
+  // 1. Fetch all products
+  const productsResult = await c.env.DB.prepare(`
+    SELECT * FROM products ORDER BY id DESC
   `).all();
+
+  // 2. Fetch all images
+  const imagesResult = await c.env.DB.prepare(`
+    SELECT * FROM images
+  `).all();
+
+  // 3. Merge images into products
+  const products = productsResult.results.map((p: any) => {
+    return {
+        ...p,
+        images: imagesResult.results.filter((i: any) => i.product_id === p.id)
+    };
+  });
 
   return c.render(
     <Layout active="dashboard" title="商品画像一覧（SKU別）">
       <div class="mb-6 flex justify-between items-end">
         <p class="text-gray-500 text-sm">撮影済み画像の管理・編集・ダウンロードが可能です。</p>
         <div class="flex space-x-3">
-            <button class="bg-white border border-blue-200 text-blue-600 px-4 py-2 rounded-lg flex items-center hover:bg-blue-50 transition-colors text-sm font-medium">
+            <button id="btn-batch-remove-bg" class="bg-white border border-blue-200 text-blue-600 px-4 py-2 rounded-lg flex items-center hover:bg-blue-50 transition-colors text-sm font-medium">
                 <i class="fas fa-magic mr-2"></i>
                 選択画像を白抜き
             </button>
-            <button class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg flex items-center hover:bg-gray-50 transition-colors text-sm font-medium">
+            <button id="btn-export-csv" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg flex items-center hover:bg-gray-50 transition-colors text-sm font-medium">
                 <i class="fas fa-download mr-2"></i>
                 CSV出力
             </button>
+            <button id="btn-download-images" class="bg-white border border-blue-200 text-blue-600 px-4 py-2 rounded-lg flex items-center hover:bg-blue-50 transition-colors text-sm font-medium">
+                <i class="fas fa-images mr-2"></i>
+                元画像DL
+            </button>
+            <button id="btn-download-processed" class="bg-white border border-green-200 text-green-600 px-4 py-2 rounded-lg flex items-center hover:bg-green-50 transition-colors text-sm font-medium">
+                <i class="fas fa-magic mr-2"></i>
+                編集画像DL
+            </button>
         </div>
       </div>
+      
+      {/* SKU Checkbox Toggle Functions */}
+      <script dangerouslySetInnerHTML={{__html: `
+        // Toggle all images when SKU checkbox is clicked
+        window.toggleProductImages = function(productId, checked) {
+            const imageCheckboxes = document.querySelectorAll('input[name="image-select"][data-product-id="' + productId + '"]');
+            imageCheckboxes.forEach(cb => {
+                cb.checked = checked;
+            });
+        };
+        
+        // Update SKU checkbox state based on image checkboxes
+        window.updateSkuCheckbox = function(productId) {
+            const skuCheckbox = document.querySelector('input[name="sku-checkbox"][data-product-id="' + productId + '"]');
+            const imageCheckboxes = document.querySelectorAll('input[name="image-select"][data-product-id="' + productId + '"]');
+            
+            if (!skuCheckbox || imageCheckboxes.length === 0) return;
+            
+            const checkedCount = Array.from(imageCheckboxes).filter(cb => cb.checked).length;
+            
+            if (checkedCount === 0) {
+                skuCheckbox.checked = false;
+                skuCheckbox.indeterminate = false;
+            } else if (checkedCount === imageCheckboxes.length) {
+                skuCheckbox.checked = true;
+                skuCheckbox.indeterminate = false;
+            } else {
+                skuCheckbox.checked = false;
+                skuCheckbox.indeterminate = true;
+            }
+        };
+      `}} />
+      
+      {/* CSV Export and Image Download Scripts */}
+      <script dangerouslySetInnerHTML={{__html: `
+        // CSV Export Function
+        (function() {
+            const btnExportCSV = document.getElementById('btn-export-csv');
+            if (!btnExportCSV) return;
+            
+            btnExportCSV.addEventListener('click', async function() {
+                // Get all checked image checkboxes
+                const checkedImages = document.querySelectorAll('input[name="image-select"]:checked');
+                
+                if (checkedImages.length === 0) {
+                    alert('画像を選択してください（各画像の左上のチェックボックスを選択）');
+                    return;
+                }
+                
+                // Collect image IDs
+                const imageIds = Array.from(checkedImages).map(cb => cb.dataset.imageId).filter(Boolean);
+                
+                if (imageIds.length === 0) {
+                    alert('有効な画像が選択されていません');
+                    return;
+                }
+                
+                try {
+                    btnExportCSV.disabled = true;
+                    btnExportCSV.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>CSV生成中...';
+                    
+                    // Request CSV data from API
+                    const response = await fetch('/api/export-selected-csv', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ imageIds })
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('CSV生成に失敗しました');
+                    }
+                    
+                    // Get CSV content as binary blob (preserves UTF-8 BOM)
+                    const blob = await response.blob();
+                    
+                    // Create download link
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    const filename = 'smart_measure_export_' + new Date().toISOString().slice(0,10) + '.csv';
+                    link.href = url;
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+                    
+                    alert('CSVファイルをダウンロードしました（' + imageIds.length + '件）');
+                } catch (e) {
+                    console.error('CSV export error:', e);
+                    alert('CSVエクスポートに失敗しました: ' + e.message);
+                } finally {
+                    btnExportCSV.disabled = false;
+                    btnExportCSV.innerHTML = '<i class="fas fa-download mr-2"></i>CSV出力';
+                }
+            });
+        })();
+        
+        // Image Download Function
+        (function() {
+            const btnDownloadImages = document.getElementById('btn-download-images');
+            if (!btnDownloadImages) return;
+            
+            btnDownloadImages.addEventListener('click', async function() {
+                // Get all checked image checkboxes
+                const checkedImages = document.querySelectorAll('input[name="image-select"]:checked');
+                
+                if (checkedImages.length === 0) {
+                    alert('画像を選択してください（各画像の左上のチェックボックスを選択）');
+                    return;
+                }
+                
+                // Collect image IDs
+                const imageIds = Array.from(checkedImages).map(cb => cb.dataset.imageId).filter(Boolean);
+                
+                if (imageIds.length === 0) {
+                    alert('有効な画像が選択されていません');
+                    return;
+                }
+                
+                const confirmation = confirm(imageIds.length + '枚の画像（オリジナル）をZIPでダウンロードしますか？');
+                if (!confirmation) return;
+                
+                try {
+                    btnDownloadImages.disabled = true;
+                    btnDownloadImages.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>ZIP作成中...';
+                    
+                    // Create ZIP file
+                    const zip = new JSZip();
+                    const folder = zip.folder('original_images');
+                    let successCount = 0;
+                    
+                    for (const imageId of imageIds) {
+                        try {
+                            const response = await fetch('/api/download-image/' + imageId);
+                            if (!response.ok) {
+                                console.error('Failed to download image:', imageId);
+                                continue;
+                            }
+                            
+                            const data = await response.json();
+                            if (!data.imageUrl || !data.filename) {
+                                console.error('Invalid response for image:', imageId);
+                                continue;
+                            }
+                            
+                            // Convert data URL or fetch image
+                            let blob;
+                            if (data.imageUrl.startsWith('data:')) {
+                                const base64Data = data.imageUrl.split(',')[1];
+                                const binaryStr = atob(base64Data);
+                                const bytes = new Uint8Array(binaryStr.length);
+                                for (let i = 0; i < binaryStr.length; i++) {
+                                    bytes[i] = binaryStr.charCodeAt(i);
+                                }
+                                blob = new Blob([bytes], { type: 'image/png' });
+                            } else {
+                                const imgResponse = await fetch(data.imageUrl);
+                                blob = await imgResponse.blob();
+                            }
+                            
+                            folder.file(data.filename, blob);
+                            successCount++;
+                        } catch (e) {
+                            console.error('Error adding image ' + imageId + ' to ZIP:', e);
+                        }
+                    }
+                    
+                    // Generate and download ZIP
+                    const zipBlob = await zip.generateAsync({ type: 'blob' });
+                    const timestamp = new Date().toISOString().slice(0, 10);
+                    saveAs(zipBlob, 'original_images_' + timestamp + '.zip');
+                    
+                    alert('ダウンロード完了\\n成功: ' + successCount + '枚 / ' + imageIds.length + '枚');
+                } catch (e) {
+                    console.error('Image download error:', e);
+                    alert('画像ダウンロードに失敗しました: ' + e.message);
+                } finally {
+                    btnDownloadImages.disabled = false;
+                    btnDownloadImages.innerHTML = '<i class="fas fa-images mr-2"></i>画像ダウンロード';
+                }
+            });
+        })();
+        
+        // Processed Image Download Function
+        (function() {
+            const btnDownloadProcessed = document.getElementById('btn-download-processed');
+            if (!btnDownloadProcessed) return;
+            
+            btnDownloadProcessed.addEventListener('click', async function() {
+                // Get all checked image checkboxes
+                const checkedImages = document.querySelectorAll('input[name="image-select"]:checked');
+                
+                if (checkedImages.length === 0) {
+                    alert('画像を選択してください（各画像の左上のチェックボックスを選択）');
+                    return;
+                }
+                
+                // Collect image IDs
+                const imageIds = Array.from(checkedImages).map(cb => cb.dataset.imageId).filter(Boolean);
+                
+                if (imageIds.length === 0) {
+                    alert('有効な画像が選択されていません');
+                    return;
+                }
+                
+                const confirmation = confirm(imageIds.length + '枚の編集済み画像（白抜き済み）をZIPでダウンロードしますか？');
+                if (!confirmation) return;
+                
+                try {
+                    btnDownloadProcessed.disabled = true;
+                    btnDownloadProcessed.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>ZIP作成中...';
+                    
+                    // Create ZIP file
+                    const zip = new JSZip();
+                    const folder = zip.folder('processed_images');
+                    let successCount = 0;
+                    let skipCount = 0;
+                    
+                    for (const imageId of imageIds) {
+                        try {
+                            const response = await fetch('/api/download-processed-image/' + imageId);
+                            if (!response.ok) {
+                                console.error('Failed to download processed image:', imageId);
+                                skipCount++;
+                                continue;
+                            }
+                            
+                            const data = await response.json();
+                            if (!data.imageUrl) {
+                                console.warn('No processed image available for:', imageId);
+                                skipCount++;
+                                continue;
+                            }
+                            
+                            if (!data.filename) {
+                                console.error('Invalid response for image:', imageId);
+                                skipCount++;
+                                continue;
+                            }
+                            
+                            // For data URLs (PNG with transparency), composite with white background
+                            if (data.imageUrl.startsWith('data:')) {
+                                // Create canvas to composite with white background
+                                const img = new Image();
+                                img.crossOrigin = 'anonymous';
+                                
+                                await new Promise((resolve, reject) => {
+                                    img.onload = resolve;
+                                    img.onerror = reject;
+                                    img.src = data.imageUrl;
+                                });
+                                
+                                // Create canvas with white background
+                                const canvas = document.createElement('canvas');
+                                canvas.width = img.width;
+                                canvas.height = img.height;
+                                const ctx = canvas.getContext('2d');
+                                
+                                // Fill with white background
+                                ctx.fillStyle = '#FFFFFF';
+                                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                                
+                                // Draw image on top
+                                ctx.drawImage(img, 0, 0);
+                                
+                                // Convert to blob and add to ZIP
+                                canvas.toBlob((blob) => {
+                                    folder.file(data.filename, blob);
+                                }, 'image/png');
+                                
+                                successCount++;
+                            } else {
+                                // For regular URLs, fetch and add to ZIP
+                                const imgResponse = await fetch(data.imageUrl);
+                                const blob = await imgResponse.blob();
+                                folder.file(data.filename, blob);
+                                successCount++;
+                            }
+                        } catch (e) {
+                            console.error('Error downloading processed image ' + imageId + ':', e);
+                            skipCount++;
+                        }
+                    }
+                    
+                    // Generate and download ZIP
+                    const zipBlob = await zip.generateAsync({ type: 'blob' });
+                    const timestamp = new Date().toISOString().slice(0, 10);
+                    saveAs(zipBlob, 'processed_images_' + timestamp + '.zip');
+                    
+                    let message = 'ダウンロード完了\\n成功: ' + successCount + '枚';
+                    if (skipCount > 0) {
+                        message += '\\nスキップ（未処理）: ' + skipCount + '枚';
+                    }
+                    message += '\\n合計: ' + imageIds.length + '枚';
+                    alert(message);
+                } catch (e) {
+                    console.error('Processed image download error:', e);
+                    alert('編集画像ダウンロードに失敗しました: ' + e.message);
+                } finally {
+                    btnDownloadProcessed.disabled = false;
+                    btnDownloadProcessed.innerHTML = '<i class="fas fa-magic mr-2"></i>編集画像DL';
+                }
+            });
+        })();
+      `}} />
+      
+      {/* Background Removal Script */}
+      <script dangerouslySetInnerHTML={{__html: `
+        (function() {
+            console.log('🚀 Background Removal Script Loaded!');
+            
+            function initBatchRemoveBg() {
+                console.log('📌 initBatchRemoveBg called!');
+                
+                const batchBtn = document.getElementById('btn-batch-remove-bg');
+                console.log('🔘 Batch button:', batchBtn);
+                
+                if (!batchBtn) {
+                    console.error('❌ Batch button not found!');
+                    return;
+                }
+                
+                // 既にイベントリスナーが設定されているかチェック
+                if (batchBtn.dataset.initialized === 'true') {
+                    console.log('✅ Already initialized, skipping');
+                    return;
+                }
+                batchBtn.dataset.initialized = 'true';
+                
+                console.log('✅ Adding click event listener to batch button');
+                
+                batchBtn.addEventListener('click', async function(e) {
+                    e.preventDefault();
+                    console.log('🖱️ BATCH BUTTON CLICKED!');
+                    
+                    // Get all checked image checkboxes (not SKU radios)
+                    const checkedImages = document.querySelectorAll('input[name="image-select"]:checked');
+                    
+                    console.log('🔍 Found checked images:', checkedImages.length);
+                    
+                    if (checkedImages.length === 0) {
+                        alert('画像を選択してください（各画像の左上のチェックボックスを選択）');
+                        return;
+                    }
+                    
+                    const confirmation = confirm(checkedImages.length + '枚の画像の背景を削除しますか？');
+                    if (!confirmation) return;
+                    
+                    batchBtn.disabled = true;
+                    batchBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>処理中...';
+                    
+                    let successCount = 0;
+                    let failCount = 0;
+                    
+                    for (const checkbox of checkedImages) {
+                        console.log('🔎 Processing checkbox:', checkbox);
+                        
+                        // Get image ID from data attribute
+                        const imageId = checkbox.dataset.imageId;
+                        console.log('✨ Image ID from data attribute:', imageId);
+                        
+                        if (!imageId) {
+                            console.warn('⚠️ No image ID found, skipping');
+                            failCount++;
+                            continue;
+                        }
+                        
+                        try {
+                            console.log('🎨 Starting background removal for image ID:', imageId);
+                            const res = await fetch('/api/remove-bg-image/' + imageId, {
+                                method: 'POST'
+                            });
+                            
+                            console.log('📡 Response status:', res.status, res.statusText);
+                            
+                            if (res.ok) {
+                                const data = await res.json();
+                                console.log('✅ Success for image', imageId, ':', data);
+                                successCount++;
+                            } else {
+                                const errorText = await res.text();
+                                console.error('❌ Failed for image', imageId, ':', errorText);
+                                failCount++;
+                            }
+                        } catch (e) {
+                            console.error('💥 Error processing image ' + imageId, ':', e);
+                            failCount++;
+                        }
+                    }
+                    
+                    batchBtn.disabled = false;
+                    batchBtn.innerHTML = '<i class="fas fa-magic mr-2"></i>選択画像を白抜き';
+                    
+                    alert('処理完了\\n成功: ' + successCount + '枚\\n失敗: ' + failCount + '枚');
+                    if (successCount > 0) {
+                        window.location.reload();
+                    }
+                });
+            }
+            
+            // DOMContentLoaded が既に発火済みの場合も対応
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initBatchRemoveBg);
+            } else {
+                // DOMContentLoaded は既に発火済み
+                initBatchRemoveBg();
+            }
+        })();
+      `}} />
 
       {/* Filter Bar */}
       <div class="bg-white p-4 rounded-xl border border-gray-200 mb-6 flex flex-wrap items-center justify-between gap-4">
@@ -231,69 +702,238 @@ app.get('/dashboard', async (c) => {
 
       {/* Product List */}
       <div class="space-y-6">
-        {products.results.map((product: any) => (
+        {products.map((product: any) => (
           <div class="bg-white border border-gray-200 rounded-xl p-4 transition hover:shadow-md">
-            <div class="flex items-center mb-4">
-                <input type="radio" name="sku_select" class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500 mr-3" />
-                <div>
-                    <h3 class="font-bold text-gray-800">SKU: {product.sku}</h3>
-                    <p class="text-sm text-gray-500">{product.name}</p>
+            <div class="mb-4">
+                <div class="flex items-start justify-between">
+                    <div class="flex items-start">
+                        <input 
+                            type="checkbox" 
+                            name="sku-checkbox" 
+                            data-product-id={product.id}
+                            class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500 mr-3 mt-1 cursor-pointer sku-checkbox" 
+                            onchange={`toggleProductImages(${product.id}, this.checked)`}
+                        />
+                        <div>
+                            <div class="flex items-center gap-2 mb-1">
+                                <h3 class="font-bold text-gray-800 text-lg">{product.sku}</h3>
+                                {product.rank && <span class="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded border border-gray-200">ランク: {product.rank}</span>}
+                            </div>
+                            <p class="text-sm text-gray-600 font-medium mb-1 line-clamp-2">{product.name}</p>
+                            <div class="flex items-center gap-3 text-xs text-gray-500">
+                                {product.price_sale && <span class="text-blue-600 font-bold text-sm">¥{product.price_sale.toLocaleString()}</span>}
+                                {product.barcode && <span class="font-mono bg-gray-50 px-1 rounded"><i class="fas fa-barcode mr-1"></i>{product.barcode}</span>}
+                                {product.brand && <span>{product.brand}</span>}
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
             
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {/* Images for this product */}
-                {[1, 2, 3].map((i) => (
-                   <div class="relative group">
-                       <div class="aspect-square bg-gray-100 rounded-lg overflow-hidden border border-gray-100 relative">
-                           {product.original_url ? (
-                               <img src={product.processed_url || product.original_url} class="w-full h-full object-cover p-2" />
-                           ) : (
-                               <div class="w-full h-full flex items-center justify-center text-gray-300">
-                                   <i class="fas fa-image text-3xl"></i>
+            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {/* Existing Images */}
+                {product.images.map((img: any) => (
+                   <div class="relative group aspect-square" data-image-id={img.id}>
+                       <div class="w-full h-full bg-white rounded-lg overflow-hidden border border-gray-100 relative">
+                           <img src={img.processed_url || img.original_url} class="w-full h-full object-cover p-2" style="background-color: white;" />
+                           <div class="absolute top-2 left-2 z-10">
+                               <input 
+                                   type="checkbox" 
+                                   name="image-select" 
+                                   data-image-id={img.id}
+                                   data-product-id={product.id}
+                                   class="w-4 h-4 bg-white border-gray-300 rounded cursor-pointer image-checkbox" 
+                                   onclick="event.stopPropagation();"
+                                   onchange={`updateSkuCheckbox(${product.id})`}
+                               />
+                           </div>
+                           
+                           {/* Quick Remove BG Button */}
+                           {!img.processed_url && img.status !== 'processing' && (
+                               <button 
+                                   onclick={`event.stopPropagation(); removeBgSingle(${img.id}, this)`}
+                                   class="absolute bottom-2 right-2 bg-blue-600 text-white px-2 py-1 rounded text-xs font-bold hover:bg-blue-700 opacity-0 group-hover:opacity-100 transition-opacity flex items-center shadow-lg z-10"
+                               >
+                                   <i class="fas fa-magic mr-1"></i>白抜き
+                               </button>
+                           )}
+                           
+                           {img.status === 'processing' && (
+                               <div class="absolute inset-0 bg-black/50 flex flex-col items-center justify-center z-20">
+                                   <div class="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-2"></div>
+                                   <span class="text-white text-xs font-bold px-2 py-1 bg-white/20 rounded-full backdrop-blur">処理中...</span>
                                </div>
                            )}
                            
-                           <div class="absolute top-2 left-2">
-                               <input type="radio" class="w-4 h-4 bg-white border-gray-300 rounded-full" />
-                           </div>
-
-                           {/* Status Badge Mockup */}
-                           {product.status === 'processing' && i === 2 && (
-                               <div class="absolute inset-0 bg-black/50 flex flex-col items-center justify-center">
-                                   <div class="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-2"></div>
-                                   <span class="text-white text-xs font-bold px-2 py-1 bg-white/20 rounded-full backdrop-blur">白抜き処理中...</span>
+                           {img.processed_url && (
+                               <div class="absolute bottom-2 right-2 bg-green-500 text-white px-2 py-1 rounded-full text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-10">
+                                   <i class="fas fa-check mr-1"></i>完了
                                </div>
                            )}
                        </div>
-                       
-                       <div class="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors cursor-pointer" onclick={`window.location.href='/edit/${product.id}'`}></div>
+                       <div class="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors cursor-pointer z-0" onclick={`window.location.href='/edit/${img.id}'`} data-image-id={img.id}></div>
                    </div> 
                 ))}
+
+                {/* Upload Button Tile */}
+                <div class="relative group aspect-square bg-gray-50 rounded-lg flex flex-col items-center justify-center border-2 border-dashed border-gray-300 hover:border-blue-500 hover:bg-blue-50 cursor-pointer transition-all" onclick={`document.getElementById('upload-input-${product.id}').click()`}>
+                    <div class="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm mb-2 group-hover:scale-110 transition-transform">
+                        <i class="fas fa-camera text-blue-500"></i>
+                    </div>
+                    <span class="text-xs font-bold text-gray-500 group-hover:text-blue-600">画像を追加</span>
+                    <input 
+                        type="file" 
+                        id={`upload-input-${product.id}`} 
+                        hidden 
+                        accept="image/*" 
+                        onchange={`uploadImage(${product.id}, this)`} 
+                    />
+                </div>
             </div>
           </div>
         ))}
       </div>
       
+      {/* Single Image Background Removal */}
+      <script dangerouslySetInnerHTML={{__html: `
+        window.removeBgSingle = async function(imageId, button) {
+            console.log('🎯 removeBgSingle called with imageId:', imageId);
+            
+            const confirmation = confirm('この画像の背景を削除しますか？');
+            if (!confirmation) return;
+            
+            // Show loading state
+            const originalContent = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>処理中';
+            
+            try {
+                console.log('📡 Sending request to /api/remove-bg-image/' + imageId);
+                const res = await fetch('/api/remove-bg-image/' + imageId, {
+                    method: 'POST'
+                });
+                
+                console.log('📨 Response received:', res.status, res.statusText);
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    console.log('✅ Success:', data);
+                    alert('背景削除が完了しました！');
+                    window.location.reload();
+                } else {
+                    let errorMsg = 'Unknown error';
+                    try {
+                        const error = await res.json();
+                        errorMsg = error.details || error.error || 'Unknown error';
+                    } catch (parseErr) {
+                        errorMsg = await res.text();
+                    }
+                    console.error('❌ Error:', errorMsg);
+                    alert('エラー: ' + errorMsg);
+                    button.innerHTML = originalContent;
+                    button.disabled = false;
+                }
+            } catch (e) {
+                console.error('💥 Network error:', e);
+                alert('通信エラーが発生しました: ' + e.message);
+                button.innerHTML = originalContent;
+                button.disabled = false;
+            }
+        };
+        console.log('✅ removeBgSingle function registered globally');
+      `}} />
+      
+      {/* Upload Script */}
+      <script dangerouslySetInnerHTML={{__html: `
+        async function uploadImage(productId, input) {
+            if (!input.files || !input.files[0]) return;
+            
+            const file = input.files[0];
+            const formData = new FormData();
+            formData.append('image', file);
+            formData.append('productId', productId);
+
+            // Show loading state (simple UI feedback)
+            const parent = input.parentElement;
+            const originalContent = parent.innerHTML;
+            parent.innerHTML = '<div class="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>';
+            parent.classList.remove('cursor-pointer', 'hover:border-blue-500');
+
+            try {
+                const res = await fetch('/api/upload-image', {
+                    method: 'POST',
+                    body: formData
+                });
+                if (res.ok) {
+                    // Reload to show new image
+                    window.location.reload();
+                } else {
+                    alert('アップロードに失敗しました');
+                    parent.innerHTML = originalContent; // Revert on error
+                }
+            } catch (e) {
+                console.error(e);
+                alert('通信エラーが発生しました');
+                parent.innerHTML = originalContent;
+            }
+        }
+      `}} />
+      
       <div class="mt-8 flex justify-between items-center text-sm text-gray-500">
-          <span>全 24 件中 1 から 2 件目を表示</span>
-          <div class="flex space-x-1">
-              <button class="px-3 py-1 border rounded hover:bg-gray-50 bg-white"><i class="fas fa-chevron-left"></i></button>
-              <button class="px-3 py-1 border rounded bg-blue-50 text-blue-600 border-blue-200 font-bold">1</button>
-              <button class="px-3 py-1 border rounded hover:bg-gray-50 bg-white">2</button>
-              <button class="px-3 py-1 border rounded hover:bg-gray-50 bg-white">3</button>
-              <button class="px-3 py-1 border rounded hover:bg-gray-50 bg-white"><i class="fas fa-chevron-right"></i></button>
-          </div>
+          <span>全 {products.length} 件を表示中</span>
       </div>
     </Layout>
   )
 })
 
+// --- API: Image Upload Endpoint ---
+app.post('/api/upload-image', async (c) => {
+    const body = await c.req.parseBody();
+    const file = body['image'];
+    const productId = body['productId'];
+
+    if (!file || !(file instanceof File) || !productId) {
+        return c.text('Invalid upload', 400);
+    }
+
+    // In a real app, upload to R2/S3 here.
+    // For Sandbox, convert to Base64 to store in D1 (Prototype mode)
+    const buffer = await file.arrayBuffer();
+    // Safe Base64 conversion using Buffer
+    const base64String = Buffer.from(buffer).toString('base64');
+    const mimeType = file.type;
+    const dataUrl = `data:${mimeType};base64,${base64String}`;
+
+    await c.env.DB.prepare(`
+        INSERT INTO images (product_id, original_url, status)
+        VALUES (?, ?, 'pending')
+    `).bind(productId, dataUrl).run();
+
+    return c.json({ success: true });
+});
+
 // --- Editor (Screenshot 3) ---
-app.get('/edit/:id', (c) => {
+app.get('/edit/:id', async (c) => {
   const id = c.req.param('id')
-  // Mock data for editor
-  const imageSrc = "https://images.unsplash.com/photo-1576995853123-5a10305d93c0?q=80&w=2070&auto=format&fit=crop"
+  
+  // Get image from database
+  const imageResult = await c.env.DB.prepare(`
+    SELECT i.*, p.sku, p.name as product_name 
+    FROM images i 
+    LEFT JOIN products p ON i.product_id = p.id 
+    WHERE i.id = ?
+  `).bind(id).first();
+  
+  if (!imageResult) {
+    return c.redirect('/dashboard');
+  }
+  
+  // Use processed image if available, otherwise original
+  const imageSrc = (imageResult.processed_url || imageResult.original_url) as string;
+  const originalSrc = imageResult.original_url as string;
+  const isProcessed = !!imageResult.processed_url;
+  const productSku = imageResult.sku || 'Unknown';
+  const productName = imageResult.product_name || '';
 
   return c.render(
     <Layout active="dashboard" title="画像処理プレビュー">
@@ -304,7 +944,7 @@ app.get('/edit/:id', (c) => {
                 <span class="text-gray-800 font-medium">画像処理プレビュー</span>
             </div>
             <div class="flex space-x-3">
-                 <button class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg flex items-center hover:bg-gray-50 transition-colors text-sm font-medium">
+                 <button id="btn-toggle-original" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg flex items-center hover:bg-gray-50 transition-colors text-sm font-medium">
                     <i class="fas fa-image mr-2"></i> 元画像を確認
                  </button>
                  <button onclick="window.location.reload()" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg flex items-center hover:bg-gray-50 transition-colors text-sm font-medium">
@@ -370,7 +1010,7 @@ app.get('/edit/:id', (c) => {
                 <div class="mb-4">
                      <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">手動修正</div>
                      <div class="grid grid-cols-3 gap-2">
-                         <button class="tool-btn flex flex-col items-center justify-center p-2 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 disabled:opacity-50">
+                         <button id="btn-crop" class="tool-btn flex flex-col items-center justify-center p-2 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600">
                              <i class="fas fa-crop-alt mb-1 text-sm"></i>
                              <span class="text-[10px]">切り抜き</span>
                          </button>
@@ -402,7 +1042,7 @@ app.get('/edit/:id', (c) => {
                     </label>
 
                      <div class="space-y-2">
-                         <button class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg shadow-md shadow-blue-200 transition-all flex items-center justify-center text-sm">
+                         <button id="btn-save" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg shadow-md shadow-blue-200 transition-all flex items-center justify-center text-sm">
                              <i class="fas fa-save mr-2"></i> 保存して次へ
                          </button>
                          <button class="w-full bg-white hover:bg-gray-50 text-gray-500 font-medium py-2 rounded-lg transition-colors text-sm border border-transparent hover:border-gray-200">
@@ -419,15 +1059,21 @@ app.get('/edit/:id', (c) => {
                          <button class="p-2 text-gray-500 hover:text-blue-600"><i class="fas fa-search-plus"></i></button>
                          <button class="p-2 text-gray-500 hover:text-blue-600"><i class="fas fa-search-minus"></i></button>
                      </div>
-                     <span class="text-xs font-mono text-gray-400">IMG_20240901.jpg (Processing Mode)</span>
+                     <span class="text-xs font-mono text-gray-400">{productSku}_image_{id}.png</span>
                 </div>
                 
                 <div id="canvas-container" class="flex-1 bg-gray-50 border border-gray-100 rounded-lg relative overflow-hidden flex items-center justify-center" style="background-image: radial-gradient(#e2e8f0 1px, transparent 1px); background-size: 20px 20px;">
                     <div class="relative shadow-2xl">
                          <canvas id="main-canvas" class="max-h-[600px] max-w-full object-contain cursor-crosshair"></canvas>
-                         <div class="absolute top-4 left-4 bg-blue-500 text-white text-xs font-bold px-2 py-1 rounded shadow-sm pointer-events-none">
-                             <i class="fas fa-circle text-[8px] mr-1"></i> 処理後 (Processed)
-                         </div>
+                         {isProcessed ? (
+                             <div class="absolute top-4 left-4 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded shadow-sm pointer-events-none">
+                                 <i class="fas fa-check text-[8px] mr-1"></i> 白抜き済み
+                             </div>
+                         ) : (
+                             <div class="absolute top-4 left-4 bg-orange-500 text-white text-xs font-bold px-2 py-1 rounded shadow-sm pointer-events-none">
+                                 <i class="fas fa-circle text-[8px] mr-1"></i> 元画像
+                             </div>
+                         )}
                     </div>
                 </div>
             </div>
@@ -440,16 +1086,26 @@ app.get('/edit/:id', (c) => {
                 const ctx = canvas.getContext('2d');
                 const img = new Image();
                 img.crossOrigin = "Anonymous";
-                img.src = "${imageSrc}";
+                
+                // Image sources from database
+                const processedSrc = "${imageSrc}";
+                const originalSrc = "${originalSrc}";
+                const isProcessed = ${isProcessed};
+                let showingOriginal = false;
+                
+                img.src = processedSrc;
                 
                 // --- STATE ---
                 let state = {
                     brightness: 0,
                     wb: 5500,
                     hue: 0,
-                    tool: 'none', // 'brush', 'eraser'
+                    tool: 'none', // 'brush', 'eraser', 'crop'
                     brushSize: 24,
-                    isDrawing: false
+                    isDrawing: false,
+                    isDragging: false,
+                    cropStart: {x: 0, y: 0},
+                    cropRect: {x: 0, y: 0, w: 0, h: 0}
                 };
 
                 // --- MASK CANVAS (Stores manual strokes) ---
@@ -469,47 +1125,55 @@ app.get('/edit/:id', (c) => {
                     valSize: document.getElementById('val-size'),
                     
                     btnBrush: document.getElementById('btn-brush'),
-                    btnEraser: document.getElementById('btn-eraser')
+                    btnEraser: document.getElementById('btn-eraser'),
+                    btnCrop: document.getElementById('btn-crop'),
+                    btnSave: document.getElementById('btn-save'),
+                    btnToggleOriginal: document.getElementById('btn-toggle-original')
                 };
+                
+                // --- Toggle Original/Processed Image ---
+                if (els.btnToggleOriginal && isProcessed) {
+                    els.btnToggleOriginal.addEventListener('click', () => {
+                        showingOriginal = !showingOriginal;
+                        img.src = showingOriginal ? originalSrc : processedSrc;
+                        els.btnToggleOriginal.innerHTML = showingOriginal 
+                            ? '<i class="fas fa-magic mr-2"></i> 処理後を表示'
+                            : '<i class="fas fa-image mr-2"></i> 元画像を確認';
+                    });
+                } else if (els.btnToggleOriginal) {
+                    els.btnToggleOriginal.style.display = 'none';
+                }
 
                 // --- INIT ---
                 img.onload = () => {
-                    // Set canvas size to image size (high res)
-                    // CSS will handle display size
                     canvas.width = img.width;
                     canvas.height = img.height;
                     maskCanvas.width = img.width;
                     maskCanvas.height = img.height;
-                    
-                    // Initial Render
                     render();
                 };
 
                 // --- RENDER LOOP ---
                 function render() {
-                    // 1. Clear Main Canvas
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
                     
-                    // 2. Apply Filters (Brightness, Hue)
+                    // 1. Filters
                     const bVal = 100 + parseInt(state.brightness);
                     const hVal = parseInt(state.hue);
                     ctx.filter = 'brightness(' + bVal + '%) hue-rotate(' + hVal + 'deg)';
                     
-                    // 3. Draw Original Image
+                    // 2. Draw Image
                     ctx.drawImage(img, 0, 0);
-                    ctx.filter = 'none'; // Reset filter
+                    ctx.filter = 'none';
 
-                    // 4. Apply WB (Temperature) Simulation
-                    // Simple overlay approach for performance
+                    // 3. WB Overlay
                     if (state.wb != 5500) {
                          ctx.save();
                          ctx.globalCompositeOperation = 'overlay';
                          if (state.wb > 5500) {
-                             // Warm (Orange)
                              const intensity = (state.wb - 5500) / 3500 * 0.4;
                              ctx.fillStyle = 'rgba(255, 140, 0, ' + intensity + ')';
                          } else {
-                             // Cool (Blue)
                              const intensity = (5500 - state.wb) / 3500 * 0.4;
                              ctx.fillStyle = 'rgba(0, 100, 255, ' + intensity + ')';
                          }
@@ -517,43 +1181,121 @@ app.get('/edit/:id', (c) => {
                          ctx.restore();
                     }
 
-                    // 5. Apply Mask (Eraser)
-                    // 'destination-out' removes pixels where mask is drawn
+                    // 4. Mask
                     ctx.save();
                     ctx.globalCompositeOperation = 'destination-out';
                     ctx.drawImage(maskCanvas, 0, 0);
                     ctx.restore();
+
+                    // 5. Crop Selection (Overlay)
+                    if (state.tool === 'crop' && state.cropRect.w !== 0) {
+                        ctx.save();
+                        ctx.strokeStyle = '#fff';
+                        ctx.lineWidth = 2;
+                        ctx.setLineDash([5, 5]);
+                        ctx.strokeRect(state.cropRect.x, state.cropRect.y, state.cropRect.w, state.cropRect.h);
+                        
+                        // Darken outside
+                        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                        // Top
+                        ctx.fillRect(0, 0, canvas.width, state.cropRect.y);
+                        // Bottom
+                        ctx.fillRect(0, state.cropRect.y + state.cropRect.h, canvas.width, canvas.height - (state.cropRect.y + state.cropRect.h));
+                        // Left
+                        ctx.fillRect(0, state.cropRect.y, state.cropRect.x, state.cropRect.h);
+                        // Right
+                        ctx.fillRect(state.cropRect.x + state.cropRect.w, state.cropRect.y, canvas.width - (state.cropRect.x + state.cropRect.w), state.cropRect.h);
+                        ctx.restore();
+                    }
                 }
-
-                // --- EVENT LISTENERS (SLIDERS) ---
-                const updateState = (key, val, displayEl, suffix = '') => {
-                    state[key] = val;
-                    if(displayEl) displayEl.innerText = val + suffix;
-                    requestAnimationFrame(render);
-                };
-
-                els.brightness.addEventListener('input', (e) => updateState('brightness', e.target.value, els.valBrightness));
-                els.wb.addEventListener('input', (e) => updateState('wb', e.target.value, els.valWb, 'K'));
-                els.hue.addEventListener('input', (e) => updateState('hue', e.target.value, els.valHue, '°'));
-                els.size.addEventListener('input', (e) => updateState('brushSize', e.target.value, els.valSize, 'px'));
 
                 // --- TOOL SELECTION ---
                 const setTool = (tool) => {
                     state.tool = (state.tool === tool) ? 'none' : tool;
                     
-                    // UI Update
-                    els.btnBrush.classList.remove('bg-blue-50', 'border-blue-200', 'text-blue-600', 'ring-1');
-                    els.btnEraser.classList.remove('bg-blue-50', 'border-blue-200', 'text-blue-600', 'ring-1');
+                    ['btnBrush', 'btnEraser', 'btnCrop'].forEach(k => {
+                        els[k].classList.remove('bg-blue-50', 'border-blue-200', 'text-blue-600', 'ring-1');
+                    });
                     
                     if (state.tool === 'brush') els.btnBrush.classList.add('bg-blue-50', 'border-blue-200', 'text-blue-600', 'ring-1');
                     if (state.tool === 'eraser') els.btnEraser.classList.add('bg-blue-50', 'border-blue-200', 'text-blue-600', 'ring-1');
+                    if (state.tool === 'crop') els.btnCrop.classList.add('bg-blue-50', 'border-blue-200', 'text-blue-600', 'ring-1');
+                    
+                    // Reset crop if changing tool
+                    if (state.tool !== 'crop') state.cropRect = {x:0, y:0, w:0, h:0};
+                    render();
                 };
 
-                els.btnBrush.addEventListener('click', () => setTool('brush'));
-                els.btnEraser.addEventListener('click', () => setTool('eraser'));
+                // --- CROP LOGIC ---
+                const applyCrop = () => {
+                    if (state.cropRect.w < 10 || state.cropRect.h < 10) return;
+                    
+                    const confirmCrop = confirm('選択範囲で切り抜きますか？');
+                    if (!confirmCrop) {
+                        state.cropRect = {x:0, y:0, w:0, h:0};
+                        render();
+                        return;
+                    }
 
-                // --- DRAWING LOGIC ---
-                // Helper to get coordinates relative to canvas resolution
+                    // Create temp canvas to extract
+                    const tCanvas = document.createElement('canvas');
+                    tCanvas.width = state.cropRect.w;
+                    tCanvas.height = state.cropRect.h;
+                    const tCtx = tCanvas.getContext('2d');
+
+                    // Draw only the selected part
+                    // Note: We need to draw the CURRENT state (filters etc) or just the raw image?
+                    // Usually crop happens on raw image for quality, but here we are just simulating.
+                    // Let's crop the raw image to keep quality high.
+                    tCtx.drawImage(img, state.cropRect.x, state.cropRect.y, state.cropRect.w, state.cropRect.h, 0, 0, state.cropRect.w, state.cropRect.h);
+
+                    // Update main image
+                    img.src = tCanvas.toDataURL();
+                    // On img.onload, canvas will resize automatically
+                    state.cropRect = {x:0, y:0, w:0, h:0};
+                    state.tool = 'none'; // Exit crop mode
+                    setTool('none');
+                };
+
+                // --- SAVE LOGIC ---
+                els.btnSave.addEventListener('click', async () => {
+                    // Get canvas data as base64
+                    const imageData = canvas.toDataURL('image/png');
+                    
+                    // Show saving state
+                    els.btnSave.disabled = true;
+                    els.btnSave.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> 保存中...';
+                    
+                    try {
+                        // Save to database via API
+                        const response = await fetch('/api/save-edited-image/${id}', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                imageData: imageData
+                            })
+                        });
+                        
+                        if (response.ok) {
+                            alert('編集内容を保存しました！');
+                            window.location.href = '/dashboard';
+                        } else {
+                            const error = await response.json();
+                            alert('保存に失敗しました: ' + (error.details || error.error));
+                            els.btnSave.disabled = false;
+                            els.btnSave.innerHTML = '<i class="fas fa-save mr-2"></i> 保存して次へ';
+                        }
+                    } catch (e) {
+                        console.error('Save error:', e);
+                        alert('保存中にエラーが発生しました');
+                        els.btnSave.disabled = false;
+                        els.btnSave.innerHTML = '<i class="fas fa-save mr-2"></i> 保存して次へ';
+                    }
+                });
+
+                // --- MOUSE EVENTS ---
                 const getPos = (e) => {
                     const rect = canvas.getBoundingClientRect();
                     const scaleX = canvas.width / rect.width;
@@ -564,52 +1306,86 @@ app.get('/edit/:id', (c) => {
                     };
                 };
 
-                const startDraw = (e) => {
-                    if (state.tool === 'none') return;
+                canvas.addEventListener('mousedown', (e) => {
                     state.isDrawing = true;
-                    draw(e);
-                };
-
-                const endDraw = () => {
-                    state.isDrawing = false;
-                    maskCtx.beginPath(); // Reset path
-                };
-
-                const draw = (e) => {
-                    if (!state.isDrawing) return;
-                    
                     const pos = getPos(e);
-                    maskCtx.lineWidth = state.brushSize * 2; // Make it a bit bigger
-                    maskCtx.lineCap = 'round';
-                    maskCtx.lineJoin = 'round';
-
-                    if (state.tool === 'eraser') {
-                        // Eraser: Paint on mask (Opaque = Erased on Main)
-                        maskCtx.globalCompositeOperation = 'source-over';
-                        maskCtx.strokeStyle = 'rgba(0,0,0,1)';
-                    } else if (state.tool === 'brush') {
-                        // Brush (Restore): Erase from mask (Transparent = Visible on Main)
-                        maskCtx.globalCompositeOperation = 'destination-out';
-                        maskCtx.strokeStyle = 'rgba(0,0,0,1)';
+                    
+                    if (state.tool === 'crop') {
+                        state.cropStart = pos;
+                        state.cropRect = {x: pos.x, y: pos.y, w: 0, h: 0};
+                    } else {
+                        // Brush/Eraser logic
+                        if (state.tool !== 'none') {
+                            maskCtx.beginPath();
+                            maskCtx.moveTo(pos.x, pos.y);
+                        }
                     }
+                });
 
-                    maskCtx.lineTo(pos.x, pos.y);
-                    maskCtx.stroke();
-                    maskCtx.beginPath();
-                    maskCtx.moveTo(pos.x, pos.y);
+                canvas.addEventListener('mousemove', (e) => {
+                    if (!state.isDrawing) return;
+                    const pos = getPos(e);
 
+                    if (state.tool === 'crop') {
+                        let w = pos.x - state.cropStart.x;
+                        let h = pos.y - state.cropStart.y;
+                        
+                        // Handle negative selection
+                        let startX = state.cropStart.x;
+                        let startY = state.cropStart.y;
+                        if (w < 0) { startX = pos.x; w = Math.abs(w); }
+                        if (h < 0) { startY = pos.y; h = Math.abs(h); }
+                        
+                        state.cropRect = {x: startX, y: startY, w: w, h: h};
+                        render();
+                    } else if (state.tool !== 'none') {
+                        maskCtx.lineWidth = state.brushSize * 2;
+                        maskCtx.lineCap = 'round';
+                        maskCtx.lineJoin = 'round';
+                        
+                        if (state.tool === 'eraser') {
+                            maskCtx.globalCompositeOperation = 'source-over';
+                            maskCtx.strokeStyle = 'rgba(0,0,0,1)';
+                        } else {
+                            maskCtx.globalCompositeOperation = 'destination-out';
+                            maskCtx.strokeStyle = 'rgba(0,0,0,1)';
+                        }
+                        maskCtx.lineTo(pos.x, pos.y);
+                        maskCtx.stroke();
+                        maskCtx.beginPath();
+                        maskCtx.moveTo(pos.x, pos.y);
+                        requestAnimationFrame(render);
+                    }
+                });
+
+                const endAction = () => {
+                    if (!state.isDrawing) return;
+                    state.isDrawing = false;
+                    
+                    if (state.tool === 'crop') {
+                        applyCrop();
+                    } else {
+                        maskCtx.beginPath();
+                    }
+                };
+
+                canvas.addEventListener('mouseup', endAction);
+                canvas.addEventListener('mouseout', () => state.isDrawing = false);
+
+                // --- SLIDER EVENTS ---
+                const updateState = (key, val, displayEl, suffix = '') => {
+                    state[key] = val;
+                    if(displayEl) displayEl.innerText = val + suffix;
                     requestAnimationFrame(render);
                 };
-
-                canvas.addEventListener('mousedown', startDraw);
-                canvas.addEventListener('mousemove', draw);
-                canvas.addEventListener('mouseup', endDraw);
-                canvas.addEventListener('mouseout', endDraw);
+                els.brightness.addEventListener('input', (e) => updateState('brightness', e.target.value, els.valBrightness));
+                els.wb.addEventListener('input', (e) => updateState('wb', e.target.value, els.valWb, 'K'));
+                els.hue.addEventListener('input', (e) => updateState('hue', e.target.value, els.valHue, '°'));
+                els.size.addEventListener('input', (e) => updateState('brushSize', e.target.value, els.valSize, 'px'));
                 
-                // Touch support (basic)
-                canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startDraw(e.touches[0]); });
-                canvas.addEventListener('touchmove', (e) => { e.preventDefault(); draw(e.touches[0]); });
-                canvas.addEventListener('touchend', endDraw);
+                els.btnBrush.addEventListener('click', () => setTool('brush'));
+                els.btnEraser.addEventListener('click', () => setTool('eraser'));
+                els.btnCrop.addEventListener('click', () => setTool('crop'));
             });
         `}} />
     </Layout>
@@ -634,11 +1410,12 @@ app.get('/settings', (c) => {
                      CSVインポート (在庫更新)
                  </h3>
                  
-                 <div class="border-2 border-dashed border-blue-100 bg-blue-50/50 rounded-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-blue-50 transition-colors h-64">
+                 <div class="border-2 border-dashed border-blue-100 bg-blue-50/50 rounded-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-blue-50 transition-colors h-64 relative">
+                     <input type="file" id="csv-input" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".csv" />
                      <div class="bg-white w-16 h-16 rounded-full shadow-sm flex items-center justify-center mb-4 text-blue-500 text-2xl">
                          <i class="fas fa-cloud-upload-alt"></i>
                      </div>
-                     <p class="font-bold text-blue-600 mb-1">クリックして選択 <span class="text-gray-500 font-normal">またはドラッグ＆ドロップ</span></p>
+                     <p id="file-name" class="font-bold text-blue-600 mb-1">クリックして選択 <span class="text-gray-500 font-normal">またはドラッグ＆ドロップ</span></p>
                      <p class="text-xs text-gray-400">CSV, TSV (最大 10MB)</p>
                  </div>
                  
@@ -653,10 +1430,58 @@ app.get('/settings', (c) => {
                      <a href="#" class="text-sm text-blue-600 hover:underline flex items-center">
                          <i class="fas fa-download mr-1"></i> テンプレートCSVをダウンロード
                      </a>
-                     <button class="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700 shadow-md shadow-blue-200">
+                     <button id="btn-import" class="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700 shadow-md shadow-blue-200">
                          インポート実行
                      </button>
                  </div>
+                 <script dangerouslySetInnerHTML={{__html: `
+                    const fileInput = document.getElementById('csv-input');
+                    const fileNameDisplay = document.getElementById('file-name');
+                    const importBtn = document.getElementById('btn-import');
+
+                    fileInput.addEventListener('change', (e) => {
+                        if (e.target.files.length > 0) {
+                            fileNameDisplay.innerText = e.target.files[0].name;
+                            fileNameDisplay.classList.add('text-green-600');
+                        }
+                    });
+
+                    importBtn.addEventListener('click', async () => {
+                        if (!fileInput.files.length) {
+                            alert('CSVファイルを選択してください。');
+                            return;
+                        }
+
+                        const formData = new FormData();
+                        formData.append('csv', fileInput.files[0]);
+
+                        importBtn.disabled = true;
+                        importBtn.innerText = 'インポート中...';
+                        importBtn.classList.add('opacity-50', 'cursor-not-allowed');
+
+                        try {
+                            const res = await fetch('/api/import-csv', {
+                                method: 'POST',
+                                body: formData
+                            });
+                            
+                            if (res.ok) {
+                                const msg = await res.text();
+                                alert('成功: ' + msg);
+                                window.location.reload();
+                            } else {
+                                const err = await res.text();
+                                alert('エラー: ' + err);
+                            }
+                        } catch (e) {
+                            alert('通信エラーが発生しました: ' + e);
+                        } finally {
+                            importBtn.disabled = false;
+                            importBtn.innerText = 'インポート実行';
+                            importBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                        }
+                    });
+                 `}} />
             </div>
 
             {/* Data Export */}
@@ -789,5 +1614,672 @@ app.get('/settings', (c) => {
     </Layout>
   )
 })
+
+// --- API: Import CSV ---
+app.post('/api/import-csv', async (c) => {
+    const body = await c.req.parseBody();
+    const file = body['csv'];
+    if (!file || !(file instanceof File)) return c.text('No file uploaded', 400);
+
+    const buffer = await file.arrayBuffer();
+    // Try decoding as Shift-JIS first (common for Japanese CSVs)
+    let text = new TextDecoder('shift-jis').decode(buffer);
+    
+    // Simple heuristic: check for known headers
+    if (!text.includes('ID') && !text.includes('商品名') && !text.includes('sku')) {
+        // Fallback to UTF-8
+        text = new TextDecoder('utf-8').decode(buffer);
+    }
+
+    const lines = text.split(/\r\n|\n|\r/);
+    const headers = lines[0].split(',');
+    
+    // Simple CSV parser logic needed for data lines to handle quotes
+    const parseCSVLine = (line: string) => {
+        const result = [];
+        let start = 0;
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+            if (line[i] === '"') inQuotes = !inQuotes;
+            else if (line[i] === ',' && !inQuotes) {
+                let val = line.substring(start, i);
+                // Remove quotes
+                if (val.startsWith('"') && val.endsWith('"')) val = val.substring(1, val.length - 1);
+                val = val.replace(/""/g, '"');
+                result.push(val);
+                start = i + 1;
+            }
+        }
+        let val = line.substring(start);
+        if (val.startsWith('"') && val.endsWith('"')) val = val.substring(1, val.length - 1);
+        val = val.replace(/""/g, '"');
+        result.push(val);
+        return result;
+    };
+
+    // Mapping indexes based on header row (fuzzy matching)
+    // User requested specific column mapping:
+    // A:バーコード, B:ID, C:ブランド, E:品名, F:サイズ, G:カラー, L:商品ランク, Y:現状売価
+    const getIndex = (names: string[]) => {
+        for (const name of names) {
+            const i = headers.findIndex(h => h && h.includes(name));
+            if (i > -1) return i;
+        }
+        return -1;
+    };
+    
+    // Explicit priority mapping based on user request
+    const idx = {
+        barcode: getIndex(['バーコード', 'Barcode']),      // Col A
+        sku: getIndex(['ID', 'sku', 'SKU']),               // Col B
+        brand: getIndex(['ブランド', 'Brand']),            // Col C
+        // Col D (BrandKana) skipped
+        name: getIndex(['品名', '商品名', 'Name']),        // Col E
+        size: getIndex(['サイズ', 'Size']),                // Col F
+        color: getIndex(['カラー', 'Color']),              // Col G
+        // Cols H-K skipped
+        rank: getIndex(['商品ランク', 'ランク', 'Rank']),  // Col L
+        // Cols M-X skipped
+        price_sale: getIndex(['現状売価', '販売価格', 'Price']), // Col Y
+        
+        // Keep these for supplementary info if available, but lower priority
+        stock: getIndex(['在数', 'Stock']),
+        status: getIndex(['ステータス', 'Status']),
+        price_cost: getIndex(['仕入単価', 'Cost']),
+        category: getIndex(['カテゴリ大', 'Category']),
+        category_sub: getIndex(['カテゴリ小', 'SubCategory']),
+        season: getIndex(['シーズン', 'Season']),
+        buyer: getIndex(['バイヤー', 'Buyer']),
+        store: getIndex(['店舗名', 'Store']),
+        ref_price: getIndex(['参考上代', 'RefPrice']),
+        list_price: getIndex(['出品価格', 'ListPrice']),
+        location: getIndex(['保管場所', 'Location'])
+    };
+
+    let count = 0;
+    
+    // Prepared statement for insertion
+    const stmt = c.env.DB.prepare(`
+        INSERT OR REPLACE INTO products (
+            sku, name, brand, brand_kana, size, color, price_cost, price_sale, 
+            stock_quantity, barcode, status, category, category_sub, season, 
+            rank, buyer, store_name, price_ref, price_list, location, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const batch = [];
+
+    for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        
+        const row = parseCSVLine(line);
+        // Basic validation: must have SKU or Name
+        if (!row[idx.sku] && !row[idx.name]) continue;
+
+        const sku = row[idx.sku] || `UNKNOWN-${Date.now()}-${i}`;
+        const name = row[idx.name] || 'Unknown Product';
+        
+        const cleanInt = (val: string) => {
+            if (!val) return 0;
+            return parseInt(val.replace(/,/g, '').replace(/[¥￥]/g, '')) || 0;
+        };
+
+        batch.push(stmt.bind(
+            sku,
+            name,
+            row[idx.brand] || null,
+            row[idx.brand_kana] || null,
+            row[idx.size] || null,
+            row[idx.color] || null,
+            cleanInt(row[idx.price_cost]),
+            cleanInt(row[idx.price_sale]),
+            cleanInt(row[idx.stock]),
+            row[idx.barcode] || null,
+            row[idx.status] || 'Active',
+            row[idx.category] || null,
+            row[idx.category_sub] || null,
+            row[idx.season] || null,
+            row[idx.rank] || null,
+            row[idx.buyer] || null,
+            row[idx.store] || null,
+            cleanInt(row[idx.ref_price]),
+            cleanInt(row[idx.list_price]),
+            row[idx.location] || null,
+            new Date().toISOString()
+        ));
+        
+        count++;
+        
+        // Execute batch every 50 rows
+        if (batch.length >= 50) {
+            await c.env.DB.batch(batch);
+            batch.length = 0;
+        }
+    }
+    
+    if (batch.length > 0) await c.env.DB.batch(batch);
+
+    return c.text(`${count} 件の商品データをインポートしました。`);
+});
+
+// --- API: Export Data (For External Apps) ---
+// 他のアプリからデータを引っ張るための「窓口」です
+app.get('/api/products/list', async (c) => {
+    // データベースから全商品を取得
+    const result = await c.env.DB.prepare(`
+        SELECT 
+            id, sku, name, brand, size, color, 
+            price_sale, stock_quantity, status, 
+            barcode, rank, 
+            created_at 
+        FROM products 
+        ORDER BY id DESC
+    `).all();
+
+    // JSON形式（プログラムが読みやすい形式）で返す
+    return c.json({
+        source: "SmartMeasure API",
+        timestamp: new Date().toISOString(),
+        count: result.results.length,
+        products: result.results
+    });
+});
+
+// --- API: Background Removal ---
+app.post('/api/remove-bg', async (c) => {
+    try {
+        const body = await c.req.parseBody();
+        const imageUrl = body['imageUrl'] as string;
+        
+        if (!imageUrl) {
+            return c.json({ error: 'imageUrl is required' }, 400);
+        }
+
+        // Use self-hosted rembg API server with BRIA RMBG 2.0 (birefnet-general model)
+        const BG_REMOVAL_API = c.env.BG_REMOVAL_API_URL || 'http://127.0.0.1:8000';
+        
+        const response = await fetch(`${BG_REMOVAL_API}/api/remove-bg-from-url`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                image_url: imageUrl,
+                bgcolor: [255, 255, 255, 255]  // White background (RGBA)
+            })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Background removal failed: ${response.statusText} - ${errorText}`);
+        }
+
+        // Get the processed image as binary data
+        const imageBuffer = await response.arrayBuffer();
+        
+        // Convert to base64 data URL
+        const base64 = btoa(
+            new Uint8Array(imageBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+        );
+        
+        // Check content type - if bgcolor was applied, it's JPEG, otherwise PNG
+        const contentType = response.headers.get('content-type') || 'image/png';
+        const mimeType = contentType.includes('jpeg') ? 'image/jpeg' : 'image/png';
+        const dataUrl = `data:${mimeType};base64,${base64}`;
+
+        return c.json({ 
+            success: true, 
+            processedUrl: dataUrl,
+            message: 'Background removed successfully with BRIA RMBG 2.0 (birefnet-general)'
+        });
+
+    } catch (error: any) {
+        console.error('Background removal error:', error);
+        return c.json({ 
+            error: 'Background removal failed', 
+            details: error.message 
+        }, 500);
+    }
+});
+
+// --- API: Batch Background Removal for Image ID ---
+app.post('/api/remove-bg-image/:imageId', async (c) => {
+    try {
+        const imageId = c.req.param('imageId');
+        
+        // Get image from database
+        const imageResult = await c.env.DB.prepare(`
+            SELECT * FROM images WHERE id = ?
+        `).bind(imageId).first();
+
+        if (!imageResult) {
+            return c.json({ error: 'Image not found' }, 404);
+        }
+
+        const originalUrl = imageResult.original_url as string;
+
+        // Update status to processing
+        await c.env.DB.prepare(`
+            UPDATE images SET status = 'processing' WHERE id = ?
+        `).bind(imageId).run();
+
+        const BG_REMOVAL_API = c.env.BG_REMOVAL_API_URL || 'http://127.0.0.1:8000';
+        let response: Response;
+        
+        // Check if it's a base64 data URL or regular URL
+        if (originalUrl.startsWith('data:')) {
+            // Extract base64 data from data URL
+            const matches = originalUrl.match(/^data:([^;]+);base64,(.+)$/);
+            if (!matches) {
+                throw new Error('Invalid data URL format');
+            }
+            const base64Data = matches[2];
+            
+            // Send base64 data directly to API with white background
+            response = await fetch(`${BG_REMOVAL_API}/api/remove-bg-base64`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    image_base64: base64Data,
+                    bgcolor: [255, 255, 255, 255]  // White background (RGBA)
+                })
+            });
+        } else {
+            // Regular URL - use existing endpoint with white background
+            response = await fetch(`${BG_REMOVAL_API}/api/remove-bg-from-url`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    image_url: originalUrl,
+                    bgcolor: [255, 255, 255, 255]  // White background (RGBA)
+                })
+            });
+        }
+
+        if (!response.ok) {
+            await c.env.DB.prepare(`
+                UPDATE images SET status = 'failed' WHERE id = ?
+            `).bind(imageId).run();
+            const errorText = await response.text();
+            throw new Error(`Background removal failed: ${response.statusText} - ${errorText}`);
+        }
+
+        // Get the processed image as binary data
+        const imageBuffer = await response.arrayBuffer();
+        
+        // Convert to base64 data URL
+        const base64 = btoa(
+            new Uint8Array(imageBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+        );
+        
+        // Check content type - if bgcolor was applied, it's JPEG, otherwise PNG
+        const contentType = response.headers.get('content-type') || 'image/png';
+        const mimeType = contentType.includes('jpeg') ? 'image/jpeg' : 'image/png';
+        const dataUrl = `data:${mimeType};base64,${base64}`;
+
+        // Update database with processed image
+        await c.env.DB.prepare(`
+            UPDATE images SET processed_url = ?, status = 'completed' WHERE id = ?
+        `).bind(dataUrl, imageId).run();
+
+        return c.json({ 
+            success: true,
+            imageId,
+            processedUrl: dataUrl,
+            message: 'Background removed and saved'
+        });
+
+    } catch (error: any) {
+        console.error('Background removal error:', error);
+        return c.json({ 
+            error: 'Background removal failed', 
+            details: error.message 
+        }, 500);
+    }
+});
+
+// --- API: Export Selected Images as CSV ---
+app.post('/api/export-selected-csv', async (c) => {
+    try {
+        const body = await c.req.json();
+        const imageIds = body.imageIds as string[];
+        
+        if (!imageIds || !Array.isArray(imageIds) || imageIds.length === 0) {
+            return c.text('No image IDs provided', 400);
+        }
+        
+        // Fetch image data with product information
+        const placeholders = imageIds.map(() => '?').join(',');
+        const query = `
+            SELECT 
+                i.id as image_id,
+                i.original_url,
+                i.processed_url,
+                i.status,
+                i.created_at as image_created_at,
+                p.sku,
+                p.name as product_name,
+                p.brand,
+                p.brand_kana,
+                p.size,
+                p.color,
+                p.category,
+                p.category_sub,
+                p.price_cost,
+                p.price_sale,
+                p.price_ref,
+                p.price_list,
+                p.stock_quantity,
+                p.barcode,
+                p.rank,
+                p.season,
+                p.buyer,
+                p.store_name,
+                p.location,
+                p.status as product_status
+            FROM images i
+            LEFT JOIN products p ON i.product_id = p.id
+            WHERE i.id IN (${placeholders})
+            ORDER BY p.sku, i.id
+        `;
+        
+        const result = await c.env.DB.prepare(query).bind(...imageIds).all();
+        
+        if (!result.results || result.results.length === 0) {
+            return c.text('No data found', 404);
+        }
+        
+        // Group images by SKU
+        const groupedBySku = new Map<string, any[]>();
+        for (const row of result.results as any[]) {
+            const sku = row.sku || 'UNKNOWN';
+            if (!groupedBySku.has(sku)) {
+                groupedBySku.set(sku, []);
+            }
+            groupedBySku.get(sku)!.push(row);
+        }
+        
+        // Find max number of images per SKU
+        let maxImages = 0;
+        for (const images of groupedBySku.values()) {
+            maxImages = Math.max(maxImages, images.length);
+        }
+        
+        // Build dynamic headers based on max images (all in Japanese)
+        const baseHeaders = [
+            'SKU',
+            '商品名',
+            'ブランド',
+            'ブランドカナ',
+            'サイズ',
+            'カラー',
+            'カテゴリ大',
+            'カテゴリ小',
+            '仕入単価',
+            '販売価格',
+            '参考上代',
+            '出品価格',
+            '在庫数',
+            'バーコード',
+            'ランク',
+            'シーズン',
+            'バイヤー',
+            '店舗名',
+            '保管場所',
+            'ステータス'
+        ];
+        
+        // Add image columns dynamically
+        const imageHeaders: string[] = [];
+        for (let i = 1; i <= maxImages; i++) {
+            imageHeaders.push(
+                `画像${i}ID`,
+                `画像${i}ステータス`,
+                `画像${i}元画像`,
+                `画像${i}編集画像`,
+                `画像${i}撮影日時`
+            );
+        }
+        
+        const headers = [...baseHeaders, ...imageHeaders];
+        const csvLines = [headers.join(',')];
+        
+        // Generate rows grouped by SKU
+        for (const [sku, images] of groupedBySku.entries()) {
+            const firstImage = images[0];
+            
+            // Base product information (from first image's product data)
+            const baseLine = [
+                escapeCSV(sku),
+                escapeCSV(firstImage.product_name || ''),
+                escapeCSV(firstImage.brand || ''),
+                escapeCSV(firstImage.brand_kana || ''),
+                escapeCSV(firstImage.size || ''),
+                escapeCSV(firstImage.color || ''),
+                escapeCSV(firstImage.category || ''),
+                escapeCSV(firstImage.category_sub || ''),
+                firstImage.price_cost || 0,
+                firstImage.price_sale || 0,
+                firstImage.price_ref || 0,
+                firstImage.price_list || 0,
+                firstImage.stock_quantity || 0,
+                escapeCSV(firstImage.barcode || ''),
+                escapeCSV(firstImage.rank || ''),
+                escapeCSV(firstImage.season || ''),
+                escapeCSV(firstImage.buyer || ''),
+                escapeCSV(firstImage.store_name || ''),
+                escapeCSV(firstImage.location || ''),
+                escapeCSV(firstImage.product_status || '')
+            ];
+            
+            // Add image data for each image
+            const imageCols: string[] = [];
+            for (let i = 0; i < maxImages; i++) {
+                if (i < images.length) {
+                    const img = images[i];
+                    // Format status in Japanese
+                    let statusJp = '';
+                    if (img.status === 'completed') statusJp = '完了';
+                    else if (img.status === 'processing') statusJp = '処理中';
+                    else if (img.status === 'pending') statusJp = '待機中';
+                    else if (img.status === 'failed') statusJp = '失敗';
+                    else statusJp = img.status || '';
+                    
+                    // Indicate if images exist (Yes/No)
+                    const hasOriginal = img.original_url ? 'あり' : '';
+                    const hasProcessed = img.processed_url ? 'あり' : '';
+                    
+                    imageCols.push(
+                        String(img.image_id || ''),
+                        statusJp,
+                        hasOriginal,
+                        hasProcessed,
+                        img.image_created_at || ''
+                    );
+                } else {
+                    // Empty columns for missing images
+                    imageCols.push('', '', '', '', '');
+                }
+            }
+            
+            const line = [...baseLine, ...imageCols];
+            csvLines.push(line.join(','));
+        }
+        
+        const csvContent = csvLines.join('\r\n');
+        
+        // Create UTF-8 BOM + CSV content as Uint8Array for proper encoding
+        const BOM = new Uint8Array([0xEF, 0xBB, 0xBF]);
+        const encoder = new TextEncoder();
+        const csvBytes = encoder.encode(csvContent);
+        
+        // Combine BOM and CSV content
+        const combined = new Uint8Array(BOM.length + csvBytes.length);
+        combined.set(BOM);
+        combined.set(csvBytes, BOM.length);
+        
+        return new Response(combined, {
+            status: 200,
+            headers: {
+                'Content-Type': 'text/csv; charset=utf-8',
+                'Content-Disposition': 'attachment; filename="smart_measure_export.csv"'
+            }
+        });
+        
+    } catch (error: any) {
+        console.error('CSV export error:', error);
+        return c.text('CSV export failed: ' + error.message, 500);
+    }
+});
+
+// Helper function to escape CSV values
+function escapeCSV(value: string): string {
+    if (!value) return '';
+    const str = String(value);
+    // Remove all newlines and carriage returns
+    const cleaned = str.replace(/[\r\n]+/g, ' ').trim();
+    // If value contains comma, quote, wrap in quotes and escape quotes
+    if (cleaned.includes(',') || cleaned.includes('"')) {
+        return '"' + cleaned.replace(/"/g, '""') + '"';
+    }
+    return cleaned;
+}
+
+// --- API: Download Single Image ---
+app.get('/api/download-image/:imageId', async (c) => {
+    try {
+        const imageId = c.req.param('imageId');
+        
+        // Get image data with product info
+        const result = await c.env.DB.prepare(`
+            SELECT 
+                i.id,
+                i.original_url,
+                p.sku,
+                p.name as product_name
+            FROM images i
+            LEFT JOIN products p ON i.product_id = p.id
+            WHERE i.id = ?
+        `).bind(imageId).first();
+        
+        if (!result) {
+            return c.json({ error: 'Image not found' }, 404);
+        }
+        
+        // Generate filename
+        const sku = (result.sku as string) || 'UNKNOWN';
+        const imageIdStr = (result.id as number).toString().padStart(4, '0');
+        const filename = `${sku}_original_${imageIdStr}.png`;
+        
+        return c.json({
+            imageUrl: result.original_url,
+            filename: filename,
+            sku: sku
+        });
+        
+    } catch (error: any) {
+        console.error('Download image error:', error);
+        return c.json({ 
+            error: 'Failed to get image data', 
+            details: error.message 
+        }, 500);
+    }
+});
+
+// --- API: Download Processed Image ---
+app.get('/api/download-processed-image/:imageId', async (c) => {
+    try {
+        const imageId = c.req.param('imageId');
+        
+        // Get image data with product info
+        const result = await c.env.DB.prepare(`
+            SELECT 
+                i.id,
+                i.processed_url,
+                i.status,
+                p.sku,
+                p.name as product_name
+            FROM images i
+            LEFT JOIN products p ON i.product_id = p.id
+            WHERE i.id = ?
+        `).bind(imageId).first();
+        
+        if (!result) {
+            return c.json({ error: 'Image not found' }, 404);
+        }
+        
+        // Check if processed image exists
+        if (!result.processed_url) {
+            return c.json({ 
+                error: 'No processed image available',
+                message: '白抜き処理が完了していません'
+            }, 404);
+        }
+        
+        // Generate filename
+        const sku = (result.sku as string) || 'UNKNOWN';
+        const imageIdStr = (result.id as number).toString().padStart(4, '0');
+        const filename = `${sku}_processed_${imageIdStr}.png`;
+        
+        return c.json({
+            imageUrl: result.processed_url,
+            filename: filename,
+            sku: sku,
+            status: result.status
+        });
+        
+    } catch (error: any) {
+        console.error('Download processed image error:', error);
+        return c.json({ 
+            error: 'Failed to get processed image data', 
+            details: error.message 
+        }, 500);
+    }
+});
+
+// --- API: Save Edited Image ---
+app.post('/api/save-edited-image/:imageId', async (c) => {
+    try {
+        const imageId = c.req.param('imageId');
+        const body = await c.req.json();
+        const imageData = body.imageData;
+        
+        if (!imageData) {
+            return c.json({ error: 'imageData is required' }, 400);
+        }
+        
+        // Verify image exists
+        const imageResult = await c.env.DB.prepare(`
+            SELECT * FROM images WHERE id = ?
+        `).bind(imageId).first();
+        
+        if (!imageResult) {
+            return c.json({ error: 'Image not found' }, 404);
+        }
+        
+        // Update processed_url with edited image data
+        await c.env.DB.prepare(`
+            UPDATE images SET processed_url = ?, status = 'completed' WHERE id = ?
+        `).bind(imageData, imageId).run();
+        
+        return c.json({ 
+            success: true,
+            imageId,
+            message: 'Image saved successfully'
+        });
+        
+    } catch (error: any) {
+        console.error('Save image error:', error);
+        return c.json({ 
+            error: 'Failed to save image', 
+            details: error.message 
+        }, 500);
+    }
+});
 
 export default app

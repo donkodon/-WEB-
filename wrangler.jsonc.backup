@@ -21,13 +21,13 @@
   //     "bucket_name": "my-bucket"
   //   }
   // ],
-  // "d1_databases": [
-  //   {
-  //     "binding": "DB",
-  //     "database_name": "smart-measure-db",
-  //     "database_id": "6463d8f7-97cd-4d66-af26-84a0ed469c23"
-  //   }
-  // ]
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "smart-measure-db",
+      "database_id": "6463d8f7-97cd-4d66-af26-84a0ed469c23"
+    }
+  ]
   // "ai": {
   //   "binding": "AI"
   // }
