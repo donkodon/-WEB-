@@ -31,8 +31,15 @@ app.add_middleware(
 
 logger.info("✅ FastAPI app initialized (lazy loading mode)")
 
-# Create session for u2netp model (lightweight 4.7MB)
-session = None  # Will be initialized on first use
+# Create session cache
+sessions = {}
+
+def get_session(model_name: str):
+    global sessions
+    if model_name not in sessions:
+        logger.info(f"🔧 Initializing {model_name} model...")
+        sessions[model_name] = new_session(model_name)
+    return sessions[model_name]
 
 
 @app.get("/")
@@ -41,7 +48,7 @@ async def root():
     return {
         "service": "Background Removal API",
         "status": "healthy",
-        "model": "u2netp (lightweight 4.7MB)",
+        "models": ["u2netp", "birefnet-general"],
         "version": "2.0.0",
         "mode": "lazy-loading"
     }
@@ -50,22 +57,23 @@ async def root():
 @app.get("/health")
 async def health():
     """Health check for monitoring"""
-    return {"status": "ok", "model": "u2netp (lightweight)"}
+    return {"status": "ok", "models": list(sessions.keys())}
 
 
 @app.post("/api/remove-bg")
-async def remove_background(file: UploadFile = File(...)):
+async def remove_background(file: UploadFile = File(...), model: str = "u2netp"):
     """
     Remove background from uploaded image
     
     Args:
         file: Uploaded image file (JPEG, PNG, etc.)
+        model: Model name (u2netp, birefnet-general, etc.)
     
     Returns:
         PNG image with transparent background
     """
     try:
-        logger.info(f"📥 Processing image: {file.filename} ({file.content_type})")
+        logger.info(f"📥 Processing image: {file.filename} ({file.content_type}) with model: {model}")
         
         # Read uploaded file
         input_data = await file.read()
@@ -74,13 +82,10 @@ async def remove_background(file: UploadFile = File(...)):
         if len(input_data) > 10 * 1024 * 1024:
             raise HTTPException(status_code=400, detail="File too large (max 10MB)")
         
-        # Remove background using rembg with u2netp model (lightweight 4.7MB)
-        global session
-        if session is None:
-            logger.info("🔧 Initializing u2netp model (first use)...")
-            session = new_session("u2netp")
+        # Remove background using specified model
+        session = get_session(model)
         
-        logger.info("🔄 Removing background with u2netp (lightweight)...")
+        logger.info(f"🔄 Removing background with {model}...")
         output_data = remove(input_data, session=session)
         
         logger.info(f"✅ Background removed successfully: {file.filename}")
@@ -106,10 +111,12 @@ import base64
 class ImageUrlRequest(BaseModel):
     image_url: str
     bgcolor: Optional[List[int]] = None  # [R, G, B, A] e.g., [255, 255, 255, 255] for white
+    model: str = "u2netp"
 
 class ImageBase64Request(BaseModel):
     image_base64: str
     bgcolor: Optional[List[int]] = None  # [R, G, B, A]
+    model: str = "u2netp"
 
 @app.post("/api/remove-bg-from-url")
 async def remove_background_from_url(request: ImageUrlRequest):
@@ -139,13 +146,10 @@ async def remove_background_from_url(request: ImageUrlRequest):
         # Open image with PIL to ensure it's valid
         image = Image.open(BytesIO(input_data))
         
-        # Remove background using rembg with u2netp model (lightweight 4.7MB)
-        global session
-        if session is None:
-            logger.info("🔧 Initializing u2netp model (first use)...")
-            session = new_session("u2netp")
+        # Remove background using specified model
+        session = get_session(request.model)
         
-        logger.info("🔄 Removing background with u2netp (lightweight)...")
+        logger.info(f"🔄 Removing background with {request.model}...")
         output_image = remove(image, session=session)
         
         # If bgcolor is provided, composite with background color
@@ -212,13 +216,10 @@ async def remove_background_from_base64(request: ImageBase64Request):
         # Open image with PIL
         image = Image.open(BytesIO(image_bytes))
         
-        # Remove background using rembg with u2netp model
-        global session
-        if session is None:
-            logger.info("🔧 Initializing u2netp model (first use)...")
-            session = new_session("u2netp")
+        # Remove background using specified model
+        session = get_session(request.model)
         
-        logger.info("🔄 Removing background with u2netp (lightweight)...")
+        logger.info(f"🔄 Removing background with {request.model}...")
         output_image = remove(image, session=session)
         
         # If bgcolor is provided, composite with background color

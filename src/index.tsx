@@ -7,6 +7,8 @@ import { Buffer } from 'node:buffer'
 type Bindings = {
   DB: D1Database
   FAL_API_KEY?: string
+  BRIA_API_KEY?: string
+  BG_REMOVAL_API_URL?: string
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
@@ -236,10 +238,35 @@ app.get('/dashboard', async (c) => {
       <div class="mb-6 flex justify-between items-end">
         <p class="text-gray-500 text-sm">撮影済み画像の管理・編集・ダウンロードが可能です。</p>
         <div class="flex space-x-3">
-            <button id="btn-batch-remove-bg" class="bg-white border border-blue-200 text-blue-600 px-4 py-2 rounded-lg flex items-center hover:bg-blue-50 transition-colors text-sm font-medium">
-                <i class="fas fa-magic mr-2"></i>
-                選択画像を白抜き
-            </button>
+            <div class="relative inline-block text-left group">
+                <div class="inline-flex shadow-sm rounded-lg" role="group">
+                    <button id="btn-batch-remove-bg" class="px-4 py-2 text-sm font-medium text-blue-600 bg-white border border-blue-200 rounded-l-lg hover:bg-blue-50 focus:z-10 focus:ring-2 focus:ring-blue-500 focus:text-blue-700 flex items-center">
+                        <i class="fas fa-magic mr-2"></i>
+                        選択画像を白抜き
+                    </button>
+                    <button type="button" class="px-2 py-2 text-sm font-medium text-blue-600 bg-white border-t border-b border-r border-blue-200 rounded-r-lg hover:bg-blue-50 focus:z-10 focus:ring-2 focus:ring-blue-500 focus:text-blue-700" id="btn-bg-dropdown-toggle">
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
+                </div>
+                {/* Dropdown menu */}
+                <div id="bg-model-dropdown" class="absolute right-0 z-50 hidden mt-2 w-64 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none" role="menu">
+                    <div class="py-1" role="none">
+                        <div class="px-4 py-2 text-xs text-gray-500 font-bold uppercase border-b border-gray-100">モデル選択</div>
+                        <button class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 bg-blue-50 model-option" data-model="u2netp" role="menuitem">
+                            <span class="flex items-center justify-between">
+                                <span>rembg (高速・標準)</span>
+                                <i class="fas fa-check text-blue-600 check-icon"></i>
+                            </span>
+                        </button>
+                        <button class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 model-option" data-model="birefnet-general" role="menuitem">
+                             <span class="flex items-center justify-between">
+                                <span>BRIA rmbg2.0 (高精度)</span>
+                                <i class="fas fa-check text-blue-600 check-icon hidden"></i>
+                            </span>
+                        </button>
+                    </div>
+                </div>
+            </div>
             <button id="btn-export-csv" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg flex items-center hover:bg-gray-50 transition-colors text-sm font-medium">
                 <i class="fas fa-download mr-2"></i>
                 CSV出力
@@ -567,10 +594,17 @@ app.get('/dashboard', async (c) => {
         (function() {
             console.log('🚀 Background Removal Script Loaded!');
             
+            // Global state for selected model
+            window.currentBgModel = 'u2netp'; // Default
+            
             function initBatchRemoveBg() {
                 console.log('📌 initBatchRemoveBg called!');
                 
                 const batchBtn = document.getElementById('btn-batch-remove-bg');
+                const dropdownToggle = document.getElementById('btn-bg-dropdown-toggle');
+                const dropdown = document.getElementById('bg-model-dropdown');
+                const modelOptions = document.querySelectorAll('.model-option');
+                
                 console.log('🔘 Batch button:', batchBtn);
                 
                 if (!batchBtn) {
@@ -584,6 +618,45 @@ app.get('/dashboard', async (c) => {
                     return;
                 }
                 batchBtn.dataset.initialized = 'true';
+                
+                // Dropdown Toggle
+                if (dropdownToggle && dropdown) {
+                    dropdownToggle.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        dropdown.classList.toggle('hidden');
+                    });
+                    
+                    // Close dropdown when clicking outside
+                    document.addEventListener('click', (e) => {
+                        if (!dropdown.contains(e.target) && !dropdownToggle.contains(e.target)) {
+                            dropdown.classList.add('hidden');
+                        }
+                    });
+                    
+                    // Model Selection
+                    modelOptions.forEach(opt => {
+                        opt.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            const model = opt.dataset.model;
+                            window.currentBgModel = model;
+                            
+                            // Update UI
+                            modelOptions.forEach(o => {
+                                o.classList.remove('bg-blue-50');
+                                const check = o.querySelector('.check-icon');
+                                if (check) check.classList.add('hidden');
+                            });
+                            
+                            opt.classList.add('bg-blue-50');
+                            const check = opt.querySelector('.check-icon');
+                            if (check) check.classList.remove('hidden');
+                            
+                            // Close dropdown
+                            dropdown.classList.add('hidden');
+                            console.log('✅ Selected model:', window.currentBgModel);
+                        });
+                    });
+                }
                 
                 console.log('✅ Adding click event listener to batch button');
                 
@@ -601,7 +674,8 @@ app.get('/dashboard', async (c) => {
                         return;
                     }
                     
-                    const confirmation = confirm(checkedImages.length + '枚の画像の背景を削除しますか？');
+                    const modelName = window.currentBgModel === 'u2netp' ? 'rembg (標準)' : 'BRIA rmbg2.0 (高精度)';
+                    const confirmation = confirm(checkedImages.length + '枚の画像の背景を削除しますか？\\n使用モデル: ' + modelName);
                     if (!confirmation) return;
                     
                     batchBtn.disabled = true;
@@ -624,9 +698,15 @@ app.get('/dashboard', async (c) => {
                         }
                         
                         try {
-                            console.log('🎨 Starting background removal for image ID:', imageId);
+                            console.log('🎨 Starting background removal for image ID:', imageId, 'with model:', window.currentBgModel);
                             const res = await fetch('/api/remove-bg-image/' + imageId, {
-                                method: 'POST'
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    model: window.currentBgModel
+                                })
                             });
                             
                             console.log('📡 Response status:', res.status, res.statusText);
@@ -1791,12 +1871,68 @@ app.post('/api/remove-bg', async (c) => {
     try {
         const body = await c.req.parseBody();
         const imageUrl = body['imageUrl'] as string;
+        const model = (body['model'] as string) || 'u2netp';
         
         if (!imageUrl) {
             return c.json({ error: 'imageUrl is required' }, 400);
         }
 
-        // Use self-hosted rembg API server with BRIA RMBG 2.0 (birefnet-general model)
+        // Check if using BRIA rmbg2.0 (High Precision) via Fal.ai API
+        if (model === 'birefnet-general') {
+            if (!c.env.FAL_API_KEY || c.env.FAL_API_KEY === 'demo') {
+                 // Fallback to Python server if no valid API key
+                 console.log('⚠️ No valid FAL_API_KEY found, falling back to local Python server for birefnet-general');
+            } else {
+                console.log('🚀 Using Fal.ai API for BRIA rmbg2.0');
+                
+                // 1. Upload/Prepare Image for Fal.ai
+                // Fal.ai accepts image_url. If we have data URL, we can send it directly if supported,
+                // or we might need to upload it. For now, let's try sending data URL directly.
+                
+                const falResponse = await fetch('https://queue.fal.run/fal-ai/bria/rmbg-2.0', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Key ${c.env.FAL_API_KEY}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        image_url: originalUrl
+                    })
+                });
+
+                if (!falResponse.ok) {
+                    const errText = await falResponse.text();
+                    throw new Error(`Fal.ai API failed: ${falResponse.status} - ${errText}`);
+                }
+
+                const falResult = await falResponse.json();
+                // Expected response: { "image": { "url": "..." } }
+                
+                if (falResult.image && falResult.image.url) {
+                    // Fetch the processed image to save as data URL (consistent with local storage)
+                    const imgRes = await fetch(falResult.image.url);
+                    const imgBuffer = await imgRes.arrayBuffer();
+                    const base64 = btoa(new Uint8Array(imgBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ''));
+                    const processedDataUrl = `data:image/png;base64,${base64}`;
+
+                    // Update DB
+                    await c.env.DB.prepare(`
+                        UPDATE images SET processed_url = ?, status = 'completed' WHERE id = ?
+                    `).bind(processedDataUrl, imageId).run();
+
+                    return c.json({ 
+                        success: true,
+                        imageId,
+                        processedUrl: processedDataUrl,
+                        message: 'Background removed using Fal.ai (BRIA rmbg2.0)'
+                    });
+                } else {
+                    throw new Error('Invalid response from Fal.ai');
+                }
+            }
+        }
+
+        // Use self-hosted rembg API server (Python)
         const BG_REMOVAL_API = c.env.BG_REMOVAL_API_URL || 'http://127.0.0.1:8000';
         
         const response = await fetch(`${BG_REMOVAL_API}/api/remove-bg-from-url`, {
@@ -1806,7 +1942,8 @@ app.post('/api/remove-bg', async (c) => {
             },
             body: JSON.stringify({
                 image_url: imageUrl,
-                bgcolor: [255, 255, 255, 255]  // White background (RGBA)
+                bgcolor: [255, 255, 255, 255],  // White background (RGBA)
+                model: model
             })
         });
 
@@ -1847,6 +1984,17 @@ app.post('/api/remove-bg', async (c) => {
 app.post('/api/remove-bg-image/:imageId', async (c) => {
     try {
         const imageId = c.req.param('imageId');
+        let model = 'u2netp';
+        
+        try {
+             // Try to parse body if exists for model selection
+             const body = await c.req.json();
+             if (body && body.model) {
+                 model = body.model;
+             }
+        } catch (e) {
+            // No JSON body or parse error, ignore and use default
+        }
         
         // Get image from database
         const imageResult = await c.env.DB.prepare(`
@@ -1864,6 +2012,61 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
             UPDATE images SET status = 'processing' WHERE id = ?
         `).bind(imageId).run();
 
+        // ==========================================
+        // Model Selection: BRIA API vs Self-hosted
+        // ==========================================
+        
+        // BRIA RMBG 2.0 via Fal.ai API (model === 'birefnet-general')
+        if (model === 'birefnet-general' && c.env.BRIA_API_KEY && c.env.BRIA_API_KEY !== 'your-fal-api-key-here') {
+            console.log('🚀 Using Fal.ai API for BRIA rmbg2.0');
+            
+            try {
+                const falResponse = await fetch('https://queue.fal.run/fal-ai/bria/rmbg-2.0', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Key ${c.env.BRIA_API_KEY}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        image_url: originalUrl
+                    })
+                });
+
+                if (!falResponse.ok) {
+                    const errText = await falResponse.text();
+                    throw new Error(`Fal.ai API failed: ${falResponse.status} - ${errText}`);
+                }
+
+                const falResult = await falResponse.json();
+                
+                if (falResult.image && falResult.image.url) {
+                    // Fetch the processed image to save as data URL
+                    const imgRes = await fetch(falResult.image.url);
+                    const imgBuffer = await imgRes.arrayBuffer();
+                    const base64 = Buffer.from(imgBuffer).toString('base64');
+                    const processedDataUrl = `data:image/png;base64,${base64}`;
+
+                    // Update DB
+                    await c.env.DB.prepare(`
+                        UPDATE images SET processed_url = ?, status = 'completed' WHERE id = ?
+                    `).bind(processedDataUrl, imageId).run();
+
+                    return c.json({ 
+                        success: true,
+                        imageId,
+                        processedUrl: processedDataUrl,
+                        message: 'Background removed using Fal.ai (BRIA rmbg2.0)'
+                    });
+                } else {
+                    throw new Error('Invalid response from Fal.ai');
+                }
+            } catch (apiError: any) {
+                console.error('❌ BRIA API failed, falling back to self-hosted:', apiError.message);
+                // Fall through to self-hosted server below
+            }
+        }
+
+        // Self-hosted rembg server (Python) - default for 'u2netp' or fallback
         const BG_REMOVAL_API = c.env.BG_REMOVAL_API_URL || 'http://127.0.0.1:8000';
         let response: Response;
         
@@ -1884,7 +2087,8 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
                 },
                 body: JSON.stringify({
                     image_base64: base64Data,
-                    bgcolor: [255, 255, 255, 255]  // White background (RGBA)
+                    bgcolor: [255, 255, 255, 255],  // White background (RGBA)
+                    model: model
                 })
             });
         } else {
@@ -1896,7 +2100,8 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
                 },
                 body: JSON.stringify({
                     image_url: originalUrl,
-                    bgcolor: [255, 255, 255, 255]  // White background (RGBA)
+                    bgcolor: [255, 255, 255, 255],  // White background (RGBA)
+                    model: model
                 })
             });
         }

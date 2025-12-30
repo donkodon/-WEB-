@@ -18,4 +18,4 @@ fi
 
 # Start the server
 echo "✅ Starting server on http://0.0.0.0:8000"
-python3 bg-removal-server.py
+python3 bg-removal-server-v2.py

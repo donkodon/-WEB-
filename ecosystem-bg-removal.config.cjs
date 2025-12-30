@@ -3,7 +3,7 @@ module.exports = {
     {
       name: 'bg-removal-api',
       script: 'python3',
-      args: 'bg-removal-server.py',
+      args: 'bg-removal-server-v2.py',
       cwd: '/home/user/webapp/smart-measure',
       interpreter: 'none',
       instances: 1,
