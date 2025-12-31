@@ -2548,33 +2548,41 @@ app.post('/api/remove-bg', async (c) => {
     }
 });
 
-// --- Helper: Cloudflare AI Background Removal (Free, built-in) ---
-async function removeBackgroundWithCloudflareAI(AI: any, imageUrl: string): Promise<{ success: boolean; imageBuffer?: ArrayBuffer; error?: string }> {
+// --- Helper: withoutBG API Background Removal (Free, Hugging Face Spaces) ---
+async function removeBackgroundWithWithoutBG(imageUrl: string): Promise<{ success: boolean; imageDataUrl?: string; error?: string }> {
     try {
-        console.log('🤖 Using Cloudflare AI for background removal...');
+        console.log('🎨 Using withoutBG Focus model (Hugging Face Spaces)...');
         
-        // Fetch the image from URL
-        const imageResponse = await fetch(imageUrl);
-        if (!imageResponse.ok) {
-            throw new Error(`Failed to fetch image: ${imageResponse.statusText}`);
-        }
-        
-        const imageBlob = await imageResponse.blob();
-        const imageBuffer = await imageBlob.arrayBuffer();
-        
-        // Use Cloudflare AI @cf/rembg model
-        const result = await AI.run('@cf/rembg', {
-            image: Array.from(new Uint8Array(imageBuffer))
+        // Call Hugging Face Space API
+        const response = await fetch('https://jinkedon-withoutbg-api.hf.space/api/predict', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                data: [imageUrl]  // Gradio API format
+            })
         });
         
-        console.log('✅ Cloudflare AI background removal completed');
+        if (!response.ok) {
+            throw new Error(`withoutBG API failed: ${response.status} - ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        // Gradio returns data in format: { data: ["data:image/png;base64,..."] }
+        if (!result.data || !result.data[0]) {
+            throw new Error('Invalid response from withoutBG API');
+        }
+        
+        console.log('✅ withoutBG Focus background removal completed');
         
         return {
             success: true,
-            imageBuffer: result
+            imageDataUrl: result.data[0]  // Already a data URL
         };
     } catch (error: any) {
-        console.error('❌ Cloudflare AI failed:', error);
+        console.error('❌ withoutBG API failed:', error);
         return {
             success: false,
             error: error.message
@@ -2773,37 +2781,33 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
         }
 
         // ==========================================
-        // Priority 2: Cloudflare AI (birefnet-general) - Free built-in
+        // Priority 2: withoutBG Focus (birefnet-general) - Free Hugging Face Spaces
         // ==========================================
         if (model === 'birefnet-general' || model === 'cloudflare-ai') {
-            console.log('🚀 Using Cloudflare AI for background removal');
+            console.log('🚀 Using withoutBG Focus model for background removal');
             
             try {
-                const result = await removeBackgroundWithCloudflareAI(c.env.AI, originalUrl);
+                const result = await removeBackgroundWithWithoutBG(originalUrl);
                 
-                if (!result.success || !result.imageBuffer) {
-                    throw new Error(result.error || 'Cloudflare AI processing failed');
+                if (!result.success || !result.imageDataUrl) {
+                    throw new Error(result.error || 'withoutBG processing failed');
                 }
-
-                // Convert to base64 data URL
-                const base64 = Buffer.from(result.imageBuffer).toString('base64');
-                const processedDataUrl = `data:image/png;base64,${base64}`;
 
                 // Update DB (only for non-R2 images)
                 if (!isR2Image) {
                     await c.env.DB.prepare(`
                         UPDATE images SET processed_url = ?, status = 'completed' WHERE id = ?
-                    `).bind(processedDataUrl, imageId).run();
+                    `).bind(result.imageDataUrl, imageId).run();
                 }
 
                 return c.json({ 
                     success: true,
                     imageId,
-                    processedUrl: processedDataUrl,
-                    message: 'Background removed using Cloudflare AI (Free)'
+                    processedUrl: result.imageDataUrl,
+                    message: 'Background removed using withoutBG Focus (Free)'
                 });
             } catch (apiError: any) {
-                console.error('❌ Cloudflare AI failed:', apiError.message);
+                console.error('❌ withoutBG API failed:', apiError.message);
                 // Mark as failed (only for non-R2 images)
                 if (!isR2Image) {
                     await c.env.DB.prepare(`
@@ -2813,7 +2817,7 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
                 
                 return c.json({ 
                     success: false,
-                    error: `Cloudflare AI processing failed: ${apiError.message}`
+                    error: `withoutBG processing failed: ${apiError.message}`
                 }, 500);
             }
         }
