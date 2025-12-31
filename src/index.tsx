@@ -2553,33 +2553,34 @@ async function removeBackgroundWithWithoutBG(imageUrl: string): Promise<{ succes
     try {
         console.log('🎨 Using withoutBG Focus model (Hugging Face Spaces)...');
         
-        // Call Hugging Face Space API
-        const response = await fetch('https://jinkedon-withoutbg-api.hf.space/api/predict', {
+        // Call Hugging Face Space API (Flask/Docker API)
+        const response = await fetch('https://jinkedon-withoutbg-api.hf.space/api/remove-bg', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                data: [imageUrl]  // Gradio API format
+                image_url: imageUrl  // Flask API format
             })
         });
         
         if (!response.ok) {
-            throw new Error(`withoutBG API failed: ${response.status} - ${response.statusText}`);
+            const errorText = await response.text();
+            throw new Error(`withoutBG API failed: ${response.status} - ${errorText}`);
         }
         
         const result = await response.json();
         
-        // Gradio returns data in format: { data: ["data:image/png;base64,..."] }
-        if (!result.data || !result.data[0]) {
-            throw new Error('Invalid response from withoutBG API');
+        // Flask returns: { success: true, image_data: "data:image/png;base64,..." }
+        if (!result.success || !result.image_data) {
+            throw new Error(result.error || 'Invalid response from withoutBG API');
         }
         
         console.log('✅ withoutBG Focus background removal completed');
         
         return {
             success: true,
-            imageDataUrl: result.data[0]  // Already a data URL
+            imageDataUrl: result.image_data  // Already a data URL
         };
     } catch (error: any) {
         console.error('❌ withoutBG API failed:', error);
