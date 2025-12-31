@@ -69,11 +69,13 @@ https://pub-300562464768499b8fcaee903d0f9861.r2.dev/1025L190003_2_1735592164789.
   "r2_buckets": [
     {
       "binding": "PRODUCT_IMAGES",
-      "bucket_name": "bubble-product-images"  // Bubbleアプリと同じバケット
+      "bucket_name": "product-images-saisunsatsuei"  // Bubbleアプリと同じバケット
     }
   ]
 }
 ```
+
+**✅ 既に設定済み** - そのまま使えます！
 
 ## セットアップ
 

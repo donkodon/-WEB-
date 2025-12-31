@@ -14,14 +14,14 @@
   // BRIA_API_KEY - Fal.ai API key for BRIA RMBG 2.0
   
   // R2 Buckets - Shared with Bubble app
-  // Note: BubbleアプリとR2バケットを共有する場合、バケット名を設定
+  // Note: BubbleアプリとR2バケットを共有
   // Public URL: https://pub-300562464768499b8fcaee903d0f9861.r2.dev
-  // "r2_buckets": [
-  //   {
-  //     "binding": "PRODUCT_IMAGES",
-  //     "bucket_name": "bubble-product-images"
-  //   }
-  // ],
+  "r2_buckets": [
+    {
+      "binding": "PRODUCT_IMAGES",
+      "bucket_name": "product-images-saisunsatsuei"
+    }
+  ],
   
   // "kv_namespaces": [
   //   {
