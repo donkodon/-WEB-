@@ -48,9 +48,10 @@ async def root():
     return {
         "service": "Background Removal API",
         "status": "healthy",
-        "models": ["u2netp", "birefnet-general"],
-        "version": "2.0.0",
-        "mode": "lazy-loading"
+        "models": ["silueta", "u2netp"],  # silueta is lighter, preferred for low-memory environments
+        "version": "2.1.0",
+        "mode": "lazy-loading",
+        "default_model": "silueta"
     }
 
 
@@ -111,12 +112,12 @@ import base64
 class ImageUrlRequest(BaseModel):
     image_url: str
     bgcolor: Optional[List[int]] = None  # [R, G, B, A] e.g., [255, 255, 255, 255] for white
-    model: str = "u2netp"
+    model: str = "silueta"  # Changed default to silueta (lighter model)
 
 class ImageBase64Request(BaseModel):
     image_base64: str
     bgcolor: Optional[List[int]] = None  # [R, G, B, A]
-    model: str = "u2netp"
+    model: str = "silueta"  # Changed default to silueta (lighter model)
 
 @app.post("/api/remove-bg-from-url")
 async def remove_background_from_url(request: ImageUrlRequest):
@@ -138,7 +139,7 @@ async def remove_background_from_url(request: ImageUrlRequest):
         logger.info(f"📥 Fetching image from URL: {image_url}")
         
         # Fetch image from URL
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.get(image_url)
             response.raise_for_status()
             input_data = response.content
@@ -146,11 +147,28 @@ async def remove_background_from_url(request: ImageUrlRequest):
         # Open image with PIL to ensure it's valid
         image = Image.open(BytesIO(input_data))
         
+        # Memory optimization: Resize large images to max 800px on longest side (aggressive for sandbox)
+        MAX_SIZE = 800
+        original_size = image.size
+        if max(image.size) > MAX_SIZE:
+            ratio = MAX_SIZE / max(image.size)
+            new_size = (int(image.size[0] * ratio), int(image.size[1] * ratio))
+            image = image.resize(new_size, Image.Resampling.LANCZOS)
+            logger.info(f"📐 Resized image from {original_size} to {new_size} for memory optimization")
+        
+        # Force garbage collection before heavy processing
+        import gc
+        gc.collect()
+        
         # Remove background using specified model
         session = get_session(request.model)
         
         logger.info(f"🔄 Removing background with {request.model}...")
         output_image = remove(image, session=session)
+        
+        # Clean up input image to free memory
+        del image
+        gc.collect()
         
         # If bgcolor is provided, composite with background color
         if request.bgcolor and len(request.bgcolor) >= 3:
@@ -216,11 +234,28 @@ async def remove_background_from_base64(request: ImageBase64Request):
         # Open image with PIL
         image = Image.open(BytesIO(image_bytes))
         
+        # Memory optimization: Resize large images to max 800px on longest side (aggressive for sandbox)
+        MAX_SIZE = 800
+        original_size = image.size
+        if max(image.size) > MAX_SIZE:
+            ratio = MAX_SIZE / max(image.size)
+            new_size = (int(image.size[0] * ratio), int(image.size[1] * ratio))
+            image = image.resize(new_size, Image.Resampling.LANCZOS)
+            logger.info(f"📐 Resized image from {original_size} to {new_size} for memory optimization")
+        
+        # Force garbage collection before heavy processing
+        import gc
+        gc.collect()
+        
         # Remove background using specified model
         session = get_session(request.model)
         
         logger.info(f"🔄 Removing background with {request.model}...")
         output_image = remove(image, session=session)
+        
+        # Clean up input image to free memory
+        del image
+        gc.collect()
         
         # If bgcolor is provided, composite with background color
         if request.bgcolor and len(request.bgcolor) >= 3:

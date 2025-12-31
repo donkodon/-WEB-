@@ -13,6 +13,7 @@ type Bindings = {
   MOBILE_API_URL?: string
   IMAGE_UPLOAD_API_URL?: string
   PRODUCT_IMAGES?: R2Bucket
+  AI: any // Cloudflare AI Workers binding
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
@@ -464,15 +465,15 @@ app.get('/dashboard', async (c) => {
                 <div id="bg-model-dropdown" class="absolute right-0 z-50 hidden mt-2 w-64 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none" role="menu">
                     <div class="py-1" role="none">
                         <div class="px-4 py-2 text-xs text-gray-500 font-bold uppercase border-b border-gray-100">モデル選択</div>
-                        <button class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 bg-blue-50 model-option" data-model="u2netp" role="menuitem">
+                        <button class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 bg-blue-50 model-option" data-model="silueta" role="menuitem">
                             <span class="flex items-center justify-between">
-                                <span>rembg (高速・標準)</span>
+                                <span>rembg 軽量 (推奨)</span>
                                 <i class="fas fa-check text-blue-600 check-icon"></i>
                             </span>
                         </button>
-                        <button class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 model-option" data-model="birefnet-general" role="menuitem">
-                             <span class="flex items-center justify-between">
-                                <span>withoutBG</span>
+                        <button class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 model-option" data-model="u2netp" role="menuitem">
+                            <span class="flex items-center justify-between">
+                                <span>rembg 標準</span>
                                 <i class="fas fa-check text-blue-600 check-icon hidden"></i>
                             </span>
                         </button>
@@ -811,7 +812,7 @@ app.get('/dashboard', async (c) => {
             console.log('🚀 Background Removal Script Loaded!');
             
             // Global state for selected model
-            window.currentBgModel = 'u2netp'; // Default
+            window.currentBgModel = 'silueta'; // Default - lighter model for low-memory environments
             
             function initBatchRemoveBg() {
                 console.log('📌 initBatchRemoveBg called!');
@@ -890,7 +891,7 @@ app.get('/dashboard', async (c) => {
                         return;
                     }
                     
-                    const modelName = window.currentBgModel === 'u2netp' ? 'rembg (標準)' : 'withoutBG';
+                    const modelName = window.currentBgModel === 'silueta' ? 'rembg (軽量)' : (window.currentBgModel === 'u2netp' ? 'rembg (標準)' : 'withoutBG');
                     const confirmation = confirm(checkedImages.length + '枚の画像の背景を削除しますか？\\n使用モデル: ' + modelName);
                     if (!confirmation) return;
                     
@@ -2467,48 +2468,35 @@ app.post('/api/remove-bg', async (c) => {
     try {
         const body = await c.req.parseBody();
         const imageUrl = body['imageUrl'] as string;
-        const model = (body['model'] as string) || 'u2netp';
+        const model = (body['model'] as string) || 'silueta';  // silueta is lighter, better for low-memory
         
         if (!imageUrl) {
             return c.json({ error: 'imageUrl is required' }, 400);
         }
 
-        // Check if using withoutBG (birefnet-general) - Self-hosted high quality model
-        if (model === 'birefnet-general') {
-            const WITHOUTBG_API = c.env.WITHOUTBG_API_URL || 'http://127.0.0.1:8001';
-            console.log('🚀 Using withoutBG Focus model (self-hosted)');
+        // Check if using Cloudflare AI (birefnet-general) - Free built-in model
+        if (model === 'birefnet-general' || model === 'cloudflare-ai') {
+            console.log('🚀 Using Cloudflare AI for background removal');
             
             try {
-                const withoutbgResponse = await fetch(`${WITHOUTBG_API}/api/remove-bg-from-url`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        image_url: imageUrl,
-                        bgcolor: [255, 255, 255, 255],
-                        model: 'withoutbg'
-                    })
-                });
-
-                if (!withoutbgResponse.ok) {
-                    const errText = await withoutbgResponse.text();
-                    throw new Error(`withoutBG API failed: ${withoutbgResponse.status} - ${errText}`);
+                const result = await removeBackgroundWithCloudflareAI(c.env.AI, imageUrl);
+                
+                if (!result.success || !result.imageBuffer) {
+                    throw new Error(result.error || 'Cloudflare AI processing failed');
                 }
 
-                // Get the processed image
-                const processedImageBuffer = await withoutbgResponse.arrayBuffer();
-                const mimeType = withoutbgResponse.headers.get('Content-Type') || 'image/png';
-                const base64 = btoa(new Uint8Array(processedImageBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ''));
-                const processedDataUrl = `data:${mimeType};base64,${base64}`;
+                // Convert to base64 data URL with white background
+                const base64 = btoa(new Uint8Array(result.imageBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ''));
+                const processedDataUrl = `data:image/png;base64,${base64}`;
 
                 return c.json({
                     success: true,
-                    imageId,
                     processedUrl: processedDataUrl,
-                    message: 'Background removed using withoutBG Focus'
+                    message: 'Background removed using Cloudflare AI (Free)'
                 });
             } catch (apiError: any) {
-                console.error('❌ withoutBG API failed:', apiError.message);
-                throw new Error(`withoutBG processing failed: ${apiError.message}`);
+                console.error('❌ Cloudflare AI failed:', apiError.message);
+                throw new Error(`Cloudflare AI processing failed: ${apiError.message}`);
             }
         }
 
@@ -2560,17 +2548,155 @@ app.post('/api/remove-bg', async (c) => {
     }
 });
 
+// --- Helper: Cloudflare AI Background Removal (Free, built-in) ---
+async function removeBackgroundWithCloudflareAI(AI: any, imageUrl: string): Promise<{ success: boolean; imageBuffer?: ArrayBuffer; error?: string }> {
+    try {
+        console.log('🤖 Using Cloudflare AI for background removal...');
+        
+        // Fetch the image from URL
+        const imageResponse = await fetch(imageUrl);
+        if (!imageResponse.ok) {
+            throw new Error(`Failed to fetch image: ${imageResponse.statusText}`);
+        }
+        
+        const imageBlob = await imageResponse.blob();
+        const imageBuffer = await imageBlob.arrayBuffer();
+        
+        // Use Cloudflare AI @cf/rembg model
+        const result = await AI.run('@cf/rembg', {
+            image: Array.from(new Uint8Array(imageBuffer))
+        });
+        
+        console.log('✅ Cloudflare AI background removal completed');
+        
+        return {
+            success: true,
+            imageBuffer: result
+        };
+    } catch (error: any) {
+        console.error('❌ Cloudflare AI failed:', error);
+        return {
+            success: false,
+            error: error.message
+        };
+    }
+}
+
+// --- Helper: Call Fal.ai BRIA RMBG API (Cloud-based, no local memory issues) ---
+async function callBriaApi(imageUrl: string, apiKey: string): Promise<{ success: boolean; imageUrl?: string; error?: string }> {
+    try {
+        console.log('🌐 Calling Fal.ai BRIA RMBG API...');
+        
+        // Step 1: Submit the job to Fal.ai
+        const submitResponse = await fetch('https://queue.fal.run/fal-ai/birefnet', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Key ${apiKey}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                image_url: imageUrl,
+            })
+        });
+
+        if (!submitResponse.ok) {
+            const errorText = await submitResponse.text();
+            throw new Error(`Fal.ai submit failed: ${submitResponse.status} - ${errorText}`);
+        }
+
+        const submitResult = await submitResponse.json() as { request_id?: string; status?: string; response_url?: string };
+        console.log('📤 Fal.ai job submitted:', submitResult);
+
+        // Step 2: Poll for result (Fal.ai queue system)
+        const requestId = submitResult.request_id;
+        if (!requestId) {
+            throw new Error('No request_id returned from Fal.ai');
+        }
+
+        // Poll for completion (max 60 seconds)
+        let result: any = null;
+        for (let i = 0; i < 30; i++) {
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+            
+            const statusResponse = await fetch(`https://queue.fal.run/fal-ai/birefnet/requests/${requestId}/status`, {
+                headers: {
+                    'Authorization': `Key ${apiKey}`,
+                }
+            });
+
+            if (!statusResponse.ok) {
+                continue;
+            }
+
+            const statusResult = await statusResponse.json() as { status: string };
+            console.log(`📊 Fal.ai status: ${statusResult.status}`);
+
+            if (statusResult.status === 'COMPLETED') {
+                // Get the result
+                const resultResponse = await fetch(`https://queue.fal.run/fal-ai/birefnet/requests/${requestId}`, {
+                    headers: {
+                        'Authorization': `Key ${apiKey}`,
+                    }
+                });
+
+                if (resultResponse.ok) {
+                    result = await resultResponse.json();
+                    break;
+                }
+            } else if (statusResult.status === 'FAILED') {
+                throw new Error('Fal.ai processing failed');
+            }
+        }
+
+        if (!result) {
+            throw new Error('Fal.ai processing timeout');
+        }
+
+        // Get the output image URL
+        const outputUrl = result.image?.url;
+        if (!outputUrl) {
+            throw new Error('No output image URL from Fal.ai');
+        }
+
+        console.log('✅ Fal.ai BRIA processing complete:', outputUrl);
+        return { success: true, imageUrl: outputUrl };
+
+    } catch (error: any) {
+        console.error('❌ Fal.ai BRIA API error:', error.message);
+        return { success: false, error: error.message };
+    }
+}
+
+// --- Helper: Add white background to transparent PNG ---
+async function addWhiteBackground(imageUrl: string): Promise<string> {
+    // Fetch the transparent PNG
+    const response = await fetch(imageUrl);
+    const imageBuffer = await response.arrayBuffer();
+    
+    // Return as data URL (PNG with transparency)
+    // Note: Client-side can add white background, or we can process it here
+    const base64 = btoa(
+        new Uint8Array(imageBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+    );
+    
+    return `data:image/png;base64,${base64}`;
+}
+
 // --- API: Batch Background Removal for Image ID ---
 app.post('/api/remove-bg-image/:imageId', async (c) => {
     try {
         const imageId = c.req.param('imageId');
-        let model = 'u2netp';
+        let model = 'silueta';  // Default to silueta (lighter model)
+        let useBriaApi = false;  // Whether to use Fal.ai BRIA API
         
         try {
              // Try to parse body if exists for model selection
              const body = await c.req.json();
              if (body && body.model) {
                  model = body.model;
+             }
+             if (body && body.useBriaApi) {
+                 useBriaApi = body.useBriaApi;
              }
         } catch (e) {
             // No JSON body or parse error, ignore and use default
@@ -2609,51 +2735,59 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
         }
 
         // ==========================================
-        // Model Selection: withoutBG vs rembg
+        // Priority 1: Use Fal.ai BRIA API if configured (Cloud-based, no OOM issues)
         // ==========================================
+        const briaApiKey = c.env.BRIA_API_KEY || c.env.FAL_API_KEY;
+        const isBriaKeyValid = briaApiKey && briaApiKey !== 'demo' && briaApiKey !== 'your-fal-api-key-here';
         
-        // withoutBG (birefnet-general) - High quality open source model
-        if (model === 'birefnet-general') {
-            const WITHOUTBG_API = c.env.WITHOUTBG_API_URL || 'http://127.0.0.1:8001';
-            console.log('🚀 Using withoutBG Focus model (self-hosted)');
+        if (isBriaKeyValid && (useBriaApi || model === 'bria')) {
+            console.log('🌐 Using Fal.ai BRIA RMBG 2.0 API (cloud-based)');
+            
+            // For data URLs, we need to upload first or use local processing
+            if (originalUrl.startsWith('data:')) {
+                console.log('⚠️ Data URL detected, falling back to local rembg for BRIA');
+            } else {
+                const briaResult = await callBriaApi(originalUrl, briaApiKey);
+                
+                if (briaResult.success && briaResult.imageUrl) {
+                    // Fetch the processed image and convert to data URL with white background
+                    const processedDataUrl = await addWhiteBackground(briaResult.imageUrl);
+                    
+                    // Update DB (only for non-R2 images)
+                    if (!isR2Image) {
+                        await c.env.DB.prepare(`
+                            UPDATE images SET processed_url = ?, status = 'completed' WHERE id = ?
+                        `).bind(processedDataUrl, imageId).run();
+                    }
+
+                    return c.json({ 
+                        success: true,
+                        imageId,
+                        processedUrl: processedDataUrl,
+                        message: 'Background removed using Fal.ai BRIA RMBG 2.0 (Cloud)'
+                    });
+                } else {
+                    console.error('❌ BRIA API failed, falling back to local rembg:', briaResult.error);
+                }
+            }
+        }
+
+        // ==========================================
+        // Priority 2: Cloudflare AI (birefnet-general) - Free built-in
+        // ==========================================
+        if (model === 'birefnet-general' || model === 'cloudflare-ai') {
+            console.log('🚀 Using Cloudflare AI for background removal');
             
             try {
-                // Check if originalUrl is a data URL
-                const isDataUrl = originalUrl.startsWith('data:');
-                let endpoint: string;
-                let payload: any;
+                const result = await removeBackgroundWithCloudflareAI(c.env.AI, originalUrl);
                 
-                if (isDataUrl) {
-                    // Extract base64 data from data URL
-                    const matches = originalUrl.match(/^data:([^;]+);base64,(.+)$/);
-                    if (!matches) {
-                        throw new Error('Invalid data URL format');
-                    }
-                    const base64Data = matches[2];
-                    
-                    endpoint = `${WITHOUTBG_API}/api/remove-bg-base64`;
-                    payload = { image_base64: base64Data, bgcolor: [255, 255, 255, 255], model: 'withoutbg' };
-                } else {
-                    endpoint = `${WITHOUTBG_API}/api/remove-bg-from-url`;
-                    payload = { image_url: originalUrl, bgcolor: [255, 255, 255, 255], model: 'withoutbg' };
-                }
-                
-                const withoutbgResponse = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-
-                if (!withoutbgResponse.ok) {
-                    const errText = await withoutbgResponse.text();
-                    throw new Error(`withoutBG API failed: ${withoutbgResponse.status} - ${errText}`);
+                if (!result.success || !result.imageBuffer) {
+                    throw new Error(result.error || 'Cloudflare AI processing failed');
                 }
 
-                // Get the processed image
-                const processedImageBuffer = await withoutbgResponse.arrayBuffer();
-                const mimeType = withoutbgResponse.headers.get('Content-Type') || 'image/png';
-                const base64 = Buffer.from(processedImageBuffer).toString('base64');
-                const processedDataUrl = `data:${mimeType};base64,${base64}`;
+                // Convert to base64 data URL
+                const base64 = Buffer.from(result.imageBuffer).toString('base64');
+                const processedDataUrl = `data:image/png;base64,${base64}`;
 
                 // Update DB (only for non-R2 images)
                 if (!isR2Image) {
@@ -2666,10 +2800,10 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
                     success: true,
                     imageId,
                     processedUrl: processedDataUrl,
-                    message: 'Background removed using withoutBG Focus'
+                    message: 'Background removed using Cloudflare AI (Free)'
                 });
             } catch (apiError: any) {
-                console.error('❌ withoutBG API failed:', apiError.message);
+                console.error('❌ Cloudflare AI failed:', apiError.message);
                 // Mark as failed (only for non-R2 images)
                 if (!isR2Image) {
                     await c.env.DB.prepare(`
@@ -2679,12 +2813,15 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
                 
                 return c.json({ 
                     success: false,
-                    error: `withoutBG processing failed: ${apiError.message}`
+                    error: `Cloudflare AI processing failed: ${apiError.message}`
                 }, 500);
             }
         }
 
-        // Self-hosted rembg server (Python) - default for 'u2netp'
+        // ==========================================
+        // Priority 3: Self-hosted rembg server (Python) - WARNING: Memory intensive!
+        // ==========================================
+        console.log('⚠️ Using local rembg server (memory-intensive, may cause OOM in sandbox)');
         const BG_REMOVAL_API = c.env.BG_REMOVAL_API_URL || 'http://127.0.0.1:8000';
         let response: Response;
         
