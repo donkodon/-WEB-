@@ -465,15 +465,15 @@ app.get('/dashboard', async (c) => {
                 <div id="bg-model-dropdown" class="absolute right-0 z-50 hidden mt-2 w-64 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none" role="menu">
                     <div class="py-1" role="none">
                         <div class="px-4 py-2 text-xs text-gray-500 font-bold uppercase border-b border-gray-100">モデル選択</div>
-                        <button class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 bg-blue-50 model-option" data-model="silueta" role="menuitem">
+                        <button class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 bg-blue-50 model-option" data-model="cloudflare-ai" role="menuitem">
                             <span class="flex items-center justify-between">
-                                <span>rembg 軽量 (推奨)</span>
+                                <span>rembg (推奨・無料)</span>
                                 <i class="fas fa-check text-blue-600 check-icon"></i>
                             </span>
                         </button>
-                        <button class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 model-option" data-model="u2netp" role="menuitem">
+                        <button class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 model-option" data-model="birefnet-general" role="menuitem">
                             <span class="flex items-center justify-between">
-                                <span>rembg 標準</span>
+                                <span>withoutbg (高品質)</span>
                                 <i class="fas fa-check text-blue-600 check-icon hidden"></i>
                             </span>
                         </button>
@@ -812,7 +812,7 @@ app.get('/dashboard', async (c) => {
             console.log('🚀 Background Removal Script Loaded!');
             
             // Global state for selected model
-            window.currentBgModel = 'silueta'; // Default - lighter model for low-memory environments
+            window.currentBgModel = 'cloudflare-ai'; // Default - Cloudflare AI (free, built-in)
             
             function initBatchRemoveBg() {
                 console.log('📌 initBatchRemoveBg called!');
@@ -891,7 +891,7 @@ app.get('/dashboard', async (c) => {
                         return;
                     }
                     
-                    const modelName = window.currentBgModel === 'silueta' ? 'rembg (軽量)' : (window.currentBgModel === 'u2netp' ? 'rembg (標準)' : 'withoutBG');
+                    const modelName = window.currentBgModel === 'cloudflare-ai' ? 'rembg' : (window.currentBgModel === 'birefnet-general' ? 'withoutbg' : 'その他');
                     const confirmation = confirm(checkedImages.length + '枚の画像の背景を削除しますか？\\n使用モデル: ' + modelName);
                     if (!confirmation) return;
                     
@@ -2468,7 +2468,7 @@ app.post('/api/remove-bg', async (c) => {
     try {
         const body = await c.req.parseBody();
         const imageUrl = body['imageUrl'] as string;
-        const model = (body['model'] as string) || 'silueta';  // silueta is lighter, better for low-memory
+        const model = (body['model'] as string) || 'cloudflare-ai';  // Default to Cloudflare AI (free, built-in)
         
         if (!imageUrl) {
             return c.json({ error: 'imageUrl is required' }, 400);
@@ -2500,7 +2500,7 @@ app.post('/api/remove-bg', async (c) => {
             }
         }
 
-        // Use self-hosted rembg API server (Python) - default for 'u2netp'
+        // Fallback: Self-hosted rembg API server (Python) - only if Cloudflare AI is not used
         const BG_REMOVAL_API = c.env.BG_REMOVAL_API_URL || 'http://127.0.0.1:8000';
         
         const response = await fetch(`${BG_REMOVAL_API}/api/remove-bg-from-url`, {
@@ -2686,7 +2686,7 @@ async function addWhiteBackground(imageUrl: string): Promise<string> {
 app.post('/api/remove-bg-image/:imageId', async (c) => {
     try {
         const imageId = c.req.param('imageId');
-        let model = 'silueta';  // Default to silueta (lighter model)
+        let model = 'cloudflare-ai';  // Default to Cloudflare AI (free, built-in)
         let useBriaApi = false;  // Whether to use Fal.ai BRIA API
         
         try {
