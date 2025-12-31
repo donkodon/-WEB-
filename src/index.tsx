@@ -415,27 +415,31 @@ app.get('/dashboard', async (c) => {
     
     console.log(`📦 Product ${sku}: ${dbImages.length} DB images + ${mobileImages.length} mobile images`);
     
-    // Merge: Use local master data as base, override with mobile app updates if newer
+    // Merge: Use mobile app data as primary source, fallback to local CSV data
     const mergedProduct = {
-      // Base: Local CSV master data
+      // Base: Local CSV master data (fallback)
       ...(localProduct || {}),
+      // Override with mobile app master data (primary source)
+      // スマホアプリ側のデータを優先（CSVは初期データのみ）
+      barcode: mobileData.barcode || (localProduct as any)?.barcode || null,
+      name: mobileData.name || (localProduct as any)?.name || 'Unknown Product',
+      brand: mobileData.brand || (localProduct as any)?.brand || null,
+      size: mobileData.size || (localProduct as any)?.size || null,
+      color: mobileData.color || (localProduct as any)?.color || null,
+      price: mobileData.price || (localProduct as any)?.price || 0,
+      category: mobileData.category || (localProduct as any)?.category || null,
       // Add mobile app captured data
       capturedItems: mobileData.capturedItems || [],
       capturedCount: mobileData.capturedCount || 0,
       latestItem: mobileData.latestItem || null,
       hasCapturedData: (mobileData.capturedCount || 0) > 0,
       images: [...dbImages, ...mobileImages],
-      // Override with mobile app master data if it's been updated there
-      // (スマホアプリ側で更新された場合は、そちらを優先)
-      ...(mobileData.updated_at > (localProduct as any)?.updated_at ? {
-        barcode: mobileData.barcode || (localProduct as any)?.barcode,
-        name: mobileData.name || (localProduct as any)?.name,
-        brand: mobileData.brand || (localProduct as any)?.brand,
-        size: mobileData.size || (localProduct as any)?.size,
-        color: mobileData.color || (localProduct as any)?.color,
-        price: mobileData.price || (localProduct as any)?.price,
-      } : {})
+      // Timestamps
+      created_at: mobileData.created_at || (localProduct as any)?.created_at,
+      updated_at: mobileData.updated_at || (localProduct as any)?.updated_at
     };
+    
+    console.log(`✅ Merged product ${sku}: ${mergedProduct.name} (Brand: ${mergedProduct.brand}, Barcode: ${mergedProduct.barcode})`);
     
     products.push(mergedProduct);
   }
