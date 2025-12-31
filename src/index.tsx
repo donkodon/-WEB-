@@ -277,16 +277,51 @@ app.get('/dashboard', async (c) => {
     SELECT * FROM products ORDER BY id DESC
   `).all();
 
-  // 2. Fetch all images
+  // 2. Fetch all images from database
   const imagesResult = await c.env.DB.prepare(`
     SELECT * FROM images
   `).all();
 
-  // 3. Merge images into products
+  // 3. Also fetch images from R2 bucket (mobile app images)
+  const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
+  const r2Images = new Map(); // Map of SKU -> array of image URLs
+  
+  // Try to list R2 objects
+  if (c.env.PRODUCT_IMAGES) {
+    try {
+      const list = await c.env.PRODUCT_IMAGES.list();
+      for (const obj of list.objects) {
+        const filename = obj.key;
+        // Extract SKU from filename (pattern: SKU_number.jpg)
+        const match = filename.match(/^(.+?)_\d+\.jpg$/);
+        if (match) {
+          const sku = match[1];
+          if (!r2Images.has(sku)) {
+            r2Images.set(sku, []);
+          }
+          r2Images.get(sku).push({
+            id: `r2_${filename}`,
+            original_url: `${R2_PUBLIC_URL}/${filename}`,
+            processed_url: null,
+            status: 'mobile',
+            created_at: obj.uploaded,
+            filename: filename
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Failed to list R2 objects:', e);
+    }
+  }
+
+  // 4. Merge images into products
   const products = productsResult.results.map((p: any) => {
+    const dbImages = imagesResult.results.filter((i: any) => i.product_id === p.id);
+    const mobileImages = r2Images.get(p.sku) || [];
+    
     return {
         ...p,
-        images: imagesResult.results.filter((i: any) => i.product_id === p.id)
+        images: [...dbImages, ...mobileImages]
     };
   });
 
