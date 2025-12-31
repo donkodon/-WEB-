@@ -427,6 +427,7 @@ app.get('/dashboard', async (c) => {
       size: mobileData.size || (localProduct as any)?.size || null,
       color: mobileData.color || (localProduct as any)?.color || null,
       price: mobileData.price || (localProduct as any)?.price || 0,
+      price_sale: mobileData.price || (localProduct as any)?.price_sale || (localProduct as any)?.price || 0,
       category: mobileData.category || (localProduct as any)?.category || null,
       // Add mobile app captured data
       capturedItems: mobileData.capturedItems || [],
@@ -439,7 +440,7 @@ app.get('/dashboard', async (c) => {
       updated_at: mobileData.updated_at || (localProduct as any)?.updated_at
     };
     
-    console.log(`✅ Merged product ${sku}: ${mergedProduct.name} (Brand: ${mergedProduct.brand}, Barcode: ${mergedProduct.barcode})`);
+    console.log(`✅ Merged product ${sku}: ${mergedProduct.name} (Brand: ${mergedProduct.brand}, Barcode: ${mergedProduct.barcode}, Price: ${mergedProduct.price})`);
     
     products.push(mergedProduct);
   }
