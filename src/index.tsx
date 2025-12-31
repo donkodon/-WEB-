@@ -338,7 +338,7 @@ app.get('/dashboard', async (c) => {
     
     // Extract images from mobile app capturedItems
     const mobileImages = [];
-    if (mobileData && mobileData.capturedItems) {
+    if (mobileData && mobileData.capturedItems && mobileData.capturedItems.length > 0) {
       for (const item of mobileData.capturedItems) {
         try {
           const imageUrls = JSON.parse(item.image_urls || '[]');
@@ -360,6 +360,46 @@ app.get('/dashboard', async (c) => {
           }
         } catch (e) {
           console.error('Failed to parse image_urls:', e);
+        }
+      }
+    } else {
+      // Fallback: Check R2 bucket for images if no captured items
+      console.log(`⚠️ No capturedItems for SKU ${sku}, checking R2 bucket...`);
+      const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
+      
+      for (let i = 1; i <= 10; i++) {
+        const imageUrl = `${R2_PUBLIC_URL}/${sku}_${i}.jpg`;
+        
+        try {
+          const headResponse = await fetch(imageUrl, { method: 'HEAD' });
+          
+          if (headResponse.ok) {
+            const lastModified = headResponse.headers.get('Last-Modified') || new Date().toUTCString();
+            
+            mobileImages.push({
+              id: `r2_${sku}_${i}`,
+              original_url: imageUrl,
+              processed_url: null,
+              status: 'mobile',
+              created_at: lastModified,
+              filename: `${sku}_${i}.jpg`,
+              // Store placeholder mobile data
+              item_code: `${sku}_${i}`,
+              actual_measurements: null,
+              condition: 'Unknown',
+              material: null,
+              inspection_notes: null
+            });
+            
+            console.log(`✅ Found R2 image: ${sku}_${i}.jpg`);
+          } else {
+            // Stop checking further images
+            console.log(`⏹️ No more R2 images found after ${sku}_${i-1}.jpg`);
+            break;
+          }
+        } catch (e) {
+          console.error(`❌ Failed to check R2 image ${sku}_${i}.jpg:`, e);
+          break;
         }
       }
     }
