@@ -2059,15 +2059,14 @@ app.get('/api/products/search', async (c) => {
             }
         }
         
-        // Fallback: Try Mobile App Workers API directly (local development)
+        // Fallback: Try R2 Public URL directly (local development)
         if (mobileAppImages.length === 0) {
-            console.log('🔄 Trying Mobile App Workers API for images...');
-            const MOBILE_API_URL = 'https://image-upload-api.jinkedon2.workers.dev';
+            console.log('🔄 Trying R2 Public URL for mobile app images...');
             
             // Try common pattern: {SKU}_{1-10}.jpg
             for (let i = 1; i <= 10; i++) {
                 try {
-                    const imageUrl = `${MOBILE_API_URL}/${sku}_${i}.jpg`;
+                    const imageUrl = `${R2_PUBLIC_URL}/${sku}_${i}.jpg`;
                     const headResponse = await fetch(imageUrl, { method: 'HEAD' });
                     
                     if (headResponse.ok) {
