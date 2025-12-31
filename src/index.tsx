@@ -316,10 +316,25 @@ app.get('/dashboard', async (c) => {
     }
   }
 
-  // 4. Merge all data into products
-  const products = productsData.map((p: any) => {
-    const dbImages = imagesResult.results.filter((i: any) => i.product_id === p.id);
-    const mobileData = p; // Already have all mobile data
+  // 4. Get local product master data (CSV origin)
+  const localProductsMap = new Map();
+  for (const lp of localProductsResult.results) {
+    const sku = (lp as any).sku;
+    const fullProduct = await c.env.DB.prepare(`
+      SELECT * FROM products WHERE sku = ?
+    `).bind(sku).first();
+    
+    if (fullProduct) {
+      localProductsMap.set(sku, fullProduct);
+    }
+  }
+  
+  // 5. Merge local master data with mobile app data
+  const products = [];
+  
+  for (const mobileData of productsData) {
+    const sku = mobileData.sku;
+    const localProduct = localProductsMap.get(sku);
     
     // Extract images from mobile app capturedItems
     const mobileImages = [];
@@ -349,18 +364,41 @@ app.get('/dashboard', async (c) => {
       }
     }
     
-    console.log(`📦 Product ${p.sku}: ${dbImages.length} DB images + ${mobileImages.length} mobile images`);
+    // Get DB images
+    const dbImages = imagesResult.results.filter((i: any) => {
+      // Match by SKU since product_id might be different
+      if (localProduct) {
+        return i.product_id === (localProduct as any).id;
+      }
+      return false;
+    });
     
-    // Merge product data with mobile data
-    return {
-        ...p,
-        // Override with mobile app data if available
-        ...(mobileData || {}),
-        images: [...dbImages, ...mobileImages],
-        capturedCount: mobileData?.capturedCount || 0,
-        hasCapturedData: (mobileData?.capturedCount || 0) > 0
+    console.log(`📦 Product ${sku}: ${dbImages.length} DB images + ${mobileImages.length} mobile images`);
+    
+    // Merge: Use local master data as base, override with mobile app updates if newer
+    const mergedProduct = {
+      // Base: Local CSV master data
+      ...(localProduct || {}),
+      // Add mobile app captured data
+      capturedItems: mobileData.capturedItems || [],
+      capturedCount: mobileData.capturedCount || 0,
+      latestItem: mobileData.latestItem || null,
+      hasCapturedData: (mobileData.capturedCount || 0) > 0,
+      images: [...dbImages, ...mobileImages],
+      // Override with mobile app master data if it's been updated there
+      // (スマホアプリ側で更新された場合は、そちらを優先)
+      ...(mobileData.updated_at > (localProduct as any)?.updated_at ? {
+        barcode: mobileData.barcode || (localProduct as any)?.barcode,
+        name: mobileData.name || (localProduct as any)?.name,
+        brand: mobileData.brand || (localProduct as any)?.brand,
+        size: mobileData.size || (localProduct as any)?.size,
+        color: mobileData.color || (localProduct as any)?.color,
+        price: mobileData.price || (localProduct as any)?.price,
+      } : {})
     };
-  });
+    
+    products.push(mergedProduct);
+  }
 
   return c.render(
     <Layout active="dashboard" title="商品画像一覧（SKU別）">
