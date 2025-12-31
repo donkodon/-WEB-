@@ -291,26 +291,30 @@ app.get('/dashboard', async (c) => {
   if (c.env.PRODUCT_IMAGES) {
     try {
       const list = await c.env.PRODUCT_IMAGES.list();
-      r2Available = true;
       console.log(`✅ R2 binding available: ${list.objects.length} objects found`);
       
-      for (const obj of list.objects) {
-        const filename = obj.key;
-        // Extract SKU from filename (pattern: SKU_number.jpg)
-        const match = filename.match(/^(.+?)_\d+\.jpg$/);
-        if (match) {
-          const sku = match[1];
-          if (!r2Images.has(sku)) {
-            r2Images.set(sku, []);
+      // Only use R2 binding if objects are found
+      if (list.objects.length > 0) {
+        r2Available = true;
+        
+        for (const obj of list.objects) {
+          const filename = obj.key;
+          // Extract SKU from filename (pattern: SKU_number.jpg)
+          const match = filename.match(/^(.+?)_\d+\.jpg$/);
+          if (match) {
+            const sku = match[1];
+            if (!r2Images.has(sku)) {
+              r2Images.set(sku, []);
+            }
+            r2Images.get(sku).push({
+              id: `r2_${filename}`,
+              original_url: `${R2_PUBLIC_URL}/${filename}`,
+              processed_url: null,
+              status: 'mobile',
+              created_at: obj.uploaded,
+              filename: filename
+            });
           }
-          r2Images.get(sku).push({
-            id: `r2_${filename}`,
-            original_url: `${R2_PUBLIC_URL}/${filename}`,
-            processed_url: null,
-            status: 'mobile',
-            created_at: obj.uploaded,
-            filename: filename
-          });
         }
       }
     } catch (e) {
@@ -318,7 +322,7 @@ app.get('/dashboard', async (c) => {
     }
   }
   
-  // Fallback: Check R2 public URL directly (local development)
+  // Fallback: Check R2 public URL directly (local development or empty R2 binding)
   if (!r2Available) {
     console.log('⚠️ R2 binding not available, using public URL fallback');
     
