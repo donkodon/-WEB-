@@ -282,14 +282,18 @@ app.get('/dashboard', async (c) => {
     SELECT * FROM images
   `).all();
 
-  // 3. Also fetch images from R2 bucket (mobile app images)
+  // 3. Fetch mobile app images from R2 bucket
   const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
   const r2Images = new Map(); // Map of SKU -> array of image URLs
   
-  // Try to list R2 objects
+  // Try R2 binding first (production)
+  let r2Available = false;
   if (c.env.PRODUCT_IMAGES) {
     try {
       const list = await c.env.PRODUCT_IMAGES.list();
+      r2Available = true;
+      console.log(`✅ R2 binding available: ${list.objects.length} objects found`);
+      
       for (const obj of list.objects) {
         const filename = obj.key;
         // Extract SKU from filename (pattern: SKU_number.jpg)
@@ -310,7 +314,49 @@ app.get('/dashboard', async (c) => {
         }
       }
     } catch (e) {
-      console.error('Failed to list R2 objects:', e);
+      console.error('Failed to list R2 objects via binding:', e);
+    }
+  }
+  
+  // Fallback: Check R2 public URL directly (local development)
+  if (!r2Available) {
+    console.log('⚠️ R2 binding not available, using public URL fallback');
+    
+    // For each product, try to check if images exist on R2
+    for (const product of productsResult.results) {
+      const sku = product.sku;
+      const productImages = [];
+      
+      // Try to find images with pattern: {SKU}_1.jpg, {SKU}_2.jpg, etc.
+      for (let i = 1; i <= 10; i++) {
+        try {
+          const imageUrl = `${R2_PUBLIC_URL}/${sku}_${i}.jpg`;
+          const headResponse = await fetch(imageUrl, { method: 'HEAD' });
+          
+          if (headResponse.ok) {
+            const lastModified = headResponse.headers.get('last-modified');
+            productImages.push({
+              id: `r2_${sku}_${i}`,
+              original_url: imageUrl,
+              processed_url: null,
+              status: 'mobile',
+              created_at: lastModified || new Date().toISOString(),
+              filename: `${sku}_${i}.jpg`
+            });
+            console.log(`✅ Found mobile image: ${sku}_${i}.jpg`);
+          } else {
+            // No more images for this SKU
+            break;
+          }
+        } catch (e) {
+          // Error checking image, stop
+          break;
+        }
+      }
+      
+      if (productImages.length > 0) {
+        r2Images.set(sku, productImages);
+      }
     }
   }
 
@@ -318,6 +364,8 @@ app.get('/dashboard', async (c) => {
   const products = productsResult.results.map((p: any) => {
     const dbImages = imagesResult.results.filter((i: any) => i.product_id === p.id);
     const mobileImages = r2Images.get(p.sku) || [];
+    
+    console.log(`📦 Product ${p.sku}: ${dbImages.length} DB images + ${mobileImages.length} mobile images`);
     
     return {
         ...p,
@@ -903,6 +951,14 @@ app.get('/dashboard', async (c) => {
             </div>
             
             <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {/* Debug Info */}
+                {product.images.length === 0 && (
+                  <div class="col-span-full text-center py-8 text-gray-400">
+                    <i class="fas fa-image text-3xl mb-2"></i>
+                    <p class="text-sm">画像がありません（SKU: {product.sku}）</p>
+                  </div>
+                )}
+                
                 {/* Existing Images */}
                 {product.images.map((img: any) => (
                    <div class="relative group aspect-square" data-image-id={img.id}>
