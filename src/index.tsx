@@ -316,7 +316,7 @@ app.get('/dashboard', async (c) => {
                         </button>
                         <button class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 model-option" data-model="birefnet-general" role="menuitem">
                              <span class="flex items-center justify-between">
-                                <span>BRIA rmbg2.0 (高精度)</span>
+                                <span>withoutBG</span>
                                 <i class="fas fa-check text-blue-600 check-icon hidden"></i>
                             </span>
                         </button>
@@ -730,7 +730,7 @@ app.get('/dashboard', async (c) => {
                         return;
                     }
                     
-                    const modelName = window.currentBgModel === 'u2netp' ? 'rembg (標準)' : 'BRIA rmbg2.0 (高精度)';
+                    const modelName = window.currentBgModel === 'u2netp' ? 'rembg (標準)' : 'withoutBG';
                     const confirmation = confirm(checkedImages.length + '枚の画像の背景を削除しますか？\\n使用モデル: ' + modelName);
                     if (!confirmation) return;
                     
