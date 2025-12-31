@@ -2576,21 +2576,37 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
             // No JSON body or parse error, ignore and use default
         }
         
-        // Get image from database
-        const imageResult = await c.env.DB.prepare(`
-            SELECT * FROM images WHERE id = ?
-        `).bind(imageId).first();
+        // Check if this is an R2 image (starts with r2_)
+        let originalUrl: string;
+        let isR2Image = false;
+        
+        if (imageId.startsWith('r2_')) {
+            // R2 image - construct URL from ID
+            isR2Image = true;
+            const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
+            
+            // Extract filename from ID: r2_123_1 -> 123_1.jpg
+            const filename = imageId.replace('r2_', '') + '.jpg';
+            originalUrl = `${R2_PUBLIC_URL}/${filename}`;
+            
+            console.log(`📸 Processing R2 image: ${imageId} -> ${originalUrl}`);
+        } else {
+            // Database image
+            const imageResult = await c.env.DB.prepare(`
+                SELECT * FROM images WHERE id = ?
+            `).bind(imageId).first();
 
-        if (!imageResult) {
-            return c.json({ error: 'Image not found' }, 404);
+            if (!imageResult) {
+                return c.json({ error: 'Image not found' }, 404);
+            }
+
+            originalUrl = imageResult.original_url as string;
+
+            // Update status to processing
+            await c.env.DB.prepare(`
+                UPDATE images SET status = 'processing' WHERE id = ?
+            `).bind(imageId).run();
         }
-
-        const originalUrl = imageResult.original_url as string;
-
-        // Update status to processing
-        await c.env.DB.prepare(`
-            UPDATE images SET status = 'processing' WHERE id = ?
-        `).bind(imageId).run();
 
         // ==========================================
         // Model Selection: withoutBG vs rembg
@@ -2602,13 +2618,25 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
             console.log('🚀 Using withoutBG Focus model (self-hosted)');
             
             try {
-                const endpoint = image_base64 
-                    ? `${WITHOUTBG_API}/api/remove-bg-base64`
-                    : `${WITHOUTBG_API}/api/remove-bg-from-url`;
+                // Check if originalUrl is a data URL
+                const isDataUrl = originalUrl.startsWith('data:');
+                let endpoint: string;
+                let payload: any;
                 
-                const payload = image_base64
-                    ? { image_base64, bgcolor: [255, 255, 255, 255], model: 'withoutbg' }
-                    : { image_url: originalUrl, bgcolor: [255, 255, 255, 255], model: 'withoutbg' };
+                if (isDataUrl) {
+                    // Extract base64 data from data URL
+                    const matches = originalUrl.match(/^data:([^;]+);base64,(.+)$/);
+                    if (!matches) {
+                        throw new Error('Invalid data URL format');
+                    }
+                    const base64Data = matches[2];
+                    
+                    endpoint = `${WITHOUTBG_API}/api/remove-bg-base64`;
+                    payload = { image_base64: base64Data, bgcolor: [255, 255, 255, 255], model: 'withoutbg' };
+                } else {
+                    endpoint = `${WITHOUTBG_API}/api/remove-bg-from-url`;
+                    payload = { image_url: originalUrl, bgcolor: [255, 255, 255, 255], model: 'withoutbg' };
+                }
                 
                 const withoutbgResponse = await fetch(endpoint, {
                     method: 'POST',
@@ -2627,10 +2655,12 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
                 const base64 = Buffer.from(processedImageBuffer).toString('base64');
                 const processedDataUrl = `data:${mimeType};base64,${base64}`;
 
-                // Update DB
-                await c.env.DB.prepare(`
-                    UPDATE images SET processed_url = ?, status = 'completed' WHERE id = ?
-                `).bind(processedDataUrl, imageId).run();
+                // Update DB (only for non-R2 images)
+                if (!isR2Image) {
+                    await c.env.DB.prepare(`
+                        UPDATE images SET processed_url = ?, status = 'completed' WHERE id = ?
+                    `).bind(processedDataUrl, imageId).run();
+                }
 
                 return c.json({ 
                     success: true,
@@ -2640,10 +2670,12 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
                 });
             } catch (apiError: any) {
                 console.error('❌ withoutBG API failed:', apiError.message);
-                // Mark as failed
-                await c.env.DB.prepare(`
-                    UPDATE images SET status = 'failed' WHERE id = ?
-                `).bind(imageId).run();
+                // Mark as failed (only for non-R2 images)
+                if (!isR2Image) {
+                    await c.env.DB.prepare(`
+                        UPDATE images SET status = 'failed' WHERE id = ?
+                    `).bind(imageId).run();
+                }
                 
                 return c.json({ 
                     success: false,
@@ -2693,9 +2725,12 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
         }
 
         if (!response.ok) {
-            await c.env.DB.prepare(`
-                UPDATE images SET status = 'failed' WHERE id = ?
-            `).bind(imageId).run();
+            // Mark as failed (only for non-R2 images)
+            if (!isR2Image) {
+                await c.env.DB.prepare(`
+                    UPDATE images SET status = 'failed' WHERE id = ?
+                `).bind(imageId).run();
+            }
             const errorText = await response.text();
             throw new Error(`Background removal failed: ${response.statusText} - ${errorText}`);
         }
@@ -2713,10 +2748,12 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
         const mimeType = contentType.includes('jpeg') ? 'image/jpeg' : 'image/png';
         const dataUrl = `data:${mimeType};base64,${base64}`;
 
-        // Update database with processed image
-        await c.env.DB.prepare(`
-            UPDATE images SET processed_url = ?, status = 'completed' WHERE id = ?
-        `).bind(dataUrl, imageId).run();
+        // Update database with processed image (only for non-R2 images)
+        if (!isR2Image) {
+            await c.env.DB.prepare(`
+                UPDATE images SET processed_url = ?, status = 'completed' WHERE id = ?
+            `).bind(dataUrl, imageId).run();
+        }
 
         return c.json({ 
             success: true,
