@@ -8,6 +8,20 @@ SmartMeasure WEBアプリとスマホアプリの連携機能を最小限実装�
 
 ## 📋 実装内容
 
+### **0. スマホアプリ画像の自動取得**
+
+**スマホアプリで撮影した画像を自動表示:**
+- **R2バケット**: `product-images-saisunsatsuei`
+- **Public URL**: `https://pub-300562464768499b8fcaee903d0f9861.r2.dev`
+- **ファイル名規則**: `{SKU}_{連番}_{タイムスタンプ}.jpg`
+
+**動作:**
+- ログイン時に自動的にR2バケットから画像を同期
+- SKU検索APIでスマホアプリの画像も含めて返却
+- `source: 'mobile'` でスマホアプリの画像を識別
+
+---
+
 ### **1. CSV一括登録API（新規追加）**
 
 **エンドポイント:**
@@ -81,8 +95,18 @@ GET http://localhost:3000/api/products/search?sku=1025L190003
         "sku": "1025L190003",
         "item_code": "1025L190003_1",
         "image_urls": "[\"https://example.com/image1.jpg\"]",
+        "source": "webapp",
         "condition": "Unknown",
         "photographed_at": "2025-01-01 12:30:00"
+      },
+      {
+        "id": "mobile_0",
+        "sku": "1025L190003",
+        "item_code": "1025L190003_1_1735592163456",
+        "image_urls": "[\"https://pub-300562464768499b8fcaee903d0f9861.r2.dev/1025L190003_1_1735592163456.jpg\"]",
+        "source": "mobile",
+        "condition": "Unknown",
+        "photographed_at": "2025-01-01 12:35:00"
       }
     ],
     "latestItem": {
@@ -90,13 +114,21 @@ GET http://localhost:3000/api/products/search?sku=1025L190003
       "sku": "1025L190003",
       "item_code": "1025L190003_1",
       "image_urls": "[\"https://example.com/image1.jpg\"]",
+      "source": "webapp",
       "condition": "Unknown",
       "photographed_at": "2025-01-01 12:30:00"
     },
-    "capturedCount": 1
+    "capturedCount": 2,
+    "webAppImageCount": 1,
+    "mobileAppImageCount": 1
   }
 }
 ```
+
+**重要なフィールド:**
+- `source`: 画像のソース (`webapp` または `mobile`)
+- `webAppImageCount`: WEBアプリの画像数
+- `mobileAppImageCount`: スマホアプリの画像数
 
 ---
 

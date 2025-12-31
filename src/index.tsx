@@ -2036,28 +2036,60 @@ app.get('/api/products/search', async (c) => {
             ORDER BY id DESC
         `).bind(sku).all();
 
+        // Also check R2 bucket for mobile app images
+        const mobileAppImages = [];
+        const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
+        
+        if (c.env.PRODUCT_IMAGES) {
+            try {
+                const list = await c.env.PRODUCT_IMAGES.list({ prefix: sku });
+                for (const obj of list.objects) {
+                    const filename = obj.key;
+                    if (filename.startsWith(sku)) {
+                        mobileAppImages.push({
+                            url: `${R2_PUBLIC_URL}/${filename}`,
+                            filename: filename,
+                            uploaded: obj.uploaded
+                        });
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to fetch R2 images:', e);
+            }
+        }
+
+        // Combine WEB app images and mobile app images
+        const allImages = [
+            ...images.results.map((img: any) => ({
+                id: img.id,
+                sku: sku,
+                item_code: `${sku}_${img.id}`,
+                image_urls: JSON.stringify([img.original_url]),
+                source: 'webapp',
+                condition: 'Unknown',
+                photographed_at: img.photographed_at
+            })),
+            ...mobileAppImages.map((img, index) => ({
+                id: `mobile_${index}`,
+                sku: sku,
+                item_code: img.filename.replace('.jpg', ''),
+                image_urls: JSON.stringify([img.url]),
+                source: 'mobile',
+                condition: 'Unknown',
+                photographed_at: img.uploaded
+            }))
+        ];
+
         return c.json({
             success: true,
             product: {
                 ...product,
-                hasCapturedData: images.results.length > 0,
-                capturedItems: images.results.map((img: any) => ({
-                    id: img.id,
-                    sku: sku,
-                    item_code: `${sku}_${img.id}`,
-                    image_urls: JSON.stringify([img.original_url]),
-                    condition: 'Unknown',
-                    photographed_at: img.photographed_at
-                })),
-                latestItem: images.results.length > 0 ? {
-                    id: images.results[0].id,
-                    sku: sku,
-                    item_code: `${sku}_${images.results[0].id}`,
-                    image_urls: JSON.stringify([images.results[0].original_url]),
-                    condition: 'Unknown',
-                    photographed_at: images.results[0].photographed_at
-                } : null,
-                capturedCount: images.results.length
+                hasCapturedData: allImages.length > 0,
+                capturedItems: allImages,
+                latestItem: allImages.length > 0 ? allImages[0] : null,
+                capturedCount: allImages.length,
+                webAppImageCount: images.results.length,
+                mobileAppImageCount: mobileAppImages.length
             }
         });
 
