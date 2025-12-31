@@ -12,16 +12,21 @@
   },
   // Secrets (sensitive - use: wrangler secret put BRIA_API_KEY)
   // BRIA_API_KEY - Fal.ai API key for BRIA RMBG 2.0
+  
+  // R2 Buckets - Shared with Bubble app
+  // Note: BubbleアプリとR2バケットを共有する場合、バケット名を設定
+  // Public URL: https://pub-300562464768499b8fcaee903d0f9861.r2.dev
+  // "r2_buckets": [
+  //   {
+  //     "binding": "PRODUCT_IMAGES",
+  //     "bucket_name": "bubble-product-images"
+  //   }
+  // ],
+  
   // "kv_namespaces": [
   //   {
   //     "binding": "MY_KV_NAMESPACE",
   //     "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-  //   }
-  // ],
-  // "r2_buckets": [
-  //   {
-  //     "binding": "MY_BUCKET",
-  //     "bucket_name": "my-bucket"
   //   }
   // ],
   // "d1_databases": [
