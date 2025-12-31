@@ -8,10 +8,11 @@
   ],
   // Environment variables (non-sensitive)
   "vars": {
-    "BG_REMOVAL_API_URL": "http://127.0.0.1:8000"
+    "BG_REMOVAL_API_URL": "http://127.0.0.1:8000",
+    "WITHOUTBG_API_URL": "http://127.0.0.1:8001"
   },
-  // Secrets (sensitive - use: wrangler secret put BRIA_API_KEY)
-  // BRIA_API_KEY - Fal.ai API key for BRIA RMBG 2.0
+  // Secrets (sensitive - use: wrangler secret put SECRET_NAME)
+  // BRIA_API_KEY - Fal.ai API key for BRIA RMBG 2.0 (not used anymore)
   
   // R2 Buckets - Shared with Bubble app
   // Note: BubbleアプリとR2バケットを共有

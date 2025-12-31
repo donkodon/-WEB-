@@ -9,6 +9,7 @@ type Bindings = {
   FAL_API_KEY?: string
   BRIA_API_KEY?: string
   BG_REMOVAL_API_URL?: string
+  WITHOUTBG_API_URL?: string
   PRODUCT_IMAGES?: R2Bucket
 }
 
@@ -1933,62 +1934,46 @@ app.post('/api/remove-bg', async (c) => {
             return c.json({ error: 'imageUrl is required' }, 400);
         }
 
-        // Check if using BRIA rmbg2.0 (High Precision) via Fal.ai API
+        // Check if using withoutBG (birefnet-general) - Self-hosted high quality model
         if (model === 'birefnet-general') {
-            if (!c.env.FAL_API_KEY || c.env.FAL_API_KEY === 'demo') {
-                 // Fallback to Python server if no valid API key
-                 console.log('⚠️ No valid FAL_API_KEY found, falling back to local Python server for birefnet-general');
-            } else {
-                console.log('🚀 Using Fal.ai API for BRIA rmbg2.0');
-                
-                // 1. Upload/Prepare Image for Fal.ai
-                // Fal.ai accepts image_url. If we have data URL, we can send it directly if supported,
-                // or we might need to upload it. For now, let's try sending data URL directly.
-                
-                const falResponse = await fetch('https://queue.fal.run/fal-ai/bria/rmbg-2.0', {
+            const WITHOUTBG_API = c.env.WITHOUTBG_API_URL || 'http://127.0.0.1:8001';
+            console.log('🚀 Using withoutBG Focus model (self-hosted)');
+            
+            try {
+                const withoutbgResponse = await fetch(`${WITHOUTBG_API}/api/remove-bg-from-url`, {
                     method: 'POST',
-                    headers: {
-                        'Authorization': `Key ${c.env.FAL_API_KEY}`,
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        image_url: originalUrl
+                        image_url: imageUrl,
+                        bgcolor: [255, 255, 255, 255],
+                        model: 'withoutbg'
                     })
                 });
 
-                if (!falResponse.ok) {
-                    const errText = await falResponse.text();
-                    throw new Error(`Fal.ai API failed: ${falResponse.status} - ${errText}`);
+                if (!withoutbgResponse.ok) {
+                    const errText = await withoutbgResponse.text();
+                    throw new Error(`withoutBG API failed: ${withoutbgResponse.status} - ${errText}`);
                 }
 
-                const falResult = await falResponse.json();
-                // Expected response: { "image": { "url": "..." } }
-                
-                if (falResult.image && falResult.image.url) {
-                    // Fetch the processed image to save as data URL (consistent with local storage)
-                    const imgRes = await fetch(falResult.image.url);
-                    const imgBuffer = await imgRes.arrayBuffer();
-                    const base64 = btoa(new Uint8Array(imgBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ''));
-                    const processedDataUrl = `data:image/png;base64,${base64}`;
+                // Get the processed image
+                const processedImageBuffer = await withoutbgResponse.arrayBuffer();
+                const mimeType = withoutbgResponse.headers.get('Content-Type') || 'image/png';
+                const base64 = btoa(new Uint8Array(processedImageBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ''));
+                const processedDataUrl = `data:${mimeType};base64,${base64}`;
 
-                    // Update DB
-                    await c.env.DB.prepare(`
-                        UPDATE images SET processed_url = ?, status = 'completed' WHERE id = ?
-                    `).bind(processedDataUrl, imageId).run();
-
-                    return c.json({ 
-                        success: true,
-                        imageId,
-                        processedUrl: processedDataUrl,
-                        message: 'Background removed using Fal.ai (BRIA rmbg2.0)'
-                    });
-                } else {
-                    throw new Error('Invalid response from Fal.ai');
-                }
+                return c.json({
+                    success: true,
+                    imageId,
+                    processedUrl: processedDataUrl,
+                    message: 'Background removed using withoutBG Focus'
+                });
+            } catch (apiError: any) {
+                console.error('❌ withoutBG API failed:', apiError.message);
+                throw new Error(`withoutBG processing failed: ${apiError.message}`);
             }
         }
 
-        // Use self-hosted rembg API server (Python)
+        // Use self-hosted rembg API server (Python) - default for 'u2netp'
         const BG_REMOVAL_API = c.env.BG_REMOVAL_API_URL || 'http://127.0.0.1:8000';
         
         const response = await fetch(`${BG_REMOVAL_API}/api/remove-bg-from-url`, {
@@ -2069,60 +2054,66 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
         `).bind(imageId).run();
 
         // ==========================================
-        // Model Selection: BRIA API vs Self-hosted
+        // Model Selection: withoutBG vs rembg
         // ==========================================
         
-        // BRIA RMBG 2.0 via Fal.ai API (model === 'birefnet-general')
-        if (model === 'birefnet-general' && c.env.BRIA_API_KEY && c.env.BRIA_API_KEY !== 'your-fal-api-key-here') {
-            console.log('🚀 Using Fal.ai API for BRIA rmbg2.0');
+        // withoutBG (birefnet-general) - High quality open source model
+        if (model === 'birefnet-general') {
+            const WITHOUTBG_API = c.env.WITHOUTBG_API_URL || 'http://127.0.0.1:8001';
+            console.log('🚀 Using withoutBG Focus model (self-hosted)');
             
             try {
-                const falResponse = await fetch('https://queue.fal.run/fal-ai/bria/rmbg-2.0', {
+                const endpoint = image_base64 
+                    ? `${WITHOUTBG_API}/api/remove-bg-base64`
+                    : `${WITHOUTBG_API}/api/remove-bg-from-url`;
+                
+                const payload = image_base64
+                    ? { image_base64, bgcolor: [255, 255, 255, 255], model: 'withoutbg' }
+                    : { image_url: originalUrl, bgcolor: [255, 255, 255, 255], model: 'withoutbg' };
+                
+                const withoutbgResponse = await fetch(endpoint, {
                     method: 'POST',
-                    headers: {
-                        'Authorization': `Key ${c.env.BRIA_API_KEY}`,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        image_url: originalUrl
-                    })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
                 });
 
-                if (!falResponse.ok) {
-                    const errText = await falResponse.text();
-                    throw new Error(`Fal.ai API failed: ${falResponse.status} - ${errText}`);
+                if (!withoutbgResponse.ok) {
+                    const errText = await withoutbgResponse.text();
+                    throw new Error(`withoutBG API failed: ${withoutbgResponse.status} - ${errText}`);
                 }
 
-                const falResult = await falResponse.json();
-                
-                if (falResult.image && falResult.image.url) {
-                    // Fetch the processed image to save as data URL
-                    const imgRes = await fetch(falResult.image.url);
-                    const imgBuffer = await imgRes.arrayBuffer();
-                    const base64 = Buffer.from(imgBuffer).toString('base64');
-                    const processedDataUrl = `data:image/png;base64,${base64}`;
+                // Get the processed image
+                const processedImageBuffer = await withoutbgResponse.arrayBuffer();
+                const mimeType = withoutbgResponse.headers.get('Content-Type') || 'image/png';
+                const base64 = Buffer.from(processedImageBuffer).toString('base64');
+                const processedDataUrl = `data:${mimeType};base64,${base64}`;
 
-                    // Update DB
-                    await c.env.DB.prepare(`
-                        UPDATE images SET processed_url = ?, status = 'completed' WHERE id = ?
-                    `).bind(processedDataUrl, imageId).run();
+                // Update DB
+                await c.env.DB.prepare(`
+                    UPDATE images SET processed_url = ?, status = 'completed' WHERE id = ?
+                `).bind(processedDataUrl, imageId).run();
 
-                    return c.json({ 
-                        success: true,
-                        imageId,
-                        processedUrl: processedDataUrl,
-                        message: 'Background removed using Fal.ai (BRIA rmbg2.0)'
-                    });
-                } else {
-                    throw new Error('Invalid response from Fal.ai');
-                }
+                return c.json({ 
+                    success: true,
+                    imageId,
+                    processedUrl: processedDataUrl,
+                    message: 'Background removed using withoutBG Focus'
+                });
             } catch (apiError: any) {
-                console.error('❌ BRIA API failed, falling back to self-hosted:', apiError.message);
-                // Fall through to self-hosted server below
+                console.error('❌ withoutBG API failed:', apiError.message);
+                // Mark as failed
+                await c.env.DB.prepare(`
+                    UPDATE images SET status = 'failed' WHERE id = ?
+                `).bind(imageId).run();
+                
+                return c.json({ 
+                    success: false,
+                    error: `withoutBG processing failed: ${apiError.message}`
+                }, 500);
             }
         }
 
-        // Self-hosted rembg server (Python) - default for 'u2netp' or fallback
+        // Self-hosted rembg server (Python) - default for 'u2netp'
         const BG_REMOVAL_API = c.env.BG_REMOVAL_API_URL || 'http://127.0.0.1:8000';
         let response: Response;
         
