@@ -210,7 +210,62 @@ app.get('/', (c) => {
   )
 })
 
-app.post('/login', (c) => {
+app.post('/login', async (c) => {
+  // Auto-sync images from Bubble on login
+  try {
+    const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
+    
+    if (c.env.PRODUCT_IMAGES) {
+      console.log('🔄 Auto-syncing from R2 on login...');
+      
+      const list = await c.env.PRODUCT_IMAGES.list();
+      let syncedCount = 0;
+      
+      for (const obj of list.objects) {
+        const filename = obj.key;
+        const parts = filename.replace('.jpg', '').split('_');
+        
+        if (parts.length < 3) continue;
+        
+        const sku = parts[0];
+        const imageUrl = `${R2_PUBLIC_URL}/${filename}`;
+        
+        // Check if product exists, create if not
+        const product = await c.env.DB.prepare(`
+          SELECT id FROM products WHERE sku = ?
+        `).bind(sku).first();
+        
+        if (!product) {
+          await c.env.DB.prepare(`
+            INSERT OR IGNORE INTO products (sku, name, category)
+            VALUES (?, ?, ?)
+          `).bind(sku, `商品 ${sku}`, 'Imported').run();
+        }
+        
+        // Check if image already exists
+        const existingImage = await c.env.DB.prepare(`
+          SELECT id FROM images WHERE original_url = ?
+        `).bind(imageUrl).first();
+        
+        if (!existingImage) {
+          const timestamp = parts[2];
+          await c.env.DB.prepare(`
+            INSERT INTO images (product_id, original_url, status, created_at)
+            SELECT id, ?, 'pending', datetime(?, 'unixepoch', 'subsec')
+            FROM products WHERE sku = ?
+          `).bind(imageUrl, parseInt(timestamp) / 1000, sku).run();
+          
+          syncedCount++;
+        }
+      }
+      
+      console.log(`✅ Auto-sync complete: ${syncedCount} new images`);
+    }
+  } catch (error) {
+    console.error('⚠️ Auto-sync error (non-critical):', error);
+    // Continue to dashboard even if sync fails
+  }
+  
   return c.redirect('/dashboard')
 })
 
@@ -237,12 +292,8 @@ app.get('/dashboard', async (c) => {
   return c.render(
     <Layout active="dashboard" title="商品画像一覧（SKU別）">
       <div class="mb-6 flex justify-between items-end">
-        <p class="text-gray-500 text-sm">撮影済み画像の管理・編集・ダウンロードが可能です。</p>
+        <p class="text-gray-500 text-sm">撮影済み画像の管理・編集・ダウンロードが可能です。<span class="ml-2 text-blue-600 font-medium"><i class="fas fa-sync-alt mr-1"></i>Bubble画像は自動同期済み</span></p>
         <div class="flex space-x-3">
-            <button id="btn-sync-bubble" class="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-4 py-2 rounded-lg flex items-center hover:from-purple-700 hover:to-blue-700 transition-all text-sm font-bold shadow-md">
-                <i class="fas fa-sync-alt mr-2"></i>
-                Bubbleから同期
-            </button>
             <div class="relative inline-block text-left group">
                 <div class="inline-flex shadow-sm rounded-lg" role="group">
                     <button id="btn-batch-remove-bg" class="px-4 py-2 text-sm font-medium text-blue-600 bg-white border border-blue-200 rounded-l-lg hover:bg-blue-50 focus:z-10 focus:ring-2 focus:ring-blue-500 focus:text-blue-700 flex items-center">
@@ -589,47 +640,6 @@ app.get('/dashboard', async (c) => {
                 } finally {
                     btnDownloadProcessed.disabled = false;
                     btnDownloadProcessed.innerHTML = '<i class="fas fa-magic mr-2"></i>編集画像DL';
-                }
-            });
-        })();
-      `}} />
-      
-      {/* Bubble Sync Script */}
-      <script dangerouslySetInnerHTML={{__html: `
-        (function() {
-            const btnSync = document.getElementById('btn-sync-bubble');
-            if (!btnSync) return;
-            
-            btnSync.addEventListener('click', async function() {
-                const confirmation = confirm('Bubbleアプリから新しい画像を同期しますか？\\n\\n※ R2バケットから画像URLを取得してD1に登録します。');
-                if (!confirmation) return;
-                
-                btnSync.disabled = true;
-                btnSync.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>同期中...';
-                
-                try {
-                    const response = await fetch('/api/sync-from-bubble', {
-                        method: 'POST'
-                    });
-                    
-                    if (response.ok) {
-                        const data = await response.json();
-                        alert('同期完了！\\n\\n' +
-                              '新規登録: ' + data.synced + '枚\\n' +
-                              'スキップ: ' + data.skipped + '枚\\n' +
-                              '合計: ' + data.total + '枚\\n\\n' +
-                              'ページをリロードして確認してください。');
-                        window.location.reload();
-                    } else {
-                        const error = await response.json();
-                        alert('同期失敗: ' + (error.details || error.message || error.error));
-                    }
-                } catch (e) {
-                    console.error('Sync error:', e);
-                    alert('同期中にエラーが発生しました: ' + e.message);
-                } finally {
-                    btnSync.disabled = false;
-                    btnSync.innerHTML = '<i class="fas fa-sync-alt mr-2"></i>Bubbleから同期';
                 }
             });
         })();
