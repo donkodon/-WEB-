@@ -2040,6 +2040,7 @@ app.get('/api/products/search', async (c) => {
         const mobileAppImages = [];
         const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
         
+        // Try R2 bucket binding first (production)
         if (c.env.PRODUCT_IMAGES) {
             try {
                 const list = await c.env.PRODUCT_IMAGES.list({ prefix: sku });
@@ -2054,8 +2055,47 @@ app.get('/api/products/search', async (c) => {
                     }
                 }
             } catch (e) {
-                console.error('Failed to fetch R2 images:', e);
+                console.error('Failed to fetch R2 images via binding:', e);
             }
+        }
+        
+        // Fallback: Try Mobile App Workers API directly (local development)
+        if (mobileAppImages.length === 0) {
+            console.log('🔄 Trying Mobile App Workers API for images...');
+            const MOBILE_API_URL = 'https://image-upload-api.jinkedon2.workers.dev';
+            
+            // Try common pattern: {SKU}_{1-10}.jpg
+            for (let i = 1; i <= 10; i++) {
+                try {
+                    const imageUrl = `${MOBILE_API_URL}/${sku}_${i}.jpg`;
+                    const headResponse = await fetch(imageUrl, { method: 'HEAD' });
+                    
+                    if (headResponse.ok) {
+                        // Image exists!
+                        const contentLength = headResponse.headers.get('content-length');
+                        const lastModified = headResponse.headers.get('last-modified');
+                        
+                        mobileAppImages.push({
+                            url: imageUrl,
+                            filename: `${sku}_${i}.jpg`,
+                            uploaded: lastModified || new Date().toISOString(),
+                            size: contentLength ? parseInt(contentLength) : 0
+                        });
+                        
+                        console.log(`✅ Found mobile app image: ${imageUrl}`);
+                    } else {
+                        // Image doesn't exist, stop checking
+                        console.log(`⏹️ No more images found after index ${i-1}`);
+                        break;
+                    }
+                } catch (e) {
+                    // Error or no more images, stop
+                    console.log(`⚠️ Error checking image ${i}:`, e);
+                    break;
+                }
+            }
+            
+            console.log(`📱 Found ${mobileAppImages.length} mobile app images for SKU: ${sku}`);
         }
 
         // Combine WEB app images and mobile app images
