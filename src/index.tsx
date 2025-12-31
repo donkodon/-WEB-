@@ -274,9 +274,9 @@ app.post('/login', async (c) => {
 
 // --- Dashboard / Product List (Screenshot 2) ---
 app.get('/dashboard', async (c) => {
-  // 1. Fetch all products from local DB
-  const productsResult = await c.env.DB.prepare(`
-    SELECT * FROM products ORDER BY id DESC
+  // 1. Get all SKUs from local DB (just for reference)
+  const localProductsResult = await c.env.DB.prepare(`
+    SELECT DISTINCT sku FROM products ORDER BY id DESC
   `).all();
 
   // 2. Fetch all images from local database
@@ -284,14 +284,14 @@ app.get('/dashboard', async (c) => {
     SELECT * FROM images
   `).all();
 
-  // 3. Fetch product_items data from mobile app API
+  // 3. Fetch complete product data (master + items) from mobile app API
   const MOBILE_API_URL = c.env.MOBILE_API_URL || 'https://measure-master-api.jinkedon2.workers.dev';
-  const mobileDataMap = new Map(); // Map of SKU -> mobile data
+  const productsData = []; // Array of products with complete data
   
-  console.log('🔄 Fetching product_items data from mobile app API...');
+  console.log('🔄 Fetching complete product data from mobile app API...');
   
-  for (const product of productsResult.results) {
-    const sku = (product as any).sku;
+  for (const localProduct of localProductsResult.results) {
+    const sku = (localProduct as any).sku;
     
     try {
       const response = await fetch(`${MOBILE_API_URL}/api/products/search?sku=${sku}`);
@@ -300,26 +300,26 @@ app.get('/dashboard', async (c) => {
         const data = await response.json();
         
         if (data.success && data.product) {
-          // Store mobile app data
-          mobileDataMap.set(sku, {
+          // Use mobile app data as the source of truth
+          productsData.push({
             ...data.product,
             capturedItems: data.product.capturedItems || [],
             capturedCount: data.product.capturedCount || 0,
             latestItem: data.product.latestItem || null
           });
           
-          console.log(`✅ Loaded mobile data for SKU ${sku}: ${data.product.capturedCount} items`);
+          console.log(`✅ Loaded product SKU ${sku}: ${data.product.name}, ${data.product.capturedCount} captured items`);
         }
       }
     } catch (e) {
-      console.error(`❌ Failed to fetch mobile data for SKU ${sku}:`, e);
+      console.error(`❌ Failed to fetch product data for SKU ${sku}:`, e);
     }
   }
 
   // 4. Merge all data into products
-  const products = productsResult.results.map((p: any) => {
+  const products = productsData.map((p: any) => {
     const dbImages = imagesResult.results.filter((i: any) => i.product_id === p.id);
-    const mobileData = mobileDataMap.get(p.sku);
+    const mobileData = p; // Already have all mobile data
     
     // Extract images from mobile app capturedItems
     const mobileImages = [];
