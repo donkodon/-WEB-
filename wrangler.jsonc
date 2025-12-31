@@ -9,7 +9,9 @@
   // Environment variables (non-sensitive)
   "vars": {
     "BG_REMOVAL_API_URL": "http://127.0.0.1:8000",
-    "WITHOUTBG_API_URL": "http://127.0.0.1:8001"
+    "WITHOUTBG_API_URL": "http://127.0.0.1:8001",
+    "MOBILE_API_URL": "https://measure-master-api.jinkedon2.workers.dev",
+    "IMAGE_UPLOAD_API_URL": "https://image-upload-api.jinkedon2.workers.dev"
   },
   // Secrets (sensitive - use: wrangler secret put SECRET_NAME)
   // BRIA_API_KEY - Fal.ai API key for BRIA RMBG 2.0 (not used anymore)

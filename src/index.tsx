@@ -10,6 +10,8 @@ type Bindings = {
   BRIA_API_KEY?: string
   BG_REMOVAL_API_URL?: string
   WITHOUTBG_API_URL?: string
+  MOBILE_API_URL?: string
+  IMAGE_UPLOAD_API_URL?: string
   PRODUCT_IMAGES?: R2Bucket
 }
 
@@ -422,6 +424,10 @@ app.get('/dashboard', async (c) => {
             <button id="btn-download-processed" class="bg-white border border-green-200 text-green-600 px-4 py-2 rounded-lg flex items-center hover:bg-green-50 transition-colors text-sm font-medium">
                 <i class="fas fa-magic mr-2"></i>
                 編集画像DL
+            </button>
+            <button id="btn-sync-mobile" class="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center hover:bg-blue-700 transition-colors text-sm font-medium">
+                <i class="fas fa-sync-alt mr-2"></i>
+                スマホから同期
             </button>
         </div>
       </div>
@@ -887,6 +893,55 @@ app.get('/dashboard', async (c) => {
                 // DOMContentLoaded は既に発火済み
                 initBatchRemoveBg();
             }
+        })();
+      `}} />
+      
+      {/* Mobile App Sync Script */}
+      <script dangerouslySetInnerHTML={{__html: `
+        (function() {
+            const btnSyncMobile = document.getElementById('btn-sync-mobile');
+            
+            if (!btnSyncMobile) {
+                console.error('❌ Sync mobile button not found!');
+                return;
+            }
+            
+            btnSyncMobile.addEventListener('click', async function() {
+                const confirmation = confirm('スマホアプリから商品データを同期しますか？\\n既存のデータは上書きされます。');
+                
+                if (!confirmation) return;
+                
+                // Show loading state
+                btnSyncMobile.disabled = true;
+                btnSyncMobile.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>同期中...';
+                
+                try {
+                    const response = await fetch('/api/sync-from-mobile', {
+                        method: 'POST'
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Sync failed with status: ' + response.status);
+                    }
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        alert('✅ 同期完了\\n\\n同期: ' + data.synced + '件\\nスキップ: ' + data.skipped + '件\\n合計: ' + data.total + '件');
+                        window.location.reload();
+                    } else {
+                        throw new Error(data.error || 'Unknown error');
+                    }
+                } catch (e) {
+                    console.error('Sync error:', e);
+                    alert('❌ 同期に失敗しました: ' + e.message);
+                } finally {
+                    btnSyncMobile.disabled = false;
+                    btnSyncMobile.innerHTML = '<i class="fas fa-sync-alt mr-2"></i>スマホから同期';
+                }
+            });
+            
+            console.log('✅ Mobile sync button initialized');
         })();
       `}} />
 
@@ -2058,13 +2113,36 @@ app.post('/api/products/bulk-import', async (c) => {
         if (batch.length > 0) {
             await c.env.DB.batch(batch);
         }
+        
+        // Also sync to mobile app API
+        const MOBILE_API_URL = c.env.MOBILE_API_URL || 'https://measure-master-api.jinkedon2.workers.dev';
+        let mobileSynced = 0;
+        
+        try {
+            const mobileResponse = await fetch(`${MOBILE_API_URL}/api/products/bulk-import`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ products })
+            });
+            
+            if (mobileResponse.ok) {
+                const mobileData = await mobileResponse.json();
+                mobileSynced = mobileData.inserted + mobileData.updated;
+                console.log(`✅ Synced ${mobileSynced} products to mobile app API`);
+            } else {
+                console.warn('⚠️ Failed to sync to mobile app API:', await mobileResponse.text());
+            }
+        } catch (e) {
+            console.error('❌ Mobile API sync error:', e);
+        }
 
         return c.json({
             success: true,
             message: 'マスタデータを更新しました',
             inserted,
             updated,
-            total: products.length
+            total: products.length,
+            mobileSynced
         });
 
     } catch (error: any) {
@@ -2232,6 +2310,89 @@ app.get('/api/products/search', async (c) => {
         return c.json({ 
             success: false, 
             error: error.message || 'Search failed' 
+        }, 500);
+    }
+});
+
+// --- API: Sync from Mobile App API ---
+app.post('/api/sync-from-mobile', async (c) => {
+    try {
+        const MOBILE_API_URL = c.env.MOBILE_API_URL || 'https://measure-master-api.jinkedon2.workers.dev';
+        
+        console.log('🔄 Syncing product data from mobile app API...');
+        
+        // Get all products from local database
+        const localProducts = await c.env.DB.prepare(`
+            SELECT sku FROM products
+        `).all();
+        
+        const localSkus = new Set(localProducts.results.map((p: any) => p.sku));
+        let syncedCount = 0;
+        let skippedCount = 0;
+        
+        // For each local product, try to fetch updated data from mobile API
+        for (const localProduct of localProducts.results) {
+            const sku = (localProduct as any).sku;
+            
+            try {
+                const response = await fetch(`${MOBILE_API_URL}/api/products/search?sku=${sku}`);
+                
+                if (!response.ok) {
+                    console.log(`⚠️ Product ${sku} not found in mobile API`);
+                    skippedCount++;
+                    continue;
+                }
+                
+                const data = await response.json();
+                
+                if (data.success && data.product) {
+                    const product = data.product;
+                    
+                    // Update product data in local database
+                    await c.env.DB.prepare(`
+                        UPDATE products SET
+                            name = ?,
+                            brand = ?,
+                            size = ?,
+                            color = ?,
+                            price_sale = ?,
+                            barcode = ?,
+                            category = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE sku = ?
+                    `).bind(
+                        product.name || '',
+                        product.brand || null,
+                        product.size || null,
+                        product.color || null,
+                        product.price || 0,
+                        product.barcode || null,
+                        product.category || null,
+                        sku
+                    ).run();
+                    
+                    syncedCount++;
+                    console.log(`✅ Synced product: ${sku}`);
+                }
+            } catch (e) {
+                console.error(`❌ Failed to sync product ${sku}:`, e);
+                skippedCount++;
+            }
+        }
+        
+        return c.json({
+            success: true,
+            synced: syncedCount,
+            skipped: skippedCount,
+            total: localProducts.results.length,
+            message: `Successfully synced ${syncedCount} products from mobile app API`
+        });
+        
+    } catch (error: any) {
+        console.error('Sync from mobile API error:', error);
+        return c.json({ 
+            success: false, 
+            error: error.message || 'Sync failed' 
         }, 500);
     }
 });
