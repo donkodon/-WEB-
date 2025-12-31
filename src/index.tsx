@@ -2357,8 +2357,7 @@ app.post('/api/sync-from-mobile', async (c) => {
                             color = ?,
                             price_sale = ?,
                             barcode = ?,
-                            category = ?,
-                            updated_at = CURRENT_TIMESTAMP
+                            category = ?
                         WHERE sku = ?
                     `).bind(
                         product.name || '',
