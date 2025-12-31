@@ -1900,6 +1900,87 @@ app.post('/api/import-csv', async (c) => {
     return c.text(`${count} 件の商品データをインポートしました。`);
 });
 
+// --- API: Bulk Import for Mobile App (JSON Format) ---
+app.post('/api/products/bulk-import', async (c) => {
+    try {
+        const { products } = await c.req.json();
+        
+        if (!products || !Array.isArray(products)) {
+            return c.json({ success: false, error: 'Invalid request: products array required' }, 400);
+        }
+
+        let inserted = 0;
+        let updated = 0;
+        const batch = [];
+
+        const stmt = c.env.DB.prepare(`
+            INSERT OR REPLACE INTO products (
+                sku, barcode, name, brand, category, size, color, 
+                price_sale, status, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(
+                (SELECT created_at FROM products WHERE sku = ?), 
+                ?
+            ))
+        `);
+
+        for (const product of products) {
+            if (!product.sku) continue;
+
+            // Check if product exists
+            const existing = await c.env.DB.prepare(
+                'SELECT sku FROM products WHERE sku = ?'
+            ).bind(product.sku).first();
+
+            if (existing) {
+                updated++;
+            } else {
+                inserted++;
+            }
+
+            const now = new Date().toISOString();
+            batch.push(stmt.bind(
+                product.sku,
+                product.barcode || null,
+                product.name || 'Unknown Product',
+                product.brand || null,
+                product.category || null,
+                product.size || null,
+                product.color || null,
+                product.price || 0,
+                'Active',
+                product.sku,  // For COALESCE check
+                now           // Default created_at for new records
+            ));
+
+            // Execute batch every 50 rows
+            if (batch.length >= 50) {
+                await c.env.DB.batch(batch);
+                batch.length = 0;
+            }
+        }
+
+        // Execute remaining batch
+        if (batch.length > 0) {
+            await c.env.DB.batch(batch);
+        }
+
+        return c.json({
+            success: true,
+            message: 'マスタデータを更新しました',
+            inserted,
+            updated,
+            total: products.length
+        });
+
+    } catch (error: any) {
+        console.error('Bulk import error:', error);
+        return c.json({ 
+            success: false, 
+            error: error.message || 'Bulk import failed' 
+        }, 500);
+    }
+});
+
 // --- API: Export Data (For External Apps) ---
 // 他のアプリからデータを引っ張るための「窓口」です
 app.get('/api/products/list', async (c) => {
@@ -1921,6 +2002,72 @@ app.get('/api/products/list', async (c) => {
         count: result.results.length,
         products: result.results
     });
+});
+
+// --- API: Search Product by SKU (for Mobile App) ---
+app.get('/api/products/search', async (c) => {
+    try {
+        const sku = c.req.query('sku');
+        
+        if (!sku) {
+            return c.json({ success: false, error: 'SKU parameter required' }, 400);
+        }
+
+        const product = await c.env.DB.prepare(`
+            SELECT 
+                sku, barcode, name, brand, category, size, color, 
+                price_sale as price, status, created_at, created_at as updated_at
+            FROM products 
+            WHERE sku = ?
+        `).bind(sku).first();
+
+        if (!product) {
+            return c.json({ 
+                success: false, 
+                error: 'Product not found' 
+            }, 404);
+        }
+
+        // Get related images from images table (if any)
+        const images = await c.env.DB.prepare(`
+            SELECT id, original_url, processed_url, status, created_at as photographed_at
+            FROM images
+            WHERE product_id = (SELECT id FROM products WHERE sku = ?)
+            ORDER BY id DESC
+        `).bind(sku).all();
+
+        return c.json({
+            success: true,
+            product: {
+                ...product,
+                hasCapturedData: images.results.length > 0,
+                capturedItems: images.results.map((img: any) => ({
+                    id: img.id,
+                    sku: sku,
+                    item_code: `${sku}_${img.id}`,
+                    image_urls: JSON.stringify([img.original_url]),
+                    condition: 'Unknown',
+                    photographed_at: img.photographed_at
+                })),
+                latestItem: images.results.length > 0 ? {
+                    id: images.results[0].id,
+                    sku: sku,
+                    item_code: `${sku}_${images.results[0].id}`,
+                    image_urls: JSON.stringify([images.results[0].original_url]),
+                    condition: 'Unknown',
+                    photographed_at: images.results[0].photographed_at
+                } : null,
+                capturedCount: images.results.length
+            }
+        });
+
+    } catch (error: any) {
+        console.error('Search error:', error);
+        return c.json({ 
+            success: false, 
+            error: error.message || 'Search failed' 
+        }, 500);
+    }
 });
 
 // --- API: Background Removal ---
