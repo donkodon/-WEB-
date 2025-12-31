@@ -274,108 +274,91 @@ app.post('/login', async (c) => {
 
 // --- Dashboard / Product List (Screenshot 2) ---
 app.get('/dashboard', async (c) => {
-  // 1. Fetch all products
+  // 1. Fetch all products from local DB
   const productsResult = await c.env.DB.prepare(`
     SELECT * FROM products ORDER BY id DESC
   `).all();
 
-  // 2. Fetch all images from database
+  // 2. Fetch all images from local database
   const imagesResult = await c.env.DB.prepare(`
     SELECT * FROM images
   `).all();
 
-  // 3. Fetch mobile app images from R2 bucket
-  const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
-  const r2Images = new Map(); // Map of SKU -> array of image URLs
+  // 3. Fetch product_items data from mobile app API
+  const MOBILE_API_URL = c.env.MOBILE_API_URL || 'https://measure-master-api.jinkedon2.workers.dev';
+  const mobileDataMap = new Map(); // Map of SKU -> mobile data
   
-  // Try R2 binding first (production)
-  let r2Available = false;
-  if (c.env.PRODUCT_IMAGES) {
+  console.log('🔄 Fetching product_items data from mobile app API...');
+  
+  for (const product of productsResult.results) {
+    const sku = (product as any).sku;
+    
     try {
-      const list = await c.env.PRODUCT_IMAGES.list();
-      console.log(`✅ R2 binding available: ${list.objects.length} objects found`);
+      const response = await fetch(`${MOBILE_API_URL}/api/products/search?sku=${sku}`);
       
-      // Only use R2 binding if objects are found
-      if (list.objects.length > 0) {
-        r2Available = true;
+      if (response.ok) {
+        const data = await response.json();
         
-        for (const obj of list.objects) {
-          const filename = obj.key;
-          // Extract SKU from filename (pattern: SKU_number.jpg)
-          const match = filename.match(/^(.+?)_\d+\.jpg$/);
-          if (match) {
-            const sku = match[1];
-            if (!r2Images.has(sku)) {
-              r2Images.set(sku, []);
-            }
-            r2Images.get(sku).push({
-              id: `r2_${filename}`,
-              original_url: `${R2_PUBLIC_URL}/${filename}`,
-              processed_url: null,
-              status: 'mobile',
-              created_at: obj.uploaded,
-              filename: filename
-            });
-          }
+        if (data.success && data.product) {
+          // Store mobile app data
+          mobileDataMap.set(sku, {
+            ...data.product,
+            capturedItems: data.product.capturedItems || [],
+            capturedCount: data.product.capturedCount || 0,
+            latestItem: data.product.latestItem || null
+          });
+          
+          console.log(`✅ Loaded mobile data for SKU ${sku}: ${data.product.capturedCount} items`);
         }
       }
     } catch (e) {
-      console.error('Failed to list R2 objects via binding:', e);
-    }
-  }
-  
-  // Fallback: Check R2 public URL directly (local development or empty R2 binding)
-  if (!r2Available) {
-    console.log('⚠️ R2 binding not available, using public URL fallback');
-    
-    // For each product, try to check if images exist on R2
-    for (const product of productsResult.results) {
-      const sku = product.sku;
-      const productImages = [];
-      
-      // Try to find images with pattern: {SKU}_1.jpg, {SKU}_2.jpg, etc.
-      for (let i = 1; i <= 10; i++) {
-        try {
-          const imageUrl = `${R2_PUBLIC_URL}/${sku}_${i}.jpg`;
-          const headResponse = await fetch(imageUrl, { method: 'HEAD' });
-          
-          if (headResponse.ok) {
-            const lastModified = headResponse.headers.get('last-modified');
-            productImages.push({
-              id: `r2_${sku}_${i}`,
-              original_url: imageUrl,
-              processed_url: null,
-              status: 'mobile',
-              created_at: lastModified || new Date().toISOString(),
-              filename: `${sku}_${i}.jpg`
-            });
-            console.log(`✅ Found mobile image: ${sku}_${i}.jpg`);
-          } else {
-            // No more images for this SKU
-            break;
-          }
-        } catch (e) {
-          // Error checking image, stop
-          break;
-        }
-      }
-      
-      if (productImages.length > 0) {
-        r2Images.set(sku, productImages);
-      }
+      console.error(`❌ Failed to fetch mobile data for SKU ${sku}:`, e);
     }
   }
 
-  // 4. Merge images into products
+  // 4. Merge all data into products
   const products = productsResult.results.map((p: any) => {
     const dbImages = imagesResult.results.filter((i: any) => i.product_id === p.id);
-    const mobileImages = r2Images.get(p.sku) || [];
+    const mobileData = mobileDataMap.get(p.sku);
+    
+    // Extract images from mobile app capturedItems
+    const mobileImages = [];
+    if (mobileData && mobileData.capturedItems) {
+      for (const item of mobileData.capturedItems) {
+        try {
+          const imageUrls = JSON.parse(item.image_urls || '[]');
+          for (const imageUrl of imageUrls) {
+            mobileImages.push({
+              id: `mobile_${item.item_code}`,
+              original_url: imageUrl,
+              processed_url: null,
+              status: 'mobile',
+              created_at: item.photographed_at || new Date().toISOString(),
+              filename: item.item_code,
+              // Store additional mobile data
+              item_code: item.item_code,
+              actual_measurements: item.actual_measurements,
+              condition: item.condition,
+              material: item.material,
+              inspection_notes: item.inspection_notes
+            });
+          }
+        } catch (e) {
+          console.error('Failed to parse image_urls:', e);
+        }
+      }
+    }
     
     console.log(`📦 Product ${p.sku}: ${dbImages.length} DB images + ${mobileImages.length} mobile images`);
     
+    // Merge product data with mobile data
     return {
         ...p,
-        images: [...dbImages, ...mobileImages]
+        // Override with mobile app data if available
+        ...(mobileData || {}),
+        images: [...dbImages, ...mobileImages],
+        capturedCount: mobileData?.capturedCount || 0,
+        hasCapturedData: (mobileData?.capturedCount || 0) > 0
     };
   });
 
