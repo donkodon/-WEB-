@@ -2009,70 +2009,137 @@ app.post('/api/import-csv', async (c) => {
 
     const lines = text.split(/\r\n|\n|\r/);
     
-    // Simple CSV parser logic needed for data lines to handle quotes
-    const parseCSVLine = (line: string) => {
-        const result = [];
-        let start = 0;
+    // Robust CSV parser that handles:
+    // 1. Quoted fields with commas inside
+    // 2. Escaped quotes ("") inside quoted fields
+    // 3. Empty fields
+    // 4. Mixed quoted/unquoted fields
+    const parseCSVLine = (line: string): string[] => {
+        const result: string[] = [];
+        let currentField = '';
         let inQuotes = false;
-        for (let i = 0; i < line.length; i++) {
-            if (line[i] === '"') inQuotes = !inQuotes;
-            else if (line[i] === ',' && !inQuotes) {
-                let val = line.substring(start, i);
-                // Remove quotes
-                if (val.startsWith('"') && val.endsWith('"')) val = val.substring(1, val.length - 1);
-                val = val.replace(/""/g, '"');
-                result.push(val);
-                start = i + 1;
+        let i = 0;
+        
+        while (i < line.length) {
+            const char = line[i];
+            
+            if (inQuotes) {
+                if (char === '"') {
+                    // Check for escaped quote ("")
+                    if (i + 1 < line.length && line[i + 1] === '"') {
+                        currentField += '"';
+                        i += 2;
+                        continue;
+                    } else {
+                        // End of quoted field
+                        inQuotes = false;
+                        i++;
+                        continue;
+                    }
+                } else {
+                    currentField += char;
+                    i++;
+                }
+            } else {
+                if (char === '"') {
+                    // Start of quoted field
+                    inQuotes = true;
+                    i++;
+                } else if (char === ',') {
+                    // End of field
+                    result.push(currentField.trim());
+                    currentField = '';
+                    i++;
+                } else {
+                    currentField += char;
+                    i++;
+                }
             }
         }
-        let val = line.substring(start);
-        if (val.startsWith('"') && val.endsWith('"')) val = val.substring(1, val.length - 1);
-        val = val.replace(/""/g, '"');
-        result.push(val);
+        
+        // Don't forget the last field
+        result.push(currentField.trim());
+        
         return result;
     };
     
     // Parse header row using the same parser
     const headers = parseCSVLine(lines[0]);
+    
+    // Debug: Log raw headers
+    console.log('📄 Raw CSV Headers (count=' + headers.length + '):', headers.slice(0, 10).join(' | ') + '...');
 
-    // Mapping indexes based on header row (fuzzy matching)
+    // Mapping indexes based on header row (exact match first, then fuzzy matching)
     // User requested specific column mapping:
-    // A:バーコード, B:ID, C:ブランド, E:品名, F:サイズ, G:カラー, L:商品ランク, Y:現状売価
-    const getIndex = (names: string[]) => {
+    // A:バーコード, B:ID, C:ブランド, E:品名/商品名, F:サイズ, G:カラー, L:商品ランク, Y:現状売価
+    const getIndex = (names: string[]): number => {
+        // First try exact match (case-insensitive)
         for (const name of names) {
-            const i = headers.findIndex(h => h && h.includes(name));
-            if (i > -1) return i;
+            const exactIdx = headers.findIndex(h => h && h.toLowerCase() === name.toLowerCase());
+            if (exactIdx > -1) {
+                console.log(`✅ Exact match: "${name}" -> column ${exactIdx}`);
+                return exactIdx;
+            }
         }
+        // Then try partial match (contains)
+        for (const name of names) {
+            const partialIdx = headers.findIndex(h => h && h.includes(name));
+            if (partialIdx > -1) {
+                console.log(`✅ Partial match: "${name}" found in "${headers[partialIdx]}" -> column ${partialIdx}`);
+                return partialIdx;
+            }
+        }
+        console.log(`⚠️ No match found for: ${names.join(', ')}`);
         return -1;
     };
     
+    // Safe getter for row values (handles negative index)
+    const getRowValue = (row: string[], idx: number): string | null => {
+        if (idx < 0 || idx >= row.length) return null;
+        const val = row[idx];
+        return (val === undefined || val === null || val.trim() === '') ? null : val.trim();
+    };
+    
     // Explicit priority mapping based on user request
+    // IMPORTANT: Order matters - put exact/preferred match first
     const idx = {
         barcode: getIndex(['バーコード', 'Barcode']),      // Col A
-        sku: getIndex(['ID', 'sku', 'SKU']),               // Col B
+        sku: getIndex(['ID', 'sku', 'SKU', '商品コード']),  // Col B
         brand: getIndex(['ブランド', 'Brand']),            // Col C
         brand_kana: getIndex(['ブランドカナ', 'BrandKana']), // Col D
-        name: getIndex(['品名', '商品名', 'Name']),        // Col E
+        // FIXED: Put '商品名' before '品名' - most CSVs use '商品名'
+        name: getIndex(['商品名', '品名', 'Name', 'ProductName']),  // Col E
         size: getIndex(['サイズ', 'Size']),                // Col F
-        color: getIndex(['カラー', 'Color']),              // Col G
+        color: getIndex(['カラー', 'Color', '色']),        // Col G
         // Cols H-K skipped
         rank: getIndex(['商品ランク', 'ランク', 'Rank']),  // Col L
         // Cols M-X skipped
-        price_sale: getIndex(['現状売価', '販売価格', 'Price']), // Col Y
+        // FIXED: Add more price column variations
+        price_sale: getIndex(['現状売価', '販売価格', '販売価格(税抜)', '売価', 'Price', 'SalePrice']), // Col Y
         
         // Keep these for supplementary info if available, but lower priority
-        stock: getIndex(['在数', 'Stock']),
+        stock: getIndex(['在数', '在数(現在)', 'Stock', '在庫数']),
         status: getIndex(['ステータス', 'Status']),
-        price_cost: getIndex(['仕入単価', 'Cost']),
-        category: getIndex(['カテゴリ大', 'Category']),
+        price_cost: getIndex(['仕入単価', '仕入金額', 'Cost', '原価']),
+        category: getIndex(['カテゴリ大', 'Category', 'カテゴリ']),
         category_sub: getIndex(['カテゴリ小', 'SubCategory']),
         season: getIndex(['シーズン', 'Season']),
         buyer: getIndex(['バイヤー', 'Buyer']),
         store: getIndex(['店舗名', 'Store']),
-        ref_price: getIndex(['参考上代', 'RefPrice']),
-        list_price: getIndex(['出品価格', 'ListPrice']),
+        ref_price: getIndex(['参考上代', '参考上代(税抜)', 'RefPrice']),
+        list_price: getIndex(['出品価格', '出品価格(税抜)', 'ListPrice']),
         location: getIndex(['保管場所', 'Location'])
     };
+    
+    // Validate required columns
+    const missingRequired: string[] = [];
+    if (idx.sku < 0) missingRequired.push('SKU/ID');
+    if (idx.name < 0) missingRequired.push('商品名/品名');
+    
+    if (missingRequired.length > 0) {
+        console.error('❌ Missing required columns:', missingRequired);
+        console.error('Available headers:', headers);
+    }
 
     let count = 0;
     
@@ -2108,38 +2175,51 @@ app.post('/api/import-csv', async (c) => {
             console.log('🔍 Price Sale (idx=' + idx.price_sale + '):', row[idx.price_sale]);
         }
         
-        // Basic validation: must have SKU or Name
-        if (!row[idx.sku] && !row[idx.name]) continue;
+        // Use safe getter for all values
+        const rowSku = getRowValue(row, idx.sku);
+        const rowName = getRowValue(row, idx.name);
+        
+        // Debug: Log problematic rows
+        if (!rowSku && !rowName) {
+            console.log(`⚠️ Row ${i} skipped - no SKU or Name. Row length: ${row.length}, sku_idx: ${idx.sku}, name_idx: ${idx.name}`);
+            continue;
+        }
+        
+        // If we have SKU but no name, log a warning (this causes '不明な製品')
+        if (rowSku && !rowName) {
+            console.log(`⚠️ Row ${i} has SKU "${rowSku}" but NO NAME. Row: ${row.slice(0, 8).join('|')}...`);
+        }
 
-        const sku = row[idx.sku] || `UNKNOWN-${Date.now()}-${i}`;
-        const name = row[idx.name] || 'Unknown Product';
+        const sku = rowSku || `UNKNOWN-${Date.now()}-${i}`;
+        const name = rowName || '不明な製品';
         
         const cleanInt = (val: string) => {
             if (!val) return 0;
             return parseInt(val.replace(/,/g, '').replace(/[¥￥]/g, '')) || 0;
         };
 
+        // Use safe getter for all values
         batch.push(stmt.bind(
             sku,
             name,
-            row[idx.brand] || null,
-            row[idx.brand_kana] || null,
-            row[idx.size] || null,
-            row[idx.color] || null,
-            cleanInt(row[idx.price_cost]),
-            cleanInt(row[idx.price_sale]),
-            cleanInt(row[idx.stock]),
-            row[idx.barcode] || null,
-            row[idx.status] || 'Active',
-            row[idx.category] || null,
-            row[idx.category_sub] || null,
-            row[idx.season] || null,
-            row[idx.rank] || null,
-            row[idx.buyer] || null,
-            row[idx.store] || null,
-            cleanInt(row[idx.ref_price]),
-            cleanInt(row[idx.list_price]),
-            row[idx.location] || null,
+            getRowValue(row, idx.brand),
+            getRowValue(row, idx.brand_kana),
+            getRowValue(row, idx.size),
+            getRowValue(row, idx.color),
+            cleanInt(getRowValue(row, idx.price_cost) || '0'),
+            cleanInt(getRowValue(row, idx.price_sale) || '0'),
+            cleanInt(getRowValue(row, idx.stock) || '0'),
+            getRowValue(row, idx.barcode),
+            getRowValue(row, idx.status) || 'Active',
+            getRowValue(row, idx.category),
+            getRowValue(row, idx.category_sub),
+            getRowValue(row, idx.season),
+            getRowValue(row, idx.rank),
+            getRowValue(row, idx.buyer),
+            getRowValue(row, idx.store),
+            cleanInt(getRowValue(row, idx.ref_price) || '0'),
+            cleanInt(getRowValue(row, idx.list_price) || '0'),
+            getRowValue(row, idx.location),
             new Date().toISOString()
         ));
         
