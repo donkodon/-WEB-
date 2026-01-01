@@ -35,7 +35,7 @@ app.get('/init', async (c) => {
     );
 
     -- Products table (SKU)
-    CREATE TABLE IF NOT EXISTS product_master (
+    CREATE TABLE IF NOT EXISTS products (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       sku TEXT UNIQUE NOT NULL,
       name TEXT NOT NULL,
@@ -43,16 +43,34 @@ app.get('/init', async (c) => {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- Images table
+    CREATE TABLE IF NOT EXISTS images (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER,
+      original_url TEXT NOT NULL,
+      processed_url TEXT,
+      status TEXT DEFAULT 'pending', 
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (product_id) REFERENCES products(id)
+    );
+    
     -- Indexes
-    CREATE INDEX IF NOT EXISTS idx_product_master_sku ON product_master(sku);
+    CREATE INDEX IF NOT EXISTS idx_products_sku ON products(sku);
+    CREATE INDEX IF NOT EXISTS idx_images_product_id ON images(product_id);
 
     -- Seed
     INSERT OR IGNORE INTO users (email, name) VALUES ('user@example.com', 'Kenji');
 
-    INSERT OR IGNORE INTO product_master (sku, name, category) VALUES 
+    INSERT OR IGNORE INTO products (sku, name, category) VALUES 
     ('TSHIRT-001-WHT', 'ベーシックコットンTシャツ（ホワイト）', 'Tops'),
     ('DNM-JCKT-NAVY', 'ヴィンテージデニムジャケット（ネイビー）', 'Outerwear'),
     ('SHIRT-LINEN-BEG', 'リネンシャツ（ベージュ）', 'Tops');
+
+    INSERT OR IGNORE INTO images (product_id, original_url, processed_url, status) VALUES 
+    (1, 'https://placehold.co/400x400/orange/white?text=T-Shirt+Front', 'https://placehold.co/400x400/transparent/white?text=T-Shirt+Front+Processed', 'completed'),
+    (1, 'https://placehold.co/400x400/orange/white?text=T-Shirt+Back', NULL, 'pending'),
+    (1, 'https://placehold.co/400x400/orange/white?text=T-Shirt+Detail', NULL, 'pending'),
+    (2, 'https://placehold.co/400x400/brown/white?text=Jacket+Front', NULL, 'processing');
   `;
 
   // Split by semicolon and run each
@@ -67,24 +85,24 @@ app.get('/init', async (c) => {
 // --- Helper: Fix Schema (Apply migration 0002 manually if needed) ---
 app.get('/fix-schema', async (c) => {
     const alterations = [
-        "ALTER TABLE product_master ADD COLUMN brand TEXT",
-        "ALTER TABLE product_master ADD COLUMN brand_kana TEXT",
-        "ALTER TABLE product_master ADD COLUMN size TEXT",
-        "ALTER TABLE product_master ADD COLUMN color TEXT",
-        "ALTER TABLE product_master ADD COLUMN category_sub TEXT",
-        "ALTER TABLE product_master ADD COLUMN price_cost INTEGER",
-        "ALTER TABLE product_master ADD COLUMN season TEXT",
-        "ALTER TABLE product_master ADD COLUMN rank TEXT",
-        "ALTER TABLE product_master ADD COLUMN release_date TEXT",
-        "ALTER TABLE product_master ADD COLUMN buyer TEXT",
-        "ALTER TABLE product_master ADD COLUMN store_name TEXT",
-        "ALTER TABLE product_master ADD COLUMN price_ref INTEGER",
-        "ALTER TABLE product_master ADD COLUMN price_sale INTEGER",
-        "ALTER TABLE product_master ADD COLUMN price_list INTEGER",
-        "ALTER TABLE product_master ADD COLUMN location TEXT",
-        "ALTER TABLE product_master ADD COLUMN stock_quantity INTEGER",
-        "ALTER TABLE product_master ADD COLUMN barcode TEXT",
-        "ALTER TABLE product_master ADD COLUMN status TEXT"
+        "ALTER TABLE products ADD COLUMN brand TEXT",
+        "ALTER TABLE products ADD COLUMN brand_kana TEXT",
+        "ALTER TABLE products ADD COLUMN size TEXT",
+        "ALTER TABLE products ADD COLUMN color TEXT",
+        "ALTER TABLE products ADD COLUMN category_sub TEXT",
+        "ALTER TABLE products ADD COLUMN price_cost INTEGER",
+        "ALTER TABLE products ADD COLUMN season TEXT",
+        "ALTER TABLE products ADD COLUMN rank TEXT",
+        "ALTER TABLE products ADD COLUMN release_date TEXT",
+        "ALTER TABLE products ADD COLUMN buyer TEXT",
+        "ALTER TABLE products ADD COLUMN store_name TEXT",
+        "ALTER TABLE products ADD COLUMN price_ref INTEGER",
+        "ALTER TABLE products ADD COLUMN price_sale INTEGER",
+        "ALTER TABLE products ADD COLUMN price_list INTEGER",
+        "ALTER TABLE products ADD COLUMN location TEXT",
+        "ALTER TABLE products ADD COLUMN stock_quantity INTEGER",
+        "ALTER TABLE products ADD COLUMN barcode TEXT",
+        "ALTER TABLE products ADD COLUMN status TEXT"
     ];
 
     const results = [];
@@ -197,7 +215,60 @@ app.get('/', (c) => {
 })
 
 app.post('/login', async (c) => {
-  // R2 image auto-sync removed - images are now fetched directly from R2 and mobile API when needed
+  // Auto-sync images from Bubble on login
+  try {
+    const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
+    
+    if (c.env.PRODUCT_IMAGES) {
+      console.log('🔄 Auto-syncing from R2 on login...');
+      
+      const list = await c.env.PRODUCT_IMAGES.list();
+      let syncedCount = 0;
+      
+      for (const obj of list.objects) {
+        const filename = obj.key;
+        const parts = filename.replace('.jpg', '').split('_');
+        
+        if (parts.length < 3) continue;
+        
+        const sku = parts[0];
+        const imageUrl = `${R2_PUBLIC_URL}/${filename}`;
+        
+        // Check if product exists, create if not
+        const product = await c.env.DB.prepare(`
+          SELECT id FROM products WHERE sku = ?
+        `).bind(sku).first();
+        
+        if (!product) {
+          await c.env.DB.prepare(`
+            INSERT OR IGNORE INTO products (sku, name, category)
+            VALUES (?, ?, ?)
+          `).bind(sku, `商品 ${sku}`, 'Imported').run();
+        }
+        
+        // Check if image already exists
+        const existingImage = await c.env.DB.prepare(`
+          SELECT id FROM images WHERE original_url = ?
+        `).bind(imageUrl).first();
+        
+        if (!existingImage) {
+          const timestamp = parts[2];
+          await c.env.DB.prepare(`
+            INSERT INTO images (product_id, original_url, status, created_at)
+            SELECT id, ?, 'pending', datetime(?, 'unixepoch', 'subsec')
+            FROM products WHERE sku = ?
+          `).bind(imageUrl, parseInt(timestamp) / 1000, sku).run();
+          
+          syncedCount++;
+        }
+      }
+      
+      console.log(`✅ Auto-sync complete: ${syncedCount} new images`);
+    }
+  } catch (error) {
+    console.error('⚠️ Auto-sync error (non-critical):', error);
+    // Continue to dashboard even if sync fails
+  }
   
   return c.redirect('/dashboard')
 })
@@ -206,10 +277,13 @@ app.post('/login', async (c) => {
 app.get('/dashboard', async (c) => {
   // 1. Get all SKUs from local DB (just for reference)
   const localProductsResult = await c.env.DB.prepare(`
-    SELECT DISTINCT sku FROM product_master ORDER BY id DESC
+    SELECT DISTINCT sku FROM products ORDER BY id DESC
   `).all();
 
-  // Images are now fetched directly from R2 and mobile API - no local images table
+  // 2. Fetch all images from local database
+  const imagesResult = await c.env.DB.prepare(`
+    SELECT * FROM images
+  `).all();
 
   // 3. Fetch complete product data (master + items) from mobile app API
   const MOBILE_API_URL = c.env.MOBILE_API_URL || 'https://measure-master-api.jinkedon2.workers.dev';
@@ -248,7 +322,7 @@ app.get('/dashboard', async (c) => {
   for (const lp of localProductsResult.results) {
     const sku = (lp as any).sku;
     const fullProduct = await c.env.DB.prepare(`
-      SELECT * FROM product_master WHERE sku = ?
+      SELECT * FROM products WHERE sku = ?
     `).bind(sku).first();
     
     if (fullProduct) {
@@ -292,11 +366,46 @@ app.get('/dashboard', async (c) => {
     } else {
       // Fallback: Check R2 bucket for images if no captured items
       console.log(`⚠️ No capturedItems for SKU ${sku}, checking R2 bucket...`);
-      // Check R2 bucket for images
       const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
+      
+      // First, get DB images for this SKU (may already have processed R2 images)
+      const dbImagesForSku = await c.env.DB.prepare(`
+        SELECT i.* FROM images i
+        JOIN products p ON i.product_id = p.id
+        WHERE p.sku = ?
+      `).bind(sku).all();
+      
+      // Create a map of original_url -> DB image for quick lookup
+      const dbImagesByUrl = new Map();
+      for (const dbImg of dbImagesForSku.results) {
+        dbImagesByUrl.set((dbImg as any).original_url, dbImg);
+      }
       
       for (let i = 1; i <= 10; i++) {
         const imageUrl = `${R2_PUBLIC_URL}/${sku}_${i}.jpg`;
+        
+        // Check if this R2 image is already in DB (with possible processed_url)
+        const existingDbImage = dbImagesByUrl.get(imageUrl);
+        
+        if (existingDbImage) {
+          // Use DB image data (may have processed_url)
+          mobileImages.push({
+            id: (existingDbImage as any).id,  // Use DB ID instead of r2_ prefix
+            original_url: imageUrl,
+            processed_url: (existingDbImage as any).processed_url || null,  // Keep processed URL!
+            status: (existingDbImage as any).status || 'mobile',
+            created_at: (existingDbImage as any).created_at || new Date().toISOString(),
+            filename: `${sku}_${i}.jpg`,
+            item_code: `${sku}_${i}`,
+            actual_measurements: null,
+            condition: 'Unknown',
+            material: null,
+            inspection_notes: null
+          });
+          
+          console.log(`✅ Found R2 image in DB: ${sku}_${i}.jpg (processed: ${!!(existingDbImage as any).processed_url})`);
+          continue;
+        }
         
         try {
           const headResponse = await fetch(imageUrl, { method: 'HEAD' });
@@ -311,6 +420,7 @@ app.get('/dashboard', async (c) => {
               status: 'mobile',
               created_at: lastModified,
               filename: `${sku}_${i}.jpg`,
+              // Store placeholder mobile data
               item_code: `${sku}_${i}`,
               actual_measurements: null,
               condition: 'Unknown',
@@ -320,6 +430,7 @@ app.get('/dashboard', async (c) => {
             
             console.log(`✅ Found R2 image: ${sku}_${i}.jpg`);
           } else {
+            // Stop checking further images
             console.log(`⏹️ No more R2 images found after ${sku}_${i-1}.jpg`);
             break;
           }
@@ -330,8 +441,23 @@ app.get('/dashboard', async (c) => {
       }
     }
     
-    // All images come from mobile app API and R2 bucket - no separate DB images table
-    console.log(`📦 Product ${sku}: ${mobileImages.length} mobile/R2 images`);
+    // Get DB images (only non-R2 images, as R2 images are now included in mobileImages with DB data)
+    const dbImages = imagesResult.results.filter((i: any) => {
+      // Match by SKU since product_id might be different
+      if (localProduct) {
+        // Filter: only include if it's a DB-uploaded image (not from R2)
+        const originalUrl = (i as any).original_url || '';
+        const isR2Image = originalUrl.includes('pub-300562464768499b8fcaee903d0f9861.r2.dev');
+        return i.product_id === (localProduct as any).id && !isR2Image;
+      }
+      return false;
+    });
+    
+    console.log(`📦 Product ${sku}: ${dbImages.length} DB images + ${mobileImages.length} mobile/R2 images`);
+    
+    // Merge images: mobileImages already contains R2 images with DB processed_url data
+    // dbImages contains only non-R2 uploaded images
+    // No duplication should occur now
     
     // Merge: Use mobile app data as primary source, fallback to local CSV data
     const mergedProduct = {
@@ -352,7 +478,7 @@ app.get('/dashboard', async (c) => {
       capturedCount: mobileData.capturedCount || 0,
       latestItem: mobileData.latestItem || null,
       hasCapturedData: (mobileData.capturedCount || 0) > 0,
-      images: mobileImages,  // All images from mobile app and R2
+      images: [...dbImages, ...mobileImages],  // No duplicates: dbImages has non-R2, mobileImages has R2 with DB data
       // Timestamps
       created_at: mobileData.created_at || (localProduct as any)?.created_at,
       updated_at: mobileData.updated_at || (localProduct as any)?.updated_at
@@ -1134,7 +1260,10 @@ app.post('/api/upload-image', async (c) => {
     const mimeType = file.type;
     const dataUrl = `data:${mimeType};base64,${base64String}`;
 
-    // images table removed
+    await c.env.DB.prepare(`
+        INSERT INTO images (product_id, original_url, status)
+        VALUES (?, ?, 'pending')
+    `).bind(productId, dataUrl).run();
 
     return c.json({ success: true });
 });
@@ -1144,7 +1273,12 @@ app.get('/edit/:id', async (c) => {
   const id = c.req.param('id')
   
   // Get image from database
-  // images table removed
+  const imageResult = await c.env.DB.prepare(`
+    SELECT i.*, p.sku, p.name as product_name 
+    FROM images i 
+    LEFT JOIN products p ON i.product_id = p.id 
+    WHERE i.id = ?
+  `).bind(id).first();
   
   if (!imageResult) {
     return c.redirect('/dashboard');
@@ -1844,26 +1978,17 @@ app.post('/api/import-csv', async (c) => {
     if (!file || !(file instanceof File)) return c.text('No file uploaded', 400);
 
     const buffer = await file.arrayBuffer();
+    // Try decoding as Shift-JIS first (common for Japanese CSVs)
+    let text = new TextDecoder('shift-jis').decode(buffer);
     
-    // Try UTF-8 first (most common)
-    let text = new TextDecoder('utf-8').decode(buffer);
-    
-    // If UTF-8 produces invalid characters, try Shift-JIS
-    // Check for UTF-8 BOM or valid UTF-8 headers
-    const hasUtf8Bom = buffer.byteLength >= 3 && 
-        new Uint8Array(buffer, 0, 3).toString() === '239,187,191';
-    
-    if (!hasUtf8Bom && !text.includes('ID') && !text.includes('商品名') && !text.includes('SKU') && !text.includes('sku')) {
-        // Fallback to Shift-JIS for legacy Japanese CSVs
-        try {
-            text = new TextDecoder('shift-jis').decode(buffer);
-        } catch (e) {
-            // Keep UTF-8 if Shift-JIS fails
-            console.warn('⚠️ Shift-JIS decoding failed, using UTF-8');
-        }
+    // Simple heuristic: check for known headers
+    if (!text.includes('ID') && !text.includes('商品名') && !text.includes('sku')) {
+        // Fallback to UTF-8
+        text = new TextDecoder('utf-8').decode(buffer);
     }
 
     const lines = text.split(/\r\n|\n|\r/);
+    const headers = lines[0].split(',');
     
     // Simple CSV parser logic needed for data lines to handle quotes
     const parseCSVLine = (line: string) => {
@@ -1887,9 +2012,6 @@ app.post('/api/import-csv', async (c) => {
         result.push(val);
         return result;
     };
-    
-    // Parse header row using the same parser
-    const headers = parseCSVLine(lines[0]);
 
     // Mapping indexes based on header row (fuzzy matching)
     // User requested specific column mapping:
@@ -1907,7 +2029,7 @@ app.post('/api/import-csv', async (c) => {
         barcode: getIndex(['バーコード', 'Barcode']),      // Col A
         sku: getIndex(['ID', 'sku', 'SKU']),               // Col B
         brand: getIndex(['ブランド', 'Brand']),            // Col C
-        brand_kana: getIndex(['ブランドカナ', 'BrandKana']), // Col D
+        // Col D (BrandKana) skipped
         name: getIndex(['品名', '商品名', 'Name']),        // Col E
         size: getIndex(['サイズ', 'Size']),                // Col F
         color: getIndex(['カラー', 'Color']),              // Col G
@@ -1932,13 +2054,9 @@ app.post('/api/import-csv', async (c) => {
 
     let count = 0;
     
-    // Debug: Log index mapping
-    console.log('📋 CSV Index Mapping:', idx);
-    console.log('📋 Headers:', headers);
-    
     // Prepared statement for insertion
     const stmt = c.env.DB.prepare(`
-        INSERT OR REPLACE INTO product_master (
+        INSERT OR REPLACE INTO products (
             sku, name, brand, brand_kana, size, color, price_cost, price_sale, 
             stock_quantity, barcode, status, category, category_sub, season, 
             rank, buyer, store_name, price_ref, price_list, location, created_at
@@ -1952,14 +2070,6 @@ app.post('/api/import-csv', async (c) => {
         if (!line) continue;
         
         const row = parseCSVLine(line);
-        
-        // Debug: Log first row
-        if (i === 1) {
-            console.log('🔍 First Row Parsed:', row);
-            console.log('🔍 SKU (idx=' + idx.sku + '):', row[idx.sku]);
-            console.log('🔍 Name (idx=' + idx.name + '):', row[idx.name]);
-        }
-        
         // Basic validation: must have SKU or Name
         if (!row[idx.sku] && !row[idx.name]) continue;
 
@@ -2023,11 +2133,11 @@ app.post('/api/products/bulk-import', async (c) => {
         const batch = [];
 
         const stmt = c.env.DB.prepare(`
-            INSERT OR REPLACE INTO product_master (
+            INSERT OR REPLACE INTO products (
                 sku, barcode, name, brand, category, size, color, 
                 price_sale, status, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(
-                (SELECT created_at FROM product_master WHERE sku = ?), 
+                (SELECT created_at FROM products WHERE sku = ?), 
                 ?
             ))
         `);
@@ -2037,7 +2147,7 @@ app.post('/api/products/bulk-import', async (c) => {
 
             // Check if product exists
             const existing = await c.env.DB.prepare(
-                'SELECT sku FROM product_master WHERE sku = ?'
+                'SELECT sku FROM products WHERE sku = ?'
             ).bind(product.sku).first();
 
             if (existing) {
@@ -2123,7 +2233,7 @@ app.get('/api/products/list', async (c) => {
             price_sale, stock_quantity, status, 
             barcode, rank, 
             created_at 
-        FROM product_master 
+        FROM products 
         ORDER BY id DESC
     `).all();
 
@@ -2149,7 +2259,7 @@ app.get('/api/products/search', async (c) => {
             SELECT 
                 sku, barcode, name, brand, category, size, color, 
                 price_sale as price, status, created_at, created_at as updated_at
-            FROM product_master 
+            FROM products 
             WHERE sku = ?
         `).bind(sku).first();
 
@@ -2160,7 +2270,13 @@ app.get('/api/products/search', async (c) => {
             }, 404);
         }
 
-        // Images are fetched from R2 and mobile API only - no images table
+        // Get related images from images table (if any)
+        const images = await c.env.DB.prepare(`
+            SELECT id, original_url, processed_url, status, created_at as photographed_at
+            FROM images
+            WHERE product_id = (SELECT id FROM products WHERE sku = ?)
+            ORDER BY id DESC
+        `).bind(sku).all();
 
         // Also check R2 bucket for mobile app images
         const mobileAppImages = [];
@@ -2300,7 +2416,7 @@ app.post('/api/sync-from-mobile', async (c) => {
                         if (localSkus.has(sku)) {
                             // Update existing product
                             await c.env.DB.prepare(`
-                                UPDATE product_master SET
+                                UPDATE products SET
                                     name = ?,
                                     brand = ?,
                                     size = ?,
@@ -2325,7 +2441,7 @@ app.post('/api/sync-from-mobile', async (c) => {
                         } else {
                             // Insert new product
                             await c.env.DB.prepare(`
-                                INSERT INTO product_master (
+                                INSERT INTO products (
                                     sku, name, brand, size, color, price_sale, barcode, category, status, created_at
                                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                             `).bind(
@@ -2389,7 +2505,7 @@ app.post('/api/sync-from-mobile', async (c) => {
                                 const product = data.product;
                                 
                                 await c.env.DB.prepare(`
-                                    INSERT INTO product_master (
+                                    INSERT INTO products (
                                         sku, name, brand, size, color, price_sale, barcode, category, status, created_at
                                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                                 `).bind(
@@ -2410,7 +2526,7 @@ app.post('/api/sync-from-mobile', async (c) => {
                         } else {
                             // Mobile API doesn't have this product - create placeholder from R2
                             await c.env.DB.prepare(`
-                                INSERT INTO product_master (
+                                INSERT INTO products (
                                     sku, name, category, status, created_at
                                 ) VALUES (?, ?, ?, ?, datetime('now'))
                             `).bind(
@@ -2747,21 +2863,26 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
             
             // Get product ID
             const productResult = await c.env.DB.prepare(`
-                SELECT id FROM product_master WHERE sku = ?
+                SELECT id FROM products WHERE sku = ?
             `).bind(sku).first();
             
             if (productResult) {
                 productId = productResult.id as number;
                 
                 // Check if image already exists in DB
-                // images table removed
+                const existingImage = await c.env.DB.prepare(`
+                    SELECT id FROM images WHERE original_url = ?
+                `).bind(originalUrl).first();
                 
                 if (existingImage) {
                     dbImageId = existingImage.id as number;
                     console.log(`✅ Found existing image record: ${dbImageId}`);
                 } else {
                     // Create image record
-                    const insertResult = // images table removed
+                    const insertResult = await c.env.DB.prepare(`
+                        INSERT INTO images (product_id, original_url, status, created_at)
+                        VALUES (?, ?, 'processing', datetime('now'))
+                    `).bind(productId, originalUrl).run();
                     
                     dbImageId = insertResult.meta.last_row_id as number;
                     console.log(`✨ Created new image record: ${dbImageId}`);
@@ -2771,7 +2892,9 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
             }
         } else {
             // Database image
-            // images table removed
+            const imageResult = await c.env.DB.prepare(`
+                SELECT * FROM images WHERE id = ?
+            `).bind(imageId).first();
 
             if (!imageResult) {
                 return c.json({ error: 'Image not found' }, 404);
@@ -3004,19 +3127,21 @@ app.post('/api/sync-from-bubble', async (c) => {
                 
                 // Check if product exists
                 const product = await c.env.DB.prepare(`
-                    SELECT id FROM product_master WHERE sku = ?
+                    SELECT id FROM products WHERE sku = ?
                 `).bind(sku).first();
                 
                 if (!product) {
                     // Create product if not exists
                     await c.env.DB.prepare(`
-                        INSERT OR IGNORE INTO product_master (sku, name, category)
+                        INSERT OR IGNORE INTO products (sku, name, category)
                         VALUES (?, ?, ?)
                     `).bind(sku, `商品 ${sku}`, 'Imported').run();
                 }
                 
                 // Check if image already exists
-                // images table removed
+                const existingImage = await c.env.DB.prepare(`
+                    SELECT id FROM images WHERE original_url = ?
+                `).bind(imageUrl).first();
                 
                 if (existingImage) {
                     skippedCount++;
@@ -3024,7 +3149,11 @@ app.post('/api/sync-from-bubble', async (c) => {
                 }
                 
                 // Insert image
-                // images table removed
+                await c.env.DB.prepare(`
+                    INSERT INTO images (product_id, original_url, status, created_at)
+                    SELECT id, ?, 'pending', datetime(?, 'unixepoch', 'subsec')
+                    FROM products WHERE sku = ?
+                `).bind(imageUrl, parseInt(timestamp) / 1000, sku).run();
                 
                 syncedCount++;
             }
@@ -3089,21 +3218,39 @@ app.post('/api/register-image', async (c) => {
         
         // Check if product exists, create if not
         const product = await c.env.DB.prepare(`
-            SELECT id FROM product_master WHERE sku = ?
+            SELECT id FROM products WHERE sku = ?
         `).bind(sku).first();
         
         if (!product) {
             await c.env.DB.prepare(`
-                INSERT INTO product_master (sku, name, category)
+                INSERT INTO products (sku, name, category)
                 VALUES (?, ?, ?)
             `).bind(sku, `商品 ${sku}`, 'Imported').run();
         }
         
-        // Image registration removed - images are now managed via R2 bucket only
+        // Check if image already exists
+        const existingImage = await c.env.DB.prepare(`
+            SELECT id FROM images WHERE original_url = ?
+        `).bind(imageUrl).first();
+        
+        if (existingImage) {
+            return c.json({ 
+                success: true,
+                message: 'Image already exists',
+                imageId: existingImage.id
+            });
+        }
+        
+        // Insert image
+        const result = await c.env.DB.prepare(`
+            INSERT INTO images (product_id, original_url, status)
+            SELECT id, ?, 'pending' FROM products WHERE sku = ?
+        `).bind(imageUrl, sku).run();
+        
         return c.json({ 
             success: true,
-            message: 'Product exists, but image registration is handled via R2 bucket',
-            sku: sku
+            message: 'Image registered successfully',
+            imageId: result.meta.last_row_id
         });
         
     } catch (error: any) {
@@ -3328,7 +3475,16 @@ app.get('/api/download-image/:imageId', async (c) => {
         const imageId = c.req.param('imageId');
         
         // Get image data with product info
-        // images table removed
+        const result = await c.env.DB.prepare(`
+            SELECT 
+                i.id,
+                i.original_url,
+                p.sku,
+                p.name as product_name
+            FROM images i
+            LEFT JOIN products p ON i.product_id = p.id
+            WHERE i.id = ?
+        `).bind(imageId).first();
         
         if (!result) {
             return c.json({ error: 'Image not found' }, 404);
@@ -3360,7 +3516,17 @@ app.get('/api/download-processed-image/:imageId', async (c) => {
         const imageId = c.req.param('imageId');
         
         // Get image data with product info
-        // images table removed
+        const result = await c.env.DB.prepare(`
+            SELECT 
+                i.id,
+                i.processed_url,
+                i.status,
+                p.sku,
+                p.name as product_name
+            FROM images i
+            LEFT JOIN products p ON i.product_id = p.id
+            WHERE i.id = ?
+        `).bind(imageId).first();
         
         if (!result) {
             return c.json({ error: 'Image not found' }, 404);
@@ -3407,7 +3573,9 @@ app.post('/api/save-edited-image/:imageId', async (c) => {
         }
         
         // Verify image exists
-        // images table removed
+        const imageResult = await c.env.DB.prepare(`
+            SELECT * FROM images WHERE id = ?
+        `).bind(imageId).first();
         
         if (!imageResult) {
             return c.json({ error: 'Image not found' }, 404);

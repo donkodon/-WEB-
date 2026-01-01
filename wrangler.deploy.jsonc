@@ -1,0 +1,37 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "smart-measure",
+  "main": "dist/_worker.js",
+  "compatibility_date": "2025-12-18",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  
+  // R2 Buckets
+  "r2_buckets": [
+    {
+      "binding": "PRODUCT_IMAGES",
+      "bucket_name": "product-images-saisunsatsuei"
+    }
+  ],
+  
+  // Cloudflare AI
+  "ai": {
+    "binding": "AI"
+  },
+  
+  // D1 Database
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "measure-master-db",
+      "database_id": "7fad5dc0-abce-4816-b667-193490cf965d"
+    }
+  ],
+  
+  // Environment Variables (set via wrangler secret or dashboard)
+  "vars": {
+    "MOBILE_API_URL": "https://measure-master-api.jinkedon2.workers.dev",
+    "IMAGE_UPLOAD_API_URL": "https://image-upload-api.jinkedon2.workers.dev"
+  }
+}
