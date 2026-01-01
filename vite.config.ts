@@ -10,5 +10,10 @@ export default defineConfig({
       adapter,
       entry: 'src/index.tsx'
     })
-  ]
+  ],
+  publicDir: 'public',
+  build: {
+    outDir: 'dist',
+    emptyOutDir: false // Don't empty dist before build to preserve _worker.js
+  }
 })

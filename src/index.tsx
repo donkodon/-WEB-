@@ -242,219 +242,153 @@ app.get('/dashboard', async (c) => {
       `)
     }
     
-    // 1. Get all SKUs from local DB (just for reference)
-    const localProductsResult = await c.env.DB.prepare(`
-      SELECT DISTINCT sku FROM product_master ORDER BY id DESC
-    `).all();
-
-  // Images are now fetched directly from R2 and mobile API - no local images table
-
-  // 3. Fetch complete product data (master + items) from mobile app API
-  const MOBILE_API_URL = c.env.MOBILE_API_URL || 'https://measure-master-api.jinkedon2.workers.dev';
-  const productsData = []; // Array of products with complete data
-  
-  console.log('🔄 Fetching complete product data from mobile app API...');
-  
-  for (const localProduct of localProductsResult.results) {
-    const sku = (localProduct as any).sku;
+    // ========================================
+    // D1 product_items テーブルから画像情報を取得
+    // R2バケットからSKU別に画像を取得
+    // ========================================
     
-    try {
-      const response = await fetch(`${MOBILE_API_URL}/api/products/search?sku=${sku}`);
-      
-      if (response.ok) {
-        const data = await response.json();
-        
-        if (data.success && data.product) {
-          // Use mobile app data as the source of truth
-          productsData.push({
-            ...data.product,
-            capturedItems: data.product.capturedItems || [],
-            capturedCount: data.product.capturedCount || 0,
-            latestItem: data.product.latestItem || null
-          });
-          
-          console.log(`✅ Loaded product SKU ${sku}: ${data.product.name}, ${data.product.capturedCount} captured items`);
-        }
-      }
-    } catch (e) {
-      console.error(`❌ Failed to fetch product data for SKU ${sku}:`, e);
-    }
-  }
-
-  // 4. Get local product master data (CSV origin)
-  const localProductsMap = new Map();
-  for (const lp of localProductsResult.results) {
-    const sku = (lp as any).sku;
-    const fullProduct = await c.env.DB.prepare(`
-      SELECT * FROM product_master WHERE sku = ?
-    `).bind(sku).first();
-    
-    if (fullProduct) {
-      localProductsMap.set(sku, fullProduct);
-    }
-  }
-  
-  // 5. Merge local master data with mobile app data
-  const products = [];
-  
-  // First, process products from mobile API
-  for (const mobileData of productsData) {
-    const sku = mobileData.sku;
-    const localProduct = localProductsMap.get(sku);
-    
-    // Mark as processed
-    if (localProduct) {
-      localProductsMap.delete(sku);
-    }
-    
-    // Extract images from mobile app capturedItems
-    const mobileImages = [];
-    if (mobileData && mobileData.capturedItems && mobileData.capturedItems.length > 0) {
-      for (const item of mobileData.capturedItems) {
-        try {
-          const imageUrls = JSON.parse(item.image_urls || '[]');
-          for (const imageUrl of imageUrls) {
-            mobileImages.push({
-              id: `mobile_${item.item_code}`,
-              original_url: imageUrl,
-              processed_url: null,
-              status: 'mobile',
-              created_at: item.photographed_at || new Date().toISOString(),
-              filename: item.item_code,
-              // Store additional mobile data
-              item_code: item.item_code,
-              actual_measurements: item.actual_measurements,
-              condition: item.condition,
-              material: item.material,
-              inspection_notes: item.inspection_notes
-            });
-          }
-        } catch (e) {
-          console.error('Failed to parse image_urls:', e);
-        }
-      }
-    } else {
-      // Fallback: Check R2 bucket for images if no captured items
-      console.log(`⚠️ No capturedItems for SKU ${sku}, checking R2 bucket...`);
-      // Check R2 bucket for images
-      const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
-      
-      for (let i = 1; i <= 10; i++) {
-        const imageUrl = `${R2_PUBLIC_URL}/${sku}_${i}.jpg`;
-        
-        try {
-          const headResponse = await fetch(imageUrl, { method: 'HEAD' });
-          
-          if (headResponse.ok) {
-            const lastModified = headResponse.headers.get('Last-Modified') || new Date().toUTCString();
-            
-            mobileImages.push({
-              id: `r2_${sku}_${i}`,
-              original_url: imageUrl,
-              processed_url: null,
-              status: 'mobile',
-              created_at: lastModified,
-              filename: `${sku}_${i}.jpg`,
-              item_code: `${sku}_${i}`,
-              actual_measurements: null,
-              condition: 'Unknown',
-              material: null,
-              inspection_notes: null
-            });
-            
-            console.log(`✅ Found R2 image: ${sku}_${i}.jpg`);
-          } else {
-            console.log(`⏹️ No more R2 images found after ${sku}_${i-1}.jpg`);
-            break;
-          }
-        } catch (e) {
-          console.error(`❌ Failed to check R2 image ${sku}_${i}.jpg:`, e);
-          break;
-        }
-      }
-    }
-    
-    // All images come from mobile app API and R2 bucket - no separate DB images table
-    console.log(`📦 Product ${sku}: ${mobileImages.length} mobile/R2 images`);
-    
-    // Merge: Use mobile app data as primary source, fallback to local CSV data
-    const mergedProduct = {
-      // Base: Local CSV master data (fallback)
-      ...(localProduct || {}),
-      // Override with mobile app master data (primary source)
-      // スマホアプリ側のデータを優先（CSVは初期データのみ）
-      barcode: mobileData.barcode || (localProduct as any)?.barcode || null,
-      name: mobileData.name || (localProduct as any)?.name || 'Unknown Product',
-      brand: mobileData.brand || (localProduct as any)?.brand || null,
-      size: mobileData.size || (localProduct as any)?.size || null,
-      color: mobileData.color || (localProduct as any)?.color || null,
-      price: mobileData.price || (localProduct as any)?.price || 0,
-      price_sale: mobileData.price || (localProduct as any)?.price_sale || (localProduct as any)?.price || 0,
-      category: mobileData.category || (localProduct as any)?.category || null,
-      // Add mobile app captured data
-      capturedItems: mobileData.capturedItems || [],
-      capturedCount: mobileData.capturedCount || 0,
-      latestItem: mobileData.latestItem || null,
-      hasCapturedData: (mobileData.capturedCount || 0) > 0,
-      images: mobileImages,  // All images from mobile app and R2
-      // Timestamps
-      created_at: mobileData.created_at || (localProduct as any)?.created_at,
-      updated_at: mobileData.updated_at || (localProduct as any)?.updated_at
-    };
-    
-    console.log(`✅ Merged product ${sku}: ${mergedProduct.name} (Brand: ${mergedProduct.brand}, Barcode: ${mergedProduct.barcode}, Price: ${mergedProduct.price})`);
-    
-    products.push(mergedProduct);
-  }
-  
-  // Add products that only exist in local DB (CSV imports)
-  for (const [sku, localProduct] of localProductsMap.entries()) {
-    console.log(`📋 Adding local-only product: ${sku}`);
-    
-    // Check R2 for images
-    const mobileImages = [];
     const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
     
-    for (let i = 1; i <= 10; i++) {
-      const imageUrl = `${R2_PUBLIC_URL}/${sku}_${i}.jpg`;
+    // 1. product_items テーブルから全てのアイテムを取得（SKU別にグループ化）
+    console.log('🔄 Fetching product items from D1 product_items table...');
+    
+    const productItemsResult = await c.env.DB.prepare(`
+      SELECT 
+        pi.*,
+        pm.name as master_name,
+        pm.brand,
+        pm.size as master_size,
+        pm.color as master_color,
+        pm.price_sale,
+        pm.barcode,
+        pm.category,
+        pm.rank
+      FROM product_items pi
+      LEFT JOIN product_master pm ON pi.sku = pm.sku
+      ORDER BY pi.sku, pi.created_at DESC
+    `).all();
+    
+    console.log(`✅ Retrieved ${productItemsResult.results.length} items from product_items`);
+    
+    // 2. SKU別にグループ化
+    const skuMap = new Map<string, any>();
+    
+    for (const item of productItemsResult.results) {
+      const pi = item as any;
+      const sku = pi.sku;
       
-      try {
-        const headResponse = await fetch(imageUrl, { method: 'HEAD' });
+      if (!skuMap.has(sku)) {
+        skuMap.set(sku, {
+          id: pi.id,
+          sku: sku,
+          name: pi.master_name || `商品 ${sku}`,
+          brand: pi.brand || null,
+          size: pi.master_size || null,
+          color: pi.master_color || null,
+          price_sale: pi.price_sale || 0,
+          barcode: pi.barcode || null,
+          category: pi.category || null,
+          rank: pi.rank || pi.product_rank || null,
+          items: [],
+          images: []
+        });
+      }
+      
+      // アイテムを追加
+      const productData = skuMap.get(sku);
+      productData.items.push({
+        id: pi.id,
+        item_code: pi.item_code,
+        image_urls: pi.image_urls,
+        actual_measurements: pi.actual_measurements,
+        condition: pi.condition,
+        material: pi.material,
+        product_rank: pi.product_rank,
+        inspection_notes: pi.inspection_notes,
+        photographed_at: pi.photographed_at,
+        status: pi.status
+      });
+    }
+    
+    // 3. product_items の image_urls から実際の画像を取得
+    console.log('🔄 Processing images from product_items image_urls...');
+    
+    for (const [sku, productData] of skuMap.entries()) {
+      // 各アイテムの image_urls から画像を取得
+      for (const item of productData.items) {
+        if (!item.image_urls) continue;
         
-        if (headResponse.ok) {
-          const lastModified = headResponse.headers.get('Last-Modified') || new Date().toUTCString();
-          
-          mobileImages.push({
-            id: `r2_${sku}_${i}`,
-            original_url: imageUrl,
-            processed_url: null,
-            status: 'mobile',
-            created_at: lastModified,
-            filename: `${sku}_${i}.jpg`,
-            item_code: `${sku}_${i}`,
-            actual_measurements: null,
-            condition: 'Unknown',
-            material: null,
-            inspection_notes: null
-          });
-        } else {
-          break;
+        // JSON配列をパース
+        let imageUrlsArray: string[] = [];
+        try {
+          imageUrlsArray = JSON.parse(item.image_urls);
+        } catch (e) {
+          console.error(`❌ Failed to parse image_urls for item ${item.item_code}:`, e);
+          continue;
         }
-      } catch (e) {
-        break;
+        
+        // 各画像URLを処理
+        for (let i = 0; i < imageUrlsArray.length; i++) {
+          const originalImageUrl = imageUrlsArray[i];
+          
+          // image-upload-api.jinkedon2.workers.dev のURLからファイル名を抽出
+          // 例: https://image-upload-api.jinkedon2.workers.dev/1025L280001_2.jpg
+          const urlParts = originalImageUrl.split('/');
+          const filename = urlParts[urlParts.length - 1]; // "1025L280001_2.jpg"
+          
+          // R2のパスを構築: {SKU}/{filename}
+          const r2Key = `${sku}/${filename}`;
+          const imageUrl = `${R2_PUBLIC_URL}/${r2Key}`;
+          
+          console.log(`📷 Processing image: ${filename} -> ${r2Key}`);
+          
+          // 画像IDを生成（一意なID）
+          const imageId = `r2_${sku}_${filename.replace(/\.[^/.]+$/, '')}`; // 拡張子を除去
+          
+          // 白抜き済み画像をR2バケットからチェック
+          let processedUrl = null;
+          const processedKeyPattern = `processed/${imageId}_`;
+          
+          // R2バケットで白抜き画像を検索
+          if (c.env.PRODUCT_IMAGES) {
+            try {
+              const r2List = await c.env.PRODUCT_IMAGES.list({ prefix: processedKeyPattern });
+              if (r2List.objects && r2List.objects.length > 0) {
+                // 最新の白抜き画像を使用（タイムスタンプ順で最後のもの）
+                const latestProcessed = r2List.objects.sort((a, b) => 
+                  (b.uploaded?.getTime() || 0) - (a.uploaded?.getTime() || 0)
+                )[0];
+                processedUrl = `${R2_PUBLIC_URL}/${latestProcessed.key}`;
+                console.log(`✅ Found processed image: ${latestProcessed.key}`);
+              }
+            } catch (e) {
+              console.error(`❌ Failed to check processed images for ${imageId}:`, e);
+            }
+          }
+          
+          // 画像情報を追加
+          productData.images.push({
+            id: imageId,
+            original_url: imageUrl,
+            processed_url: processedUrl,
+            status: processedUrl ? 'completed' : 'ready',
+            created_at: new Date().toISOString(),
+            filename: filename,
+            sku: sku,
+            item_id: item.id,
+            item_code: item.item_code
+          });
+        }
       }
     }
     
-    products.push({
-      ...(localProduct as any),
-      sku: sku,
-      capturedItems: [],
-      capturedCount: 0,
-      latestItem: null,
-      hasCapturedData: false,
-      images: mobileImages
-    });
-  }
+    // 4. 結果を配列に変換
+    const products = Array.from(skuMap.values());
+    
+    console.log(`📦 Total products: ${products.length}`);
+    for (const p of products) {
+      console.log(`  - ${p.sku}: ${p.name} (${p.images.length} images)`);
+    }
 
   return c.render(
     <Layout active="dashboard" title="商品画像一覧（SKU別）">
@@ -1287,8 +1221,39 @@ app.post('/api/upload-image', async (c) => {
 app.get('/edit/:id', async (c) => {
   const id = c.req.param('id')
   
-  // Get image from database
-  // images table removed
+  // Parse R2 image ID: r2_{SKU}_{filename_without_ext}
+  let imageResult: any = null;
+  
+  if (id.startsWith('r2_')) {
+    const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
+    const parts = id.replace('r2_', '').split('_');
+    
+    if (parts.length >= 2) {
+      const sku = parts[0];
+      const filenamePart = parts.slice(1).join('_');
+      
+      // Construct original image URL
+      const originalUrl = `${R2_PUBLIC_URL}/${sku}/${filenamePart}.jpg`;
+      
+      // Check for processed image in R2
+      let processedUrl = null;
+      if (c.env.PRODUCT_IMAGES) {
+        const r2List = await c.env.PRODUCT_IMAGES.list({ prefix: `processed/${id}_` });
+        if (r2List.objects.length > 0) {
+          processedUrl = `${R2_PUBLIC_URL}/${r2List.objects[0].key}`;
+        }
+      }
+      
+      imageResult = {
+        id: id,
+        original_url: originalUrl,
+        processed_url: processedUrl,
+        sku: sku,
+        product_name: `商品 ${sku}`,
+        status: processedUrl ? 'completed' : 'ready'
+      };
+    }
+  }
   
   if (!imageResult) {
     return c.redirect('/dashboard');
@@ -1776,13 +1741,13 @@ app.get('/settings', (c) => {
                      CSVインポート (在庫更新)
                  </h3>
                  
-                 <div class="border-2 border-dashed border-blue-100 bg-blue-50/50 rounded-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-blue-50 transition-colors h-64 relative">
-                     <input type="file" id="csv-input" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".csv" />
-                     <div class="bg-white w-16 h-16 rounded-full shadow-sm flex items-center justify-center mb-4 text-blue-500 text-2xl">
+                 <div id="drop-zone" class="border-2 border-dashed border-blue-100 bg-blue-50/50 rounded-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-blue-50 transition-colors h-64 relative">
+                     <input type="file" id="csv-input" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" accept=".csv,.tsv,text/csv,text/tab-separated-values" />
+                     <div class="bg-white w-16 h-16 rounded-full shadow-sm flex items-center justify-center mb-4 text-blue-500 text-2xl pointer-events-none">
                          <i class="fas fa-cloud-upload-alt"></i>
                      </div>
-                     <p id="file-name" class="font-bold text-blue-600 mb-1">クリックして選択 <span class="text-gray-500 font-normal">またはドラッグ＆ドロップ</span></p>
-                     <p class="text-xs text-gray-400">CSV, TSV (最大 10MB)</p>
+                     <p id="file-name" class="font-bold text-blue-600 mb-1 pointer-events-none">クリックして選択 <span class="text-gray-500 font-normal">またはドラッグ＆ドロップ</span></p>
+                     <p class="text-xs text-gray-400 pointer-events-none">CSV, TSV (最大 10MB)</p>
                  </div>
                  
                  <div class="flex items-center justify-between mt-4">
@@ -1801,18 +1766,169 @@ app.get('/settings', (c) => {
                      </button>
                  </div>
                  <script dangerouslySetInnerHTML={{__html: `
-                    const fileInput = document.getElementById('csv-input');
-                    const fileNameDisplay = document.getElementById('file-name');
-                    const importBtn = document.getElementById('btn-import');
-
-                    fileInput.addEventListener('change', (e) => {
-                        if (e.target.files.length > 0) {
-                            fileNameDisplay.innerText = e.target.files[0].name;
-                            fileNameDisplay.classList.add('text-green-600');
+                    (function() {
+                        console.log('📋 CSV Import Script Loaded');
+                        
+                        // Restore last import log from localStorage
+                        try {
+                            const lastLog = localStorage.getItem('lastCsvImport');
+                            if (lastLog) {
+                                const log = JSON.parse(lastLog);
+                                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                                console.log('📜 Previous CSV Import Log (from localStorage):');
+                                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                                console.log('Timestamp:', log.timestamp);
+                                console.log('Status:', log.status);
+                                console.log('Success:', log.success);
+                                console.log('Count:', log.count);
+                                console.log('Encoding:', log.encoding);
+                                console.log('Problem Count:', log.problemCount);
+                                console.log('Full Data:', log.fullData);
+                                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                                console.log('💡 To see all logs: JSON.parse(localStorage.getItem("csvImportLogs"))');
+                                console.log('💡 To clear logs: localStorage.removeItem("csvImportLogs")');
+                            }
+                        } catch (e) {
+                            console.log('No previous import log found');
                         }
-                    });
+                        
+                        const fileInput = document.getElementById('csv-input');
+                        const fileNameDisplay = document.getElementById('file-name');
+                        const importBtn = document.getElementById('btn-import');
+                        const dropZone = document.getElementById('drop-zone');
+                        
+                        console.log('📋 Elements found:', {
+                            fileInput: !!fileInput,
+                            fileNameDisplay: !!fileNameDisplay,
+                            importBtn: !!importBtn,
+                            dropZone: !!dropZone
+                        });
+                        
+                        if (!fileInput) {
+                            console.error('❌ File input element not found!');
+                            return;
+                        }
+                        
+                        if (!fileNameDisplay) {
+                            console.error('❌ File name display element not found!');
+                            return;
+                        }
+                        
+                        if (!importBtn) {
+                            console.error('❌ Import button element not found!');
+                            return;
+                        }
+                        
+                        if (!dropZone) {
+                            console.error('❌ Drop zone element not found!');
+                            return;
+                        }
+
+                        // Handle file selection
+                        const handleFileSelect = (file) => {
+                            if (!file) {
+                                console.warn('⚠️ No file provided');
+                                return;
+                            }
+                            
+                            const fileName = file.name;
+                            const fileSize = file.size;
+                            const fileType = file.type;
+                            
+                            console.log('✅ File name:', fileName);
+                            console.log('✅ File size:', fileSize, 'bytes');
+                            console.log('✅ File type:', fileType);
+                            
+                            fileNameDisplay.innerText = fileName;
+                            fileNameDisplay.classList.add('text-green-600');
+                            
+                            // Show success message
+                            alert('ファイル選択完了: ' + fileName + ' (' + Math.round(fileSize/1024) + ' KB)');
+                        };
+                        
+                        // File input change event
+                        fileInput.addEventListener('change', (e) => {
+                            console.log('📁 File change event triggered');
+                            console.log('📁 File selected:', e.target.files);
+                            console.log('📁 Files length:', e.target.files.length);
+                            
+                            if (e.target.files.length > 0) {
+                                handleFileSelect(e.target.files[0]);
+                            } else {
+                                console.warn('⚠️ No files selected');
+                            }
+                        });
+                        
+                        // Prevent default drag behaviors on document
+                        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                            document.body.addEventListener(eventName, (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                            }, false);
+                        });
+                        
+                        // Drag over event
+                        dropZone.addEventListener('dragover', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            console.log('📦 Drag over');
+                            dropZone.classList.add('bg-blue-100', 'border-blue-300');
+                        });
+                        
+                        // Drag enter event
+                        dropZone.addEventListener('dragenter', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            console.log('📦 Drag enter');
+                            dropZone.classList.add('bg-blue-100', 'border-blue-300');
+                        });
+                        
+                        // Drag leave event
+                        dropZone.addEventListener('dragleave', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            console.log('📦 Drag leave');
+                            dropZone.classList.remove('bg-blue-100', 'border-blue-300');
+                        });
+                        
+                        // Drop event - on dropZone
+                        dropZone.addEventListener('drop', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            console.log('📦 File dropped on dropZone');
+                            dropZone.classList.remove('bg-blue-100', 'border-blue-300');
+                            
+                            if (e.dataTransfer && e.dataTransfer.files.length > 0) {
+                                const file = e.dataTransfer.files[0];
+                                console.log('✅ Dropped file:', file.name);
+                                
+                                // Set the file to the input element
+                                const dataTransfer = new DataTransfer();
+                                dataTransfer.items.add(file);
+                                fileInput.files = dataTransfer.files;
+                                
+                                handleFileSelect(file);
+                            }
+                        });
+                        
+                        // Also handle drop directly on the file input (since it's now visible as overlay)
+                        fileInput.addEventListener('drop', (e) => {
+                            // Let the native file input handle it, but also update UI
+                            console.log('📦 File dropped on fileInput');
+                            dropZone.classList.remove('bg-blue-100', 'border-blue-300');
+                            
+                            // The native input handles the file, we just need to trigger our callback
+                            setTimeout(() => {
+                                if (fileInput.files && fileInput.files.length > 0) {
+                                    handleFileSelect(fileInput.files[0]);
+                                }
+                            }, 100);
+                        });
 
                     importBtn.addEventListener('click', async () => {
+                        console.log('🖱️ Import button clicked');
+                        console.log('📁 Files available:', fileInput.files.length);
+                        
                         if (!fileInput.files.length) {
                             alert('CSVファイルを選択してください。');
                             return;
@@ -1820,26 +1936,125 @@ app.get('/settings', (c) => {
 
                         const formData = new FormData();
                         formData.append('csv', fileInput.files[0]);
+                        
+                        console.log('📤 Sending CSV file:', fileInput.files[0].name, 'Size:', fileInput.files[0].size, 'bytes');
 
                         importBtn.disabled = true;
                         importBtn.innerText = 'インポート中...';
                         importBtn.classList.add('opacity-50', 'cursor-not-allowed');
 
                         try {
+                            console.log('🔄 Fetching /api/import-csv...');
                             const res = await fetch('/api/import-csv', {
                                 method: 'POST',
                                 body: formData
                             });
                             
-                            if (res.ok) {
-                                const msg = await res.text();
-                                alert('成功: ' + msg);
-                                window.location.reload();
+                            console.log('📨 Response received:', res.status, res.statusText);
+                            const data = await res.json();
+                            console.log('📊 Response data:', data);
+                            
+                            // Save to localStorage IMMEDIATELY (before any alerts or reloads)
+                            const importLog = {
+                                timestamp: new Date().toISOString(),
+                                status: res.status,
+                                success: data.success,
+                                count: data.count,
+                                encoding: data.debug?.encoding,
+                                problemCount: data.debug?.problemCount,
+                                fullData: data
+                            };
+                            
+                            // Store in localStorage
+                            try {
+                                const logs = JSON.parse(localStorage.getItem('csvImportLogs') || '[]');
+                                logs.unshift(importLog); // Add to beginning
+                                if (logs.length > 10) logs.pop(); // Keep only last 10
+                                localStorage.setItem('csvImportLogs', JSON.stringify(logs));
+                                localStorage.setItem('lastCsvImport', JSON.stringify(importLog));
+                                console.log('💾 Import log saved to localStorage');
+                            } catch (e) {
+                                console.error('Failed to save to localStorage:', e);
+                            }
+                            
+                            if (res.ok && data.success) {
+                                // ALWAYS log full response to console (won't disappear)
+                                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                                console.log('✅ CSV Import SUCCESS');
+                                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                                console.log('📊 Full Response:', JSON.stringify(data, null, 2));
+                                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                                console.log('💡 Tip: Run "localStorage.getItem(\'lastCsvImport\')" in console to see this log again');
+                                
+                                // Build detailed result message
+                                let msg = '✅ インポート完了\\n';
+                                msg += '━━━━━━━━━━━━━━━━━━━━━━━━\\n';
+                                msg += '📊 結果サマリー:\\n';
+                                msg += '  • インポート成功: ' + data.count + ' 件\\n';
+                                
+                                if (data.debug) {
+                                    const d = data.debug;
+                                    
+                                    // Show encoding info
+                                    if (d.encoding) {
+                                        msg += '  • 文字エンコーディング: ' + d.encoding + '\\n';
+                                    }
+                                    
+                                    msg += '  • 総行数: ' + d.totalLines + ' 行\\n';
+                                    msg += '  • ヘッダー数: ' + d.headerCount + ' 列\\n';
+                                    msg += '  • スキップ: ' + d.skippedCount + ' 件\\n';
+                                    msg += '  • 問題あり(不明な製品): ' + d.problemCount + ' 件\\n';
+                                    
+                                    if (d.problemCount > 0) {
+                                        msg += '\\n⚠️ 「不明な製品」になった行:\\n';
+                                        d.problemRows.forEach((p, i) => {
+                                            if (i < 5) { // Only show first 5
+                                                msg += '  [行' + p.row + '] SKU: ' + p.sku + '\\n';
+                                                msg += '    原因: ' + p.reason + '\\n';
+                                                msg += '    データ: ' + p.rawData.slice(0, 5).join(' | ') + '...\\n';
+                                            }
+                                        });
+                                        if (d.problemCount > 5) {
+                                            msg += '  ... 他 ' + (d.problemCount - 5) + ' 件\\n';
+                                        }
+                                    }
+                                    
+                                    msg += '\\n📋 カラムマッピング:\\n';
+                                    msg += '  • SKU (idx=' + d.indexMapping.sku + ')\\n';
+                                    msg += '  • 商品名 (idx=' + d.indexMapping.name + ')\\n';
+                                    msg += '  • ブランド (idx=' + d.indexMapping.brand + ')\\n';
+                                    msg += '  • サイズ (idx=' + d.indexMapping.size + ')\\n';
+                                    msg += '  • カラー (idx=' + d.indexMapping.color + ')\\n';
+                                    
+                                    msg += '\\n📄 検出されたヘッダー (最初の10列):\\n';
+                                    d.headers.slice(0, 10).forEach((h, i) => {
+                                        msg += '  [' + i + '] ' + h + '\\n';
+                                    });
+                                    
+                                    msg += '\\n💡 詳細はブラウザのコンソールを確認してください';
+                                }
+                                
+                                alert(msg);
+                                
+                                // Reload only if successful (problemCount === 0)
+                                if (data.debug && data.debug.problemCount === 0) {
+                                    console.log('✨ All data imported successfully!');
+                                    console.log('🔄 Page will reload in 3 seconds...');
+                                    console.log('💾 Log is saved in localStorage. Access with: localStorage.getItem("lastCsvImport")');
+                                    setTimeout(() => {
+                                        console.log('🔄 Reloading now...');
+                                        window.location.reload();
+                                    }, 3000); // 3 seconds delay to see logs
+                                } else {
+                                    console.warn('⚠️ Some problems detected (' + data.debug.problemCount + ' issues). NOT reloading page.');
+                                    console.warn('💡 Fix the issues and try again, or check the logs above.');
+                                }
                             } else {
-                                const err = await res.text();
-                                alert('エラー: ' + err);
+                                console.error('❌ Import failed:', data);
+                                alert('エラー: ' + (data.error || JSON.stringify(data)));
                             }
                         } catch (e) {
+                            console.error('❌ Network/Parse error:', e);
                             alert('通信エラーが発生しました: ' + e);
                         } finally {
                             importBtn.disabled = false;
@@ -1847,6 +2062,7 @@ app.get('/settings', (c) => {
                             importBtn.classList.remove('opacity-50', 'cursor-not-allowed');
                         }
                     });
+                    })(); // End of IIFE
                  `}} />
             </div>
 
@@ -1983,28 +2199,66 @@ app.get('/settings', (c) => {
 
 // --- API: Import CSV ---
 app.post('/api/import-csv', async (c) => {
+    console.log('📥 CSV Import API called');
+    
     const body = await c.req.parseBody();
     const file = body['csv'];
-    if (!file || !(file instanceof File)) return c.text('No file uploaded', 400);
+    
+    console.log('📁 Received file:', file ? 'YES' : 'NO', file instanceof File ? '(File object)' : '(Not a File)');
+    
+    if (!file || !(file instanceof File)) {
+        console.error('❌ No valid file uploaded');
+        return c.text('No file uploaded', 400);
+    }
+    
+    console.log('📄 File details:', {
+        name: file.name,
+        type: file.type,
+        size: file.size
+    });
 
     const buffer = await file.arrayBuffer();
+    console.log('✅ File read as buffer, size:', buffer.byteLength, 'bytes');
     
-    // Try UTF-8 first (most common)
-    let text = new TextDecoder('utf-8').decode(buffer);
-    
-    // If UTF-8 produces invalid characters, try Shift-JIS
-    // Check for UTF-8 BOM or valid UTF-8 headers
+    // Check for UTF-8 BOM
     const hasUtf8Bom = buffer.byteLength >= 3 && 
         new Uint8Array(buffer, 0, 3).toString() === '239,187,191';
     
-    if (!hasUtf8Bom && !text.includes('ID') && !text.includes('商品名') && !text.includes('SKU') && !text.includes('sku')) {
-        // Fallback to Shift-JIS for legacy Japanese CSVs
+    // Try UTF-8 first (most common)
+    let text = new TextDecoder('utf-8').decode(buffer);
+    let encoding = 'UTF-8';
+    
+    // Detect mojibake (garbled text) - check for replacement characters or invalid UTF-8 patterns
+    // Common signs: � (U+FFFD), or garbled Japanese patterns like �o�[�R
+    const hasMojibake = text.includes('�') || 
+                        /[\x80-\xFF]{2,}/.test(text.substring(0, 500)) || // Multiple high bytes in sequence
+                        (text.includes('��') && !text.includes('日本語')); // Garbled Japanese
+    
+    console.log('🔍 Encoding detection:', {
+        hasUtf8Bom,
+        hasMojibake,
+        firstLinePreview: text.split(/\r\n|\n|\r/)[0].substring(0, 100)
+    });
+    
+    // If UTF-8 BOM is present, force UTF-8
+    if (hasUtf8Bom) {
+        console.log('✅ UTF-8 BOM detected, using UTF-8');
+        encoding = 'UTF-8';
+    }
+    // If mojibake detected and no UTF-8 BOM, try Shift-JIS
+    else if (hasMojibake) {
+        console.log('⚠️ Mojibake detected, trying Shift-JIS...');
         try {
             text = new TextDecoder('shift-jis').decode(buffer);
+            encoding = 'Shift-JIS';
+            console.log('✅ Shift-JIS decoding successful');
+            console.log('📝 First line after Shift-JIS:', text.split(/\r\n|\n|\r/)[0].substring(0, 100));
         } catch (e) {
-            // Keep UTF-8 if Shift-JIS fails
-            console.warn('⚠️ Shift-JIS decoding failed, using UTF-8');
+            console.warn('⚠️ Shift-JIS decoding failed, keeping UTF-8:', e);
+            encoding = 'UTF-8 (fallback)';
         }
+    } else {
+        console.log('✅ UTF-8 decoding looks good');
     }
 
     const lines = text.split(/\r\n|\n|\r/);
@@ -2142,6 +2396,8 @@ app.post('/api/import-csv', async (c) => {
     }
 
     let count = 0;
+    let skippedRows: { row: number; reason: string; data: string }[] = [];
+    let problemRows: { row: number; sku: string; reason: string; rawData: string[] }[] = [];
     
     // Debug: Log index mapping
     console.log('📋 CSV Index Mapping:', JSON.stringify(idx, null, 2));
@@ -2181,13 +2437,18 @@ app.post('/api/import-csv', async (c) => {
         
         // Debug: Log problematic rows
         if (!rowSku && !rowName) {
-            console.log(`⚠️ Row ${i} skipped - no SKU or Name. Row length: ${row.length}, sku_idx: ${idx.sku}, name_idx: ${idx.name}`);
+            const reason = `No SKU (idx=${idx.sku}) or Name (idx=${idx.name}). Row has ${row.length} fields.`;
+            console.log(`⚠️ Row ${i} skipped: ${reason}`);
+            skippedRows.push({ row: i, reason, data: row.slice(0, 5).join('|') });
             continue;
         }
         
         // If we have SKU but no name, log a warning (this causes '不明な製品')
         if (rowSku && !rowName) {
-            console.log(`⚠️ Row ${i} has SKU "${rowSku}" but NO NAME. Row: ${row.slice(0, 8).join('|')}...`);
+            const reason = `SKU exists but NAME is empty/null. name_idx=${idx.name}, row[${idx.name}]="${row[idx.name]}"`;
+            console.log(`⚠️ Row ${i} - SKU "${rowSku}": ${reason}`);
+            console.log(`   Raw row data (first 10 fields): ${row.slice(0, 10).map((v, j) => `[${j}]="${v}"`).join(', ')}`);
+            problemRows.push({ row: i, sku: rowSku, reason, rawData: row.slice(0, 10) });
         }
 
         const sku = rowSku || `UNKNOWN-${Date.now()}-${i}`;
@@ -2227,12 +2488,20 @@ app.post('/api/import-csv', async (c) => {
         
         // Execute batch every 50 rows
         if (batch.length >= 50) {
+            console.log(`💾 Executing batch: ${batch.length} rows`);
             await c.env.DB.batch(batch);
+            console.log(`✅ Batch executed successfully`);
             batch.length = 0;
         }
     }
     
-    if (batch.length > 0) await c.env.DB.batch(batch);
+    if (batch.length > 0) {
+        console.log(`💾 Executing final batch: ${batch.length} rows`);
+        await c.env.DB.batch(batch);
+        console.log(`✅ Final batch executed successfully`);
+    }
+    
+    console.log(`✅ CSV Import Complete: ${count} rows inserted/updated in database`);
 
     // Return detailed response for debugging
     return c.json({
@@ -2240,8 +2509,15 @@ app.post('/api/import-csv', async (c) => {
         message: `${count} 件の商品データをインポートしました。`,
         count: count,
         debug: {
-            headers: headers,
+            encoding: encoding, // Show detected encoding
+            totalLines: lines.length,
+            headerCount: headers.length,
+            headers: headers.slice(0, 15), // First 15 headers for debugging
             indexMapping: idx,
+            skippedCount: skippedRows.length,
+            skippedRows: skippedRows.slice(0, 5), // First 5 skipped rows
+            problemCount: problemRows.length,
+            problemRows: problemRows.slice(0, 10), // First 10 problem rows (不明な製品)
             firstRowSample: count > 0 ? '解析済み' : 'データなし'
         }
     });
@@ -2939,66 +3215,59 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
             // No JSON body or parse error, ignore and use default
         }
         
-        // Check if this is an R2 image (starts with r2_)
+        // Check image ID format and get original URL
         let originalUrl: string;
         let isR2Image = false;
-        let dbImageId: number | null = null; // DB image ID for R2 images
-        let productId: number | null = null; // Product ID for R2 images
+        let isProductItemImage = false;
+        let dbImageId: number | null = null;
+        let productId: number | null = null;
+        let itemId: number | null = null;
+        let imageIndex: number | null = null;
         
         if (imageId.startsWith('r2_')) {
-            // R2 image - construct URL from ID
+            // R2 image format: r2_{SKU}_{filename_without_ext}
             isR2Image = true;
             const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
             
-            // Extract filename from ID: r2_123_1 -> 123_1.jpg
-            const filename = imageId.replace('r2_', '') + '.jpg';
-            originalUrl = `${R2_PUBLIC_URL}/${filename}`;
-            
-            console.log(`📸 Processing R2 image: ${imageId} -> ${originalUrl}`);
-            
-            // For R2 images, try to find or create image record in DB
-            // Extract SKU from filename: 123_1 -> 123 (SKU is before last underscore)
-            const parts = filename.replace('.jpg', '').split('_');
-            const sku = parts.slice(0, -1).join('_'); // All parts except the last one (image number)
-            
-            console.log(`📦 Looking for product with SKU: ${sku}`);
-            
-            // Get product ID
-            const productResult = await c.env.DB.prepare(`
-                SELECT id FROM product_master WHERE sku = ?
-            `).bind(sku).first();
-            
-            if (productResult) {
-                productId = productResult.id as number;
+            // Extract SKU and filename: r2_1025L280003_image1 -> 1025L280003/image1.jpg
+            const parts = imageId.replace('r2_', '').split('_');
+            if (parts.length >= 2) {
+                const sku = parts[0];
+                const filenamePart = parts.slice(1).join('_');
                 
-                // Check if image already exists in DB
-                // images table removed
+                // Try common image extensions
+                const extensions = ['jpg', 'jpeg', 'png', 'webp'];
+                let found = false;
                 
-                if (existingImage) {
-                    dbImageId = existingImage.id as number;
-                    console.log(`✅ Found existing image record: ${dbImageId}`);
-                } else {
-                    // Create image record
-                    const insertResult = // images table removed
+                for (const ext of extensions) {
+                    const testKey = `${sku}/${filenamePart}.${ext}`;
+                    const testUrl = `${R2_PUBLIC_URL}/${testKey}`;
                     
-                    dbImageId = insertResult.meta.last_row_id as number;
-                    console.log(`✨ Created new image record: ${dbImageId}`);
+                    // Test if file exists in R2
+                    if (c.env.PRODUCT_IMAGES) {
+                        const obj = await c.env.PRODUCT_IMAGES.head(testKey);
+                        if (obj) {
+                            originalUrl = testUrl;
+                            found = true;
+                            console.log(`✅ Found R2 image: ${testKey}`);
+                            break;
+                        }
+                    }
+                }
+                
+                if (!found) {
+                    // Fallback: assume .jpg
+                    originalUrl = `${R2_PUBLIC_URL}/${sku}/${filenamePart}.jpg`;
+                    console.log(`⚠️ Assuming JPG format: ${originalUrl}`);
                 }
             } else {
-                console.warn(`⚠️ Product not found for SKU: ${sku}`);
+                return c.json({ error: 'Invalid R2 image ID format' }, 400);
             }
+            
+            console.log(`📸 Processing R2 image: ${imageId} -> ${originalUrl}`);
         } else {
-            // Database image
-            // images table removed
-
-            if (!imageResult) {
-                return c.json({ error: 'Image not found' }, 404);
-            }
-
-            originalUrl = imageResult.original_url as string;
-
-            // Update status to processing
-            // images table removed - UPDATE operation disabled
+            // Legacy format or unknown
+            return c.json({ error: 'Unsupported image ID format. Use r2_{SKU}_{filename} format.' }, 400);
         }
 
         // ==========================================
@@ -3017,18 +3286,34 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
                 const briaResult = await callBriaApi(originalUrl, briaApiKey);
                 
                 if (briaResult.success && briaResult.imageUrl) {
-                    // Fetch the processed image and convert to data URL with white background
-                    const processedDataUrl = await addWhiteBackground(briaResult.imageUrl);
+                    // Fetch the processed image
+                    const imageResponse = await fetch(briaResult.imageUrl);
+                    const imageBuffer = await imageResponse.arrayBuffer();
                     
-                    // Update DB (only for non-R2 images)
-                    if (!isR2Image) {
-                        // images table removed - UPDATE operation disabled
+                    // Upload to R2 bucket
+                    const timestamp = Date.now();
+                    const r2Key = `processed/${imageId}_${timestamp}.png`;
+                    
+                    if (c.env.PRODUCT_IMAGES) {
+                        await c.env.PRODUCT_IMAGES.put(r2Key, imageBuffer, {
+                            httpMetadata: {
+                                contentType: 'image/png'
+                            }
+                        });
+                        console.log(`✅ Uploaded processed image to R2: ${r2Key}`);
                     }
+                    
+                    // Get R2 public URL
+                    const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
+                    const processedUrl = `${R2_PUBLIC_URL}/${r2Key}`;
+                    
+                    // For R2 images, no DB update needed
+                    console.log(`✅ Processed image saved to R2: ${r2Key}`);
 
                     return c.json({ 
                         success: true,
                         imageId,
-                        processedUrl: processedDataUrl,
+                        processedUrl: processedUrl,
                         message: 'Background removed using Fal.ai BRIA RMBG 2.0 (Cloud)'
                     });
                 } else {
@@ -3053,20 +3338,38 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
                     throw new Error(result.error || 'withoutBG processing failed');
                 }
 
-                // Update DB - now also for R2 images if we have a DB record
-                if (!isR2Image) {
-                    // images table removed - UPDATE operation disabled
-                } else if (dbImageId) {
-                    // R2 image with DB record - save processed URL
-                    // images table removed - UPDATE operation disabled
-                    console.log(`✅ Saved processed image to DB for R2 image: ${dbImageId}`);
+                // Convert data URL to binary buffer for R2 upload
+                const base64Data = result.imageDataUrl.split(',')[1];
+                const binaryString = atob(base64Data);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
                 }
+                
+                // Upload to R2 bucket
+                const timestamp = Date.now();
+                const r2Key = `processed/${imageId}_${timestamp}.png`;
+                
+                if (c.env.PRODUCT_IMAGES) {
+                    await c.env.PRODUCT_IMAGES.put(r2Key, bytes, {
+                        httpMetadata: {
+                            contentType: 'image/png'
+                        }
+                    });
+                    console.log(`✅ Uploaded processed image to R2: ${r2Key}`);
+                }
+                
+                // Get R2 public URL
+                const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
+                const processedUrl = `${R2_PUBLIC_URL}/${r2Key}`;
+                
+                // For R2 images, no DB update needed
+                console.log(`✅ Processed image saved to R2: ${r2Key}`);
 
                 return c.json({ 
                     success: true,
                     imageId,
-                    dbImageId: dbImageId,
-                    processedUrl: result.imageDataUrl,
+                    processedUrl: processedUrl,
                     message: 'Background removed using withoutBG Focus (Free)'
                 });
             } catch (apiError: any) {
@@ -3125,12 +3428,8 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
         }
 
         if (!response.ok) {
-            // Mark as failed
-            if (!isR2Image) {
-                // images table removed - UPDATE operation disabled
-            } else if (dbImageId) {
-                // images table removed - UPDATE operation disabled
-            }
+            // Log failure (no DB to update for R2 images)
+            console.log(`❌ Background removal failed for ${imageId}`);
             const errorText = await response.text();
             throw new Error(`Background removal failed: ${response.statusText} - ${errorText}`);
         }
@@ -3138,30 +3437,34 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
         // Get the processed image as binary data
         const imageBuffer = await response.arrayBuffer();
         
-        // Convert to base64 data URL
-        const base64 = btoa(
-            new Uint8Array(imageBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-        );
-        
-        // Check content type - if bgcolor was applied, it's JPEG, otherwise PNG
+        // Upload to R2 bucket
+        const timestamp = Date.now();
         const contentType = response.headers.get('content-type') || 'image/png';
-        const mimeType = contentType.includes('jpeg') ? 'image/jpeg' : 'image/png';
-        const dataUrl = `data:${mimeType};base64,${base64}`;
-
-        // Update database with processed image
-        if (!isR2Image) {
-            // images table removed - UPDATE operation disabled
-        } else if (dbImageId) {
-            // images table removed - UPDATE operation disabled
-            console.log(`✅ Saved processed image to DB for R2 image: ${dbImageId}`);
+        const extension = contentType.includes('jpeg') ? 'jpg' : 'png';
+        const r2Key = `processed/${imageId}_${timestamp}.${extension}`;
+        
+        if (c.env.PRODUCT_IMAGES) {
+            await c.env.PRODUCT_IMAGES.put(r2Key, imageBuffer, {
+                httpMetadata: {
+                    contentType: contentType
+                }
+            });
+            console.log(`✅ Uploaded processed image to R2: ${r2Key}`);
         }
+        
+        // Get R2 public URL
+        const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
+        const processedUrl = `${R2_PUBLIC_URL}/${r2Key}`;
+
+        // For R2 images, no DB update needed - processed image is stored in R2 with predictable naming
+        console.log(`✅ Processed image saved to R2: ${r2Key}`);
 
         return c.json({ 
             success: true,
             imageId,
             dbImageId: dbImageId,
-            processedUrl: dataUrl,
-            message: 'Background removed and saved'
+            processedUrl: processedUrl,
+            message: 'Background removed and saved to R2'
         });
 
     } catch (error: any) {
