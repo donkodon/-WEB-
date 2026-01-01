@@ -2008,8 +2008,8 @@ app.post('/api/import-csv', async (c) => {
     let count = 0;
     
     // Debug: Log index mapping
-    console.log('📋 CSV Index Mapping:', idx);
-    console.log('📋 Headers:', headers);
+    console.log('📋 CSV Index Mapping:', JSON.stringify(idx, null, 2));
+    console.log('📋 Headers:', JSON.stringify(headers, null, 2));
     
     // Prepared statement for insertion
     const stmt = c.env.DB.prepare(`
@@ -2030,9 +2030,13 @@ app.post('/api/import-csv', async (c) => {
         
         // Debug: Log first row
         if (i === 1) {
-            console.log('🔍 First Row Parsed:', row);
+            console.log('🔍 First Row Parsed:', JSON.stringify(row, null, 2));
             console.log('🔍 SKU (idx=' + idx.sku + '):', row[idx.sku]);
             console.log('🔍 Name (idx=' + idx.name + '):', row[idx.name]);
+            console.log('🔍 Brand (idx=' + idx.brand + '):', row[idx.brand]);
+            console.log('🔍 Size (idx=' + idx.size + '):', row[idx.size]);
+            console.log('🔍 Color (idx=' + idx.color + '):', row[idx.color]);
+            console.log('🔍 Price Sale (idx=' + idx.price_sale + '):', row[idx.price_sale]);
         }
         
         // Basic validation: must have SKU or Name
@@ -2081,7 +2085,17 @@ app.post('/api/import-csv', async (c) => {
     
     if (batch.length > 0) await c.env.DB.batch(batch);
 
-    return c.text(`${count} 件の商品データをインポートしました。`);
+    // Return detailed response for debugging
+    return c.json({
+        success: true,
+        message: `${count} 件の商品データをインポートしました。`,
+        count: count,
+        debug: {
+            headers: headers,
+            indexMapping: idx,
+            firstRowSample: count > 0 ? '解析済み' : 'データなし'
+        }
+    });
 });
 
 // --- API: Bulk Import for Mobile App (JSON Format) ---
