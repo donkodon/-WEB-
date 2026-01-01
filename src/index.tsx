@@ -943,7 +943,7 @@ app.get('/dashboard', async (c) => {
             }
             
             btnSyncMobile.addEventListener('click', async function() {
-                const confirmation = confirm('スマホアプリから商品データを同期しますか？\\n既存のデータは上書きされます。');
+                const confirmation = confirm('双方向同期を実行しますか？\\n\\n1. WEBアプリ → モバイルAPI（CSVデータを送信）\\n2. モバイルAPI → WEBアプリ（スマホデータを受信）');
                 
                 if (!confirmation) return;
                 
@@ -952,21 +952,35 @@ app.get('/dashboard', async (c) => {
                 btnSyncMobile.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>同期中...';
                 
                 try {
-                    const response = await fetch('/api/sync-from-mobile', {
+                    // Step 1: Sync TO mobile (WEB → Mobile API)
+                    console.log('🔄 Step 1/2: Syncing to mobile API...');
+                    const toMobileResponse = await fetch('/api/sync-to-mobile', {
                         method: 'POST'
                     });
                     
-                    if (!response.ok) {
-                        throw new Error('Sync failed with status: ' + response.status);
+                    let toMobileResult = { synced: 0, errors: 0 };
+                    if (toMobileResponse.ok) {
+                        toMobileResult = await toMobileResponse.json();
+                        console.log('✅ Sync to mobile completed:', toMobileResult);
                     }
                     
-                    const data = await response.json();
+                    // Step 2: Sync FROM mobile (Mobile API → WEB)
+                    console.log('🔄 Step 2/2: Syncing from mobile API...');
+                    const fromMobileResponse = await fetch('/api/sync-from-mobile', {
+                        method: 'POST'
+                    });
                     
-                    if (data.success) {
-                        alert('✅ 同期完了\\n\\n同期: ' + data.synced + '件\\nスキップ: ' + data.skipped + '件\\n合計: ' + data.total + '件');
+                    if (!fromMobileResponse.ok) {
+                        throw new Error('Sync failed with status: ' + fromMobileResponse.status);
+                    }
+                    
+                    const fromMobileResult = await fromMobileResponse.json();
+                    
+                    if (fromMobileResult.success) {
+                        alert('✅ 双方向同期完了\\n\\n【WEB → モバイルAPI】\\n送信: ' + toMobileResult.synced + '件\\nエラー: ' + toMobileResult.errors + '件\\n\\n【モバイルAPI → WEB】\\n更新: ' + fromMobileResult.synced + '件\\n新規: ' + fromMobileResult.inserted + '件');
                         window.location.reload();
                     } else {
-                        throw new Error(data.error || 'Unknown error');
+                        throw new Error(fromMobileResult.error || 'Unknown error');
                     }
                 } catch (e) {
                     console.error('Sync error:', e);
@@ -2409,7 +2423,7 @@ app.post('/api/sync-from-mobile', async (c) => {
         
         // Get all products from local database
         const localProducts = await c.env.DB.prepare(`
-            SELECT sku FROM products
+            SELECT sku FROM product_master
         `).all();
         
         const localSkus = new Set(localProducts.results.map((p: any) => p.sku));
@@ -2574,6 +2588,76 @@ app.post('/api/sync-from-mobile', async (c) => {
         
     } catch (error: any) {
         console.error('Sync from mobile API error:', error);
+        return c.json({ 
+            success: false, 
+            error: error.message || 'Sync failed' 
+        }, 500);
+    }
+});
+
+// --- API: Sync TO Mobile (WEB → Mobile API) ---
+app.post('/api/sync-to-mobile', async (c) => {
+    try {
+        const MOBILE_API_URL = c.env.MOBILE_API_URL || 'https://measure-master-api.jinkedon2.workers.dev';
+        
+        console.log('🔄 Syncing product data TO mobile app API...');
+        
+        // Get all products from local database
+        const localProducts = await c.env.DB.prepare(`
+            SELECT * FROM product_master
+        `).all();
+        
+        let syncedCount = 0;
+        let errorCount = 0;
+        
+        // Send each product to mobile API
+        for (const product of localProducts.results) {
+            const p = product as any;
+            
+            try {
+                const response = await fetch(`${MOBILE_API_URL}/api/products/bulk-import`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        products: [{
+                            sku: p.sku,
+                            name: p.name || `商品 ${p.sku}`,
+                            brand: p.brand || null,
+                            size: p.size || null,
+                            color: p.color || null,
+                            price: p.price_sale || p.price || 0,
+                            barcode: p.barcode || null,
+                            category: p.category || null,
+                            description: p.description || null
+                        }]
+                    })
+                });
+                
+                if (response.ok) {
+                    syncedCount++;
+                    console.log(`✅ Synced to mobile API: ${p.sku}`);
+                } else {
+                    errorCount++;
+                    console.error(`❌ Failed to sync ${p.sku}: ${response.status}`);
+                }
+            } catch (e) {
+                errorCount++;
+                console.error(`❌ Failed to sync ${p.sku}:`, e);
+            }
+        }
+        
+        return c.json({
+            success: true,
+            synced: syncedCount,
+            errors: errorCount,
+            total: localProducts.results.length,
+            message: `Successfully synced ${syncedCount}/${localProducts.results.length} products to mobile API`
+        });
+        
+    } catch (error: any) {
+        console.error('Sync to mobile API error:', error);
         return c.json({ 
             success: false, 
             error: error.message || 'Sync failed' 
