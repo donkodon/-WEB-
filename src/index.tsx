@@ -636,9 +636,11 @@ app.get('/dashboard', async (c) => {
                     const folder = zip.folder('processed_images');
                     let successCount = 0;
                     let skipCount = 0;
+                    const filenameSet = new Set(); // Track filenames to prevent duplicates
                     
                     for (const imageId of imageIds) {
                         try {
+                            console.log('🔄 Processing imageId:', imageId);
                             const response = await fetch('/api/download-processed-image/' + imageId);
                             if (!response.ok) {
                                 console.error('Failed to download processed image:', imageId);
@@ -647,6 +649,8 @@ app.get('/dashboard', async (c) => {
                             }
                             
                             const data = await response.json();
+                            console.log('📦 Response data:', data);
+                            
                             if (!data.imageUrl) {
                                 console.warn('No processed image available for:', imageId);
                                 skipCount++;
@@ -658,6 +662,20 @@ app.get('/dashboard', async (c) => {
                                 skipCount++;
                                 continue;
                             }
+                            
+                            console.log('📝 Generated filename:', data.filename);
+                            
+                            // Ensure unique filename (prevent duplicates)
+                            let uniqueFilename = data.filename;
+                            let counter = 1;
+                            while (filenameSet.has(uniqueFilename)) {
+                                const ext = uniqueFilename.substring(uniqueFilename.lastIndexOf('.'));
+                                const basename = uniqueFilename.substring(0, uniqueFilename.lastIndexOf('.'));
+                                uniqueFilename = basename + '_' + counter + ext;
+                                counter++;
+                            }
+                            filenameSet.add(uniqueFilename);
+                            console.log('✅ Final unique filename:', uniqueFilename);
                             
                             // For data URLs (PNG with transparency), composite with white background
                             if (data.imageUrl.startsWith('data:')) {
@@ -689,7 +707,8 @@ app.get('/dashboard', async (c) => {
                                     canvas.toBlob((b) => resolve(b), 'image/png');
                                 });
                                 if (blob) {
-                                    folder.file(data.filename, blob);
+                                    console.log('✅ Adding to ZIP:', uniqueFilename, 'Size:', blob.size);
+                                    folder.file(uniqueFilename, blob);
                                     successCount++;
                                 } else {
                                     console.error('Failed to create blob for:', imageId);
@@ -707,7 +726,8 @@ app.get('/dashboard', async (c) => {
                                 const blob = await imgResponse.blob();
                                 console.log('Got blob, size:', blob.size);
                                 if (blob.size > 0) {
-                                    folder.file(data.filename, blob);
+                                    console.log('✅ Adding to ZIP:', uniqueFilename, 'Size:', blob.size);
+                                    folder.file(uniqueFilename, blob);
                                     successCount++;
                                 } else {
                                     console.error('Empty blob for:', imageId);
@@ -721,8 +741,13 @@ app.get('/dashboard', async (c) => {
                     }
                     
                     // Generate and download ZIP
+                    console.log('📦 Generating ZIP file...');
+                    console.log('📊 Files in ZIP:', Object.keys(folder.files).length);
+                    console.log('📋 File list:', Object.keys(folder.files));
+                    
                     const zipBlob = await zip.generateAsync({ type: 'blob' });
                     const timestamp = new Date().toISOString().slice(0, 10);
+                    console.log('✅ ZIP generated, size:', zipBlob.size);
                     saveAs(zipBlob, 'processed_images_' + timestamp + '.zip');
                     
                     let message = 'ダウンロード完了\\n成功: ' + successCount + '枚';
@@ -3921,8 +3946,12 @@ app.get('/api/download-processed-image/:imageId', async (c) => {
             }, 404);
         }
         
-        // Generate filename
-        const filename = `${sku}_processed_${imageId.replace('r2_', '')}.png`;
+        // Generate unique filename using full imageId
+        // Extract filename part from imageId (e.g., r2_1025L280001_2 -> 1025L280001_2)
+        const imageIdPart = imageId.replace('r2_', '');
+        const filename = `${imageIdPart}_processed.png`;
+        
+        console.log(`📝 Generated filename: ${filename} for imageId: ${imageId}`);
         
         return c.json({
             imageUrl: processedUrl,
