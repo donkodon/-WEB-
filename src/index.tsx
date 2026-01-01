@@ -204,47 +204,48 @@ app.post('/login', async (c) => {
 
 // --- Dashboard / Product List (Screenshot 2) ---
 app.get('/dashboard', async (c) => {
-  // Check if D1 database is available
-  if (!c.env.DB) {
-    return c.html(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>設定が必要です</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-      </head>
-      <body class="bg-gray-100 p-8">
-        <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-md p-6">
-          <h1 class="text-2xl font-bold text-red-600 mb-4">⚠️ データベース設定が必要です</h1>
-          <p class="text-gray-700 mb-4">
-            Cloudflare Pages の D1 データベースバインディングが設定されていません。
-          </p>
-          <div class="bg-yellow-50 border border-yellow-200 rounded p-4 mb-4">
-            <h2 class="font-bold text-yellow-800 mb-2">設定手順：</h2>
-            <ol class="list-decimal list-inside text-yellow-800 space-y-2">
-              <li>Cloudflare ダッシュボード → Workers & Pages を開く</li>
-              <li>smart-measure プロジェクトを選択</li>
-              <li>Settings → Functions → D1 database bindings を開く</li>
-              <li>Add binding をクリック</li>
-              <li>Variable name: <code class="bg-yellow-100 px-1">DB</code></li>
-              <li>D1 database: <code class="bg-yellow-100 px-1">measure-master-db</code> を選択</li>
-              <li>Save をクリック</li>
-              <li>自動再デプロイを待つ（数分）</li>
-            </ol>
+  try {
+    // Check if D1 database is available
+    if (!c.env.DB) {
+      return c.html(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>設定が必要です</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+        </head>
+        <body class="bg-gray-100 p-8">
+          <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-md p-6">
+            <h1 class="text-2xl font-bold text-red-600 mb-4">⚠️ データベース設定が必要です</h1>
+            <p class="text-gray-700 mb-4">
+              Cloudflare Pages の D1 データベースバインディングが設定されていません。
+            </p>
+            <div class="bg-yellow-50 border border-yellow-200 rounded p-4 mb-4">
+              <h2 class="font-bold text-yellow-800 mb-2">設定手順：</h2>
+              <ol class="list-decimal list-inside text-yellow-800 space-y-2">
+                <li>Cloudflare ダッシュボード → Workers & Pages を開く</li>
+                <li>smart-measure プロジェクトを選択</li>
+                <li>Settings → Functions → D1 database bindings を開く</li>
+                <li>Add binding をクリック</li>
+                <li>Variable name: <code class="bg-yellow-100 px-1">DB</code></li>
+                <li>D1 database: <code class="bg-yellow-100 px-1">measure-master-db</code> を選択</li>
+                <li>Save をクリック</li>
+                <li>自動再デプロイを待つ（数分）</li>
+              </ol>
+            </div>
+            <p class="text-sm text-gray-500">
+              Database ID: 7fad5dc0-abce-4816-b667-193490cf9650
+            </p>
           </div>
-          <p class="text-sm text-gray-500">
-            Database ID: 7fad5dc0-abce-4816-b667-193490cf9650
-          </p>
-        </div>
-      </body>
-      </html>
-    `)
-  }
-  
-  // 1. Get all SKUs from local DB (just for reference)
-  const localProductsResult = await c.env.DB.prepare(`
-    SELECT DISTINCT sku FROM product_master ORDER BY id DESC
-  `).all();
+        </body>
+        </html>
+      `)
+    }
+    
+    // 1. Get all SKUs from local DB (just for reference)
+    const localProductsResult = await c.env.DB.prepare(`
+      SELECT DISTINCT sku FROM product_master ORDER BY id DESC
+    `).all();
 
   // Images are now fetched directly from R2 and mobile API - no local images table
 
@@ -1151,6 +1152,43 @@ app.get('/dashboard', async (c) => {
       </div>
     </Layout>
   )
+  } catch (error) {
+    console.error('Dashboard error:', error);
+    return c.html(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>エラー</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+      </head>
+      <body class="bg-gray-100 p-8">
+        <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-md p-6">
+          <h1 class="text-2xl font-bold text-red-600 mb-4">⚠️ データベース接続エラー</h1>
+          <p class="text-gray-700 mb-4">
+            Cloudflare Pages の D1 データベースバインディングが設定されていません。
+          </p>
+          <div class="bg-yellow-50 border border-yellow-200 rounded p-4 mb-4">
+            <h2 class="font-bold text-yellow-800 mb-2">設定手順：</h2>
+            <ol class="list-decimal list-inside text-yellow-800 space-y-2">
+              <li>Cloudflare ダッシュボード → Workers & Pages を開く</li>
+              <li>smart-measure プロジェクトを選択</li>
+              <li>Settings → Functions → D1 database bindings を開く</li>
+              <li>Add binding をクリック</li>
+              <li>Variable name: <code class="bg-yellow-100 px-1">DB</code></li>
+              <li>D1 database: <code class="bg-yellow-100 px-1">measure-master-db</code> を選択</li>
+              <li>Save をクリック</li>
+              <li>自動再デプロイを待つ（数分）</li>
+            </ol>
+          </div>
+          <details class="mt-4">
+            <summary class="cursor-pointer text-sm text-gray-500">エラー詳細</summary>
+            <pre class="mt-2 p-2 bg-gray-100 text-xs overflow-auto">${error instanceof Error ? error.message : String(error)}</pre>
+          </details>
+        </div>
+      </body>
+      </html>
+    `)
+  }
 })
 
 // --- API: Image Upload Endpoint ---
