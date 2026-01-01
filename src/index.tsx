@@ -297,9 +297,15 @@ app.get('/dashboard', async (c) => {
   // 5. Merge local master data with mobile app data
   const products = [];
   
+  // First, process products from mobile API
   for (const mobileData of productsData) {
     const sku = mobileData.sku;
     const localProduct = localProductsMap.get(sku);
+    
+    // Mark as processed
+    if (localProduct) {
+      localProductsMap.delete(sku);
+    }
     
     // Extract images from mobile app capturedItems
     const mobileImages = [];
@@ -399,6 +405,55 @@ app.get('/dashboard', async (c) => {
     console.log(`✅ Merged product ${sku}: ${mergedProduct.name} (Brand: ${mergedProduct.brand}, Barcode: ${mergedProduct.barcode}, Price: ${mergedProduct.price})`);
     
     products.push(mergedProduct);
+  }
+  
+  // Add products that only exist in local DB (CSV imports)
+  for (const [sku, localProduct] of localProductsMap.entries()) {
+    console.log(`📋 Adding local-only product: ${sku}`);
+    
+    // Check R2 for images
+    const mobileImages = [];
+    const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
+    
+    for (let i = 1; i <= 10; i++) {
+      const imageUrl = `${R2_PUBLIC_URL}/${sku}_${i}.jpg`;
+      
+      try {
+        const headResponse = await fetch(imageUrl, { method: 'HEAD' });
+        
+        if (headResponse.ok) {
+          const lastModified = headResponse.headers.get('Last-Modified') || new Date().toUTCString();
+          
+          mobileImages.push({
+            id: `r2_${sku}_${i}`,
+            original_url: imageUrl,
+            processed_url: null,
+            status: 'mobile',
+            created_at: lastModified,
+            filename: `${sku}_${i}.jpg`,
+            item_code: `${sku}_${i}`,
+            actual_measurements: null,
+            condition: 'Unknown',
+            material: null,
+            inspection_notes: null
+          });
+        } else {
+          break;
+        }
+      } catch (e) {
+        break;
+      }
+    }
+    
+    products.push({
+      ...(localProduct as any),
+      sku: sku,
+      capturedItems: [],
+      capturedCount: 0,
+      latestItem: null,
+      hasCapturedData: false,
+      images: mobileImages
+    });
   }
 
   return c.render(
