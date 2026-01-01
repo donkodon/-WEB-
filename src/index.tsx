@@ -494,35 +494,10 @@ app.get('/dashboard', async (c) => {
       <div class="mb-6 flex justify-between items-end">
         <p class="text-gray-500 text-sm">撮影済み画像の管理・編集・ダウンロードが可能です。<span class="ml-2 text-blue-600 font-medium"><i class="fas fa-sync-alt mr-1"></i>Bubble画像は自動同期済み</span></p>
         <div class="flex space-x-3">
-            <div class="relative inline-block text-left group">
-                <div class="inline-flex shadow-sm rounded-lg" role="group">
-                    <button id="btn-batch-remove-bg" class="px-4 py-2 text-sm font-medium text-blue-600 bg-white border border-blue-200 rounded-l-lg hover:bg-blue-50 focus:z-10 focus:ring-2 focus:ring-blue-500 focus:text-blue-700 flex items-center">
-                        <i class="fas fa-magic mr-2"></i>
-                        選択画像を白抜き
-                    </button>
-                    <button type="button" class="px-2 py-2 text-sm font-medium text-blue-600 bg-white border-t border-b border-r border-blue-200 rounded-r-lg hover:bg-blue-50 focus:z-10 focus:ring-2 focus:ring-blue-500 focus:text-blue-700" id="btn-bg-dropdown-toggle">
-                        <i class="fas fa-chevron-down"></i>
-                    </button>
-                </div>
-                {/* Dropdown menu */}
-                <div id="bg-model-dropdown" class="absolute right-0 z-50 hidden mt-2 w-64 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none" role="menu">
-                    <div class="py-1" role="none">
-                        <div class="px-4 py-2 text-xs text-gray-500 font-bold uppercase border-b border-gray-100">モデル選択</div>
-                        <button class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 bg-blue-50 model-option" data-model="cloudflare-ai" role="menuitem">
-                            <span class="flex items-center justify-between">
-                                <span>rembg (推奨・無料)</span>
-                                <i class="fas fa-check text-blue-600 check-icon"></i>
-                            </span>
-                        </button>
-                        <button class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 model-option" data-model="birefnet-general" role="menuitem">
-                            <span class="flex items-center justify-between">
-                                <span>withoutbg (高品質)</span>
-                                <i class="fas fa-check text-blue-600 check-icon hidden"></i>
-                            </span>
-                        </button>
-                    </div>
-                </div>
-            </div>
+            <button id="btn-batch-remove-bg" class="px-4 py-2 text-sm font-medium text-blue-600 bg-white border border-blue-200 rounded-lg hover:bg-blue-50 focus:z-10 focus:ring-2 focus:ring-blue-500 focus:text-blue-700 flex items-center shadow-sm">
+                <i class="fas fa-magic mr-2"></i>
+                選択画像を白抜き
+            </button>
             <button id="btn-export-csv" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg flex items-center hover:bg-gray-50 transition-colors text-sm font-medium">
                 <i class="fas fa-download mr-2"></i>
                 CSV出力
@@ -854,16 +829,13 @@ app.get('/dashboard', async (c) => {
         (function() {
             console.log('🚀 Background Removal Script Loaded!');
             
-            // Global state for selected model
-            window.currentBgModel = 'cloudflare-ai'; // Default - Cloudflare AI (free, built-in)
+            // Fixed model: withoutbg (birefnet-general)
+            window.currentBgModel = 'birefnet-general';
             
             function initBatchRemoveBg() {
                 console.log('📌 initBatchRemoveBg called!');
                 
                 const batchBtn = document.getElementById('btn-batch-remove-bg');
-                const dropdownToggle = document.getElementById('btn-bg-dropdown-toggle');
-                const dropdown = document.getElementById('bg-model-dropdown');
-                const modelOptions = document.querySelectorAll('.model-option');
                 
                 console.log('🔘 Batch button:', batchBtn);
                 
@@ -878,45 +850,6 @@ app.get('/dashboard', async (c) => {
                     return;
                 }
                 batchBtn.dataset.initialized = 'true';
-                
-                // Dropdown Toggle
-                if (dropdownToggle && dropdown) {
-                    dropdownToggle.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        dropdown.classList.toggle('hidden');
-                    });
-                    
-                    // Close dropdown when clicking outside
-                    document.addEventListener('click', (e) => {
-                        if (!dropdown.contains(e.target) && !dropdownToggle.contains(e.target)) {
-                            dropdown.classList.add('hidden');
-                        }
-                    });
-                    
-                    // Model Selection
-                    modelOptions.forEach(opt => {
-                        opt.addEventListener('click', (e) => {
-                            e.preventDefault();
-                            const model = opt.dataset.model;
-                            window.currentBgModel = model;
-                            
-                            // Update UI
-                            modelOptions.forEach(o => {
-                                o.classList.remove('bg-blue-50');
-                                const check = o.querySelector('.check-icon');
-                                if (check) check.classList.add('hidden');
-                            });
-                            
-                            opt.classList.add('bg-blue-50');
-                            const check = opt.querySelector('.check-icon');
-                            if (check) check.classList.remove('hidden');
-                            
-                            // Close dropdown
-                            dropdown.classList.add('hidden');
-                            console.log('✅ Selected model:', window.currentBgModel);
-                        });
-                    });
-                }
                 
                 console.log('✅ Adding click event listener to batch button');
                 
@@ -934,8 +867,7 @@ app.get('/dashboard', async (c) => {
                         return;
                     }
                     
-                    const modelName = window.currentBgModel === 'cloudflare-ai' ? 'rembg' : (window.currentBgModel === 'birefnet-general' ? 'withoutbg' : 'その他');
-                    const confirmation = confirm(checkedImages.length + '枚の画像の背景を削除しますか？\\n使用モデル: ' + modelName);
+                    const confirmation = confirm(checkedImages.length + '枚の画像の背景を削除しますか？');
                     if (!confirmation) return;
                     
                     batchBtn.disabled = true;
@@ -958,14 +890,14 @@ app.get('/dashboard', async (c) => {
                         }
                         
                         try {
-                            console.log('🎨 Starting background removal for image ID:', imageId, 'with model:', window.currentBgModel);
+                            console.log('🎨 Starting background removal for image ID:', imageId);
                             const res = await fetch('/api/remove-bg-image/' + imageId, {
                                 method: 'POST',
                                 headers: {
                                     'Content-Type': 'application/json'
                                 },
                                 body: JSON.stringify({
-                                    model: window.currentBgModel
+                                    model: 'birefnet-general'
                                 })
                             });
                             
@@ -2623,15 +2555,39 @@ async function removeBackgroundWithWithoutBG(imageUrl: string): Promise<{ succes
     try {
         console.log('🎨 Using withoutBG Focus model (Hugging Face Spaces)...');
         
+        let requestBody: any;
+        
+        // Check if it's a base64 data URL
+        if (imageUrl.startsWith('data:')) {
+            console.log('📦 Detected base64 data URL, extracting base64 data...');
+            
+            // Extract base64 data from data URL
+            const matches = imageUrl.match(/^data:([^;]+);base64,(.+)$/);
+            if (!matches) {
+                throw new Error('Invalid data URL format');
+            }
+            
+            const base64Data = matches[2];
+            console.log(`📊 Base64 data length: ${base64Data.length} characters`);
+            
+            // Use image_base64 parameter for base64 data
+            requestBody = {
+                image_base64: base64Data
+            };
+        } else {
+            // Regular URL
+            requestBody = {
+                image_url: imageUrl
+            };
+        }
+        
         // Call Hugging Face Space API (Flask/Docker API)
         const response = await fetch('https://jinkedon-withoutbg-api.hf.space/api/remove-bg', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                image_url: imageUrl  // Flask API format
-            })
+            body: JSON.stringify(requestBody)
         });
         
         if (!response.ok) {
@@ -2892,9 +2848,12 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
 
         // ==========================================
         // Priority 2: withoutBG Focus (birefnet-general) - Free Hugging Face Spaces
+        // Note: Hugging Face API only supports URL, not base64. For base64, skip to rembg server
         // ==========================================
-        if (model === 'birefnet-general' || model === 'cloudflare-ai') {
-            console.log('🚀 Using withoutBG Focus model for background removal');
+        const isBase64Image = originalUrl.startsWith('data:');
+        
+        if ((model === 'birefnet-general' || model === 'cloudflare-ai') && !isBase64Image) {
+            console.log('🚀 Using withoutBG Focus model for background removal (URL mode)');
             
             try {
                 const result = await removeBackgroundWithWithoutBG(originalUrl);
@@ -2925,22 +2884,14 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
                 });
             } catch (apiError: any) {
                 console.error('❌ withoutBG API failed:', apiError.message);
-                // Mark as failed
-                if (!isR2Image) {
-                    await c.env.DB.prepare(`
-                        UPDATE images SET status = 'failed' WHERE id = ?
-                    `).bind(imageId).run();
-                } else if (dbImageId) {
-                    await c.env.DB.prepare(`
-                        UPDATE images SET status = 'failed' WHERE id = ?
-                    `).bind(dbImageId).run();
-                }
-                
-                return c.json({ 
-                    success: false,
-                    error: `withoutBG processing failed: ${apiError.message}`
-                }, 500);
+                // Don't fail immediately for URL images - try fallback to local rembg
+                console.log('⚠️ Falling back to local rembg server...');
             }
+        }
+        
+        // Log if skipping withoutBG due to base64
+        if (isBase64Image) {
+            console.log('📦 Base64 image detected - using local rembg server (withoutBG API does not support base64)');
         }
 
         // ==========================================
