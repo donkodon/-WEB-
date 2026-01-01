@@ -368,8 +368,44 @@ app.get('/dashboard', async (c) => {
       console.log(`⚠️ No capturedItems for SKU ${sku}, checking R2 bucket...`);
       const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
       
+      // First, get DB images for this SKU (may already have processed R2 images)
+      const dbImagesForSku = await c.env.DB.prepare(`
+        SELECT i.* FROM images i
+        JOIN products p ON i.product_id = p.id
+        WHERE p.sku = ?
+      `).bind(sku).all();
+      
+      // Create a map of original_url -> DB image for quick lookup
+      const dbImagesByUrl = new Map();
+      for (const dbImg of dbImagesForSku.results) {
+        dbImagesByUrl.set((dbImg as any).original_url, dbImg);
+      }
+      
       for (let i = 1; i <= 10; i++) {
         const imageUrl = `${R2_PUBLIC_URL}/${sku}_${i}.jpg`;
+        
+        // Check if this R2 image is already in DB (with possible processed_url)
+        const existingDbImage = dbImagesByUrl.get(imageUrl);
+        
+        if (existingDbImage) {
+          // Use DB image data (may have processed_url)
+          mobileImages.push({
+            id: (existingDbImage as any).id,  // Use DB ID instead of r2_ prefix
+            original_url: imageUrl,
+            processed_url: (existingDbImage as any).processed_url || null,  // Keep processed URL!
+            status: (existingDbImage as any).status || 'mobile',
+            created_at: (existingDbImage as any).created_at || new Date().toISOString(),
+            filename: `${sku}_${i}.jpg`,
+            item_code: `${sku}_${i}`,
+            actual_measurements: null,
+            condition: 'Unknown',
+            material: null,
+            inspection_notes: null
+          });
+          
+          console.log(`✅ Found R2 image in DB: ${sku}_${i}.jpg (processed: ${!!(existingDbImage as any).processed_url})`);
+          continue;
+        }
         
         try {
           const headResponse = await fetch(imageUrl, { method: 'HEAD' });
@@ -405,16 +441,23 @@ app.get('/dashboard', async (c) => {
       }
     }
     
-    // Get DB images
+    // Get DB images (only non-R2 images, as R2 images are now included in mobileImages with DB data)
     const dbImages = imagesResult.results.filter((i: any) => {
       // Match by SKU since product_id might be different
       if (localProduct) {
-        return i.product_id === (localProduct as any).id;
+        // Filter: only include if it's a DB-uploaded image (not from R2)
+        const originalUrl = (i as any).original_url || '';
+        const isR2Image = originalUrl.includes('pub-300562464768499b8fcaee903d0f9861.r2.dev');
+        return i.product_id === (localProduct as any).id && !isR2Image;
       }
       return false;
     });
     
-    console.log(`📦 Product ${sku}: ${dbImages.length} DB images + ${mobileImages.length} mobile images`);
+    console.log(`📦 Product ${sku}: ${dbImages.length} DB images + ${mobileImages.length} mobile/R2 images`);
+    
+    // Merge images: mobileImages already contains R2 images with DB processed_url data
+    // dbImages contains only non-R2 uploaded images
+    // No duplication should occur now
     
     // Merge: Use mobile app data as primary source, fallback to local CSV data
     const mergedProduct = {
@@ -435,7 +478,7 @@ app.get('/dashboard', async (c) => {
       capturedCount: mobileData.capturedCount || 0,
       latestItem: mobileData.latestItem || null,
       hasCapturedData: (mobileData.capturedCount || 0) > 0,
-      images: [...dbImages, ...mobileImages],
+      images: [...dbImages, ...mobileImages],  // No duplicates: dbImages has non-R2, mobileImages has R2 with DB data
       // Timestamps
       created_at: mobileData.created_at || (localProduct as any)?.created_at,
       updated_at: mobileData.updated_at || (localProduct as any)?.updated_at
@@ -932,6 +975,33 @@ app.get('/dashboard', async (c) => {
                                 const data = await res.json();
                                 console.log('✅ Success for image', imageId, ':', data);
                                 successCount++;
+                                
+                                // 即座に画面に反映する (リロード前に)
+                                if (data.processedUrl) {
+                                    const imageContainer = checkbox.closest('[data-image-id]') || checkbox.closest('.relative.group');
+                                    if (imageContainer) {
+                                        const imgElement = imageContainer.querySelector('img');
+                                        if (imgElement) {
+                                            imgElement.src = data.processedUrl;
+                                            console.log('🖼️ Updated image display for:', imageId);
+                                        }
+                                        
+                                        // 「白抜き」ボタンを非表示にし、「完了」バッジを表示
+                                        const bgRemoveBtn = imageContainer.querySelector('button[onclick*="removeBgSingle"]');
+                                        if (bgRemoveBtn) {
+                                            bgRemoveBtn.remove();
+                                        }
+                                        
+                                        // 完了バッジを追加
+                                        const badgeContainer = imageContainer.querySelector('.w-full.h-full.bg-white');
+                                        if (badgeContainer) {
+                                            const completedBadge = document.createElement('div');
+                                            completedBadge.className = 'absolute bottom-2 right-2 bg-green-500 text-white px-2 py-1 rounded-full text-[10px] font-bold opacity-100 shadow-lg z-10';
+                                            completedBadge.innerHTML = '<i class="fas fa-check mr-1"></i>完了';
+                                            badgeContainer.appendChild(completedBadge);
+                                        }
+                                    }
+                                }
                             } else {
                                 const errorText = await res.text();
                                 console.error('❌ Failed for image', imageId, ':', errorText);
@@ -2714,6 +2784,8 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
         // Check if this is an R2 image (starts with r2_)
         let originalUrl: string;
         let isR2Image = false;
+        let dbImageId: number | null = null; // DB image ID for R2 images
+        let productId: number | null = null; // Product ID for R2 images
         
         if (imageId.startsWith('r2_')) {
             // R2 image - construct URL from ID
@@ -2725,6 +2797,43 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
             originalUrl = `${R2_PUBLIC_URL}/${filename}`;
             
             console.log(`📸 Processing R2 image: ${imageId} -> ${originalUrl}`);
+            
+            // For R2 images, try to find or create image record in DB
+            // Extract SKU from filename: 123_1 -> 123 (SKU is before last underscore)
+            const parts = filename.replace('.jpg', '').split('_');
+            const sku = parts.slice(0, -1).join('_'); // All parts except the last one (image number)
+            
+            console.log(`📦 Looking for product with SKU: ${sku}`);
+            
+            // Get product ID
+            const productResult = await c.env.DB.prepare(`
+                SELECT id FROM products WHERE sku = ?
+            `).bind(sku).first();
+            
+            if (productResult) {
+                productId = productResult.id as number;
+                
+                // Check if image already exists in DB
+                const existingImage = await c.env.DB.prepare(`
+                    SELECT id FROM images WHERE original_url = ?
+                `).bind(originalUrl).first();
+                
+                if (existingImage) {
+                    dbImageId = existingImage.id as number;
+                    console.log(`✅ Found existing image record: ${dbImageId}`);
+                } else {
+                    // Create image record
+                    const insertResult = await c.env.DB.prepare(`
+                        INSERT INTO images (product_id, original_url, status, created_at)
+                        VALUES (?, ?, 'processing', datetime('now'))
+                    `).bind(productId, originalUrl).run();
+                    
+                    dbImageId = insertResult.meta.last_row_id as number;
+                    console.log(`✨ Created new image record: ${dbImageId}`);
+                }
+            } else {
+                console.warn(`⚠️ Product not found for SKU: ${sku}`);
+            }
         } else {
             // Database image
             const imageResult = await c.env.DB.prepare(`
@@ -2794,26 +2903,37 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
                     throw new Error(result.error || 'withoutBG processing failed');
                 }
 
-                // Update DB (only for non-R2 images)
+                // Update DB - now also for R2 images if we have a DB record
                 if (!isR2Image) {
                     await c.env.DB.prepare(`
                         UPDATE images SET processed_url = ?, status = 'completed' WHERE id = ?
                     `).bind(result.imageDataUrl, imageId).run();
+                } else if (dbImageId) {
+                    // R2 image with DB record - save processed URL
+                    await c.env.DB.prepare(`
+                        UPDATE images SET processed_url = ?, status = 'completed' WHERE id = ?
+                    `).bind(result.imageDataUrl, dbImageId).run();
+                    console.log(`✅ Saved processed image to DB for R2 image: ${dbImageId}`);
                 }
 
                 return c.json({ 
                     success: true,
                     imageId,
+                    dbImageId: dbImageId,
                     processedUrl: result.imageDataUrl,
                     message: 'Background removed using withoutBG Focus (Free)'
                 });
             } catch (apiError: any) {
                 console.error('❌ withoutBG API failed:', apiError.message);
-                // Mark as failed (only for non-R2 images)
+                // Mark as failed
                 if (!isR2Image) {
                     await c.env.DB.prepare(`
                         UPDATE images SET status = 'failed' WHERE id = ?
                     `).bind(imageId).run();
+                } else if (dbImageId) {
+                    await c.env.DB.prepare(`
+                        UPDATE images SET status = 'failed' WHERE id = ?
+                    `).bind(dbImageId).run();
                 }
                 
                 return c.json({ 
@@ -2867,11 +2987,15 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
         }
 
         if (!response.ok) {
-            // Mark as failed (only for non-R2 images)
+            // Mark as failed
             if (!isR2Image) {
                 await c.env.DB.prepare(`
                     UPDATE images SET status = 'failed' WHERE id = ?
                 `).bind(imageId).run();
+            } else if (dbImageId) {
+                await c.env.DB.prepare(`
+                    UPDATE images SET status = 'failed' WHERE id = ?
+                `).bind(dbImageId).run();
             }
             const errorText = await response.text();
             throw new Error(`Background removal failed: ${response.statusText} - ${errorText}`);
@@ -2890,16 +3014,22 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
         const mimeType = contentType.includes('jpeg') ? 'image/jpeg' : 'image/png';
         const dataUrl = `data:${mimeType};base64,${base64}`;
 
-        // Update database with processed image (only for non-R2 images)
+        // Update database with processed image
         if (!isR2Image) {
             await c.env.DB.prepare(`
                 UPDATE images SET processed_url = ?, status = 'completed' WHERE id = ?
             `).bind(dataUrl, imageId).run();
+        } else if (dbImageId) {
+            await c.env.DB.prepare(`
+                UPDATE images SET processed_url = ?, status = 'completed' WHERE id = ?
+            `).bind(dataUrl, dbImageId).run();
+            console.log(`✅ Saved processed image to DB for R2 image: ${dbImageId}`);
         }
 
         return c.json({ 
             success: true,
             imageId,
+            dbImageId: dbImageId,
             processedUrl: dataUrl,
             message: 'Background removed and saved'
         });
