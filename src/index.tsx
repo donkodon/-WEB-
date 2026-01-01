@@ -638,6 +638,9 @@ app.get('/dashboard', async (c) => {
                     let skipCount = 0;
                     const filenameSet = new Set(); // Track filenames to prevent duplicates
                     
+                    console.log('📊 Total images to process:', imageIds.length);
+                    console.log('📋 Image IDs:', imageIds);
+                    
                     for (const imageId of imageIds) {
                         try {
                             console.log('🔄 Processing imageId:', imageId);
@@ -676,6 +679,8 @@ app.get('/dashboard', async (c) => {
                             }
                             filenameSet.add(uniqueFilename);
                             console.log('✅ Final unique filename:', uniqueFilename);
+                            console.log('📁 Current filenameSet size:', filenameSet.size);
+                            console.log('📁 Filenames in set:', Array.from(filenameSet));
                             
                             // For data URLs (PNG with transparency), composite with white background
                             if (data.imageUrl.startsWith('data:')) {
@@ -707,9 +712,10 @@ app.get('/dashboard', async (c) => {
                                     canvas.toBlob((b) => resolve(b), 'image/png');
                                 });
                                 if (blob) {
-                                    console.log('✅ Adding to ZIP:', uniqueFilename, 'Size:', blob.size);
+                                    console.log('✅ Adding to ZIP (data URL):', uniqueFilename, 'Size:', blob.size);
                                     folder.file(uniqueFilename, blob);
                                     successCount++;
+                                    console.log('✅ Successfully added. Total success count:', successCount);
                                 } else {
                                     console.error('Failed to create blob for:', imageId);
                                     skipCount++;
@@ -726,19 +732,25 @@ app.get('/dashboard', async (c) => {
                                 const blob = await imgResponse.blob();
                                 console.log('Got blob, size:', blob.size);
                                 if (blob.size > 0) {
-                                    console.log('✅ Adding to ZIP:', uniqueFilename, 'Size:', blob.size);
+                                    console.log('✅ Adding to ZIP (URL):', uniqueFilename, 'Size:', blob.size);
                                     folder.file(uniqueFilename, blob);
                                     successCount++;
+                                    console.log('✅ Successfully added. Total success count:', successCount);
                                 } else {
                                     console.error('Empty blob for:', imageId);
                                     skipCount++;
                                 }
                             }
                         } catch (e) {
-                            console.error('Error downloading processed image ' + imageId + ':', e);
+                            console.error('❌ Error downloading processed image ' + imageId + ':', e);
+                            console.error('❌ Error stack:', e.stack);
                             skipCount++;
                         }
+                        
+                        console.log('🔄 Loop iteration complete. Success:', successCount, 'Skip:', skipCount);
                     }
+                    
+                    console.log('🏁 Processing loop finished. Final counts - Success:', successCount, 'Skip:', skipCount);
                     
                     // Generate and download ZIP
                     console.log('📦 Generating ZIP file...');
