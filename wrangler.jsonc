@@ -27,20 +27,12 @@
     "binding": "AI"
   },
   
-  // "kv_namespaces": [
-  //   {
-  //     "binding": "MY_KV_NAMESPACE",
-  //     "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-  //   }
-  // ],
-  // "d1_databases": [
-  //   {
-  //     "binding": "DB",
-  //     "database_name": "smart-measure-db",
-  //     "database_id": "6463d8f7-97cd-4d66-af26-84a0ed469c23"
-  //   }
-  // ]
-  // "ai": {
-  //   "binding": "AI"
-  // }
+  // D1 Database - Production database for product master data
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "measure-master-db",
+      "database_id": "7fad5dc0-abce-4816-b667-193490cf965d"
+    }
+  ]
 }
