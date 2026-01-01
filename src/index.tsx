@@ -3951,7 +3951,7 @@ app.get('/api/download-processed-image/:imageId', async (c) => {
         }
         
         // Check if processed image exists
-        if (!processedUrl) {
+        if (!processedKey) {
             return c.json({ 
                 error: 'No processed image available',
                 message: '白抜き処理が完了していません'
@@ -3965,12 +3965,37 @@ app.get('/api/download-processed-image/:imageId', async (c) => {
         
         console.log(`📝 Generated filename: ${filename} for imageId: ${imageId}`);
         
-        return c.json({
-            imageUrl: processedUrl,
-            filename: filename,
-            sku: sku,
-            status: 'completed'
-        });
+        // Fetch image data from R2 and convert to base64 to avoid CORS issues
+        try {
+            const r2Object = await c.env.PRODUCT_IMAGES.get(processedKey);
+            if (!r2Object) {
+                return c.json({ 
+                    error: 'Failed to retrieve image from R2',
+                    message: 'R2オブジェクトの取得に失敗しました'
+                }, 500);
+            }
+            
+            // Convert R2 object to ArrayBuffer then to base64
+            const arrayBuffer = await r2Object.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+            const base64String = buffer.toString('base64');
+            const dataUrl = `data:image/png;base64,${base64String}`;
+            
+            console.log(`✅ Converted image to base64 (${base64String.length} chars)`);
+            
+            return c.json({
+                imageUrl: dataUrl,
+                filename: filename,
+                sku: sku,
+                status: 'completed'
+            });
+        } catch (e) {
+            console.error(`❌ Failed to fetch R2 object:`, e);
+            return c.json({ 
+                error: 'Failed to fetch image data',
+                message: '画像データの取得に失敗しました'
+            }, 500);
+        }
         
     } catch (error: any) {
         console.error('Download processed image error:', error);
