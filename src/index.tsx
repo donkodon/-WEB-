@@ -2497,85 +2497,9 @@ app.post('/api/sync-from-mobile', async (c) => {
             }
         }
         
-        // Step 2: Check R2 bucket for orphaned images (images without product master)
-        console.log('🗂️ Checking R2 bucket for orphaned images...');
-        
-        if (c.env.PRODUCT_IMAGES) {
-            const list = await c.env.PRODUCT_IMAGES.list();
-            const r2Skus = new Set<string>();
-            
-            // Extract unique SKUs from R2 filenames
-            for (const obj of list.objects) {
-                const filename = obj.key;
-                const parts = filename.replace('.jpg', '').split('_');
-                
-                if (parts.length >= 1) {
-                    const sku = parts[0];
-                    r2Skus.add(sku);
-                }
-            }
-            
-            // Get updated local SKUs after mobile API sync
-            const updatedLocalProducts = await c.env.DB.prepare(`
-                SELECT sku FROM products
-            `).all();
-            const updatedLocalSkus = new Set(updatedLocalProducts.results.map((p: any) => p.sku));
-            
-            // Create products for SKUs that exist in R2 but not in local DB
-            for (const sku of r2Skus) {
-                if (!updatedLocalSkus.has(sku)) {
-                    try {
-                        // Check if this SKU exists in mobile API first
-                        const response = await fetch(`${MOBILE_API_URL}/api/products/search?sku=${sku}`);
-                        
-                        if (response.ok) {
-                            const data = await response.json();
-                            
-                            if (data.success && data.product) {
-                                const product = data.product;
-                                
-                                await c.env.DB.prepare(`
-                                    INSERT INTO product_master (
-                                        sku, name, brand, size, color, price_sale, barcode, category, status, created_at
-                                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-                                `).bind(
-                                    sku,
-                                    product.name || `商品 ${sku}`,
-                                    product.brand || null,
-                                    product.size || null,
-                                    product.color || null,
-                                    product.price || 0,
-                                    product.barcode || null,
-                                    product.category || null,
-                                    'Active'
-                                ).run();
-                                
-                                insertedCount++;
-                                console.log(`✨ Created product from mobile API: ${sku}`);
-                            }
-                        } else {
-                            // Mobile API doesn't have this product - create placeholder from R2
-                            await c.env.DB.prepare(`
-                                INSERT INTO product_master (
-                                    sku, name, category, status, created_at
-                                ) VALUES (?, ?, ?, ?, datetime('now'))
-                            `).bind(
-                                sku,
-                                `商品 ${sku} (R2のみ)`,
-                                'Imported',
-                                'Pending'
-                            ).run();
-                            
-                            insertedCount++;
-                            console.log(`📦 Created placeholder from R2: ${sku}`);
-                        }
-                    } catch (e) {
-                        console.error(`❌ Failed to create product for SKU ${sku}:`, e);
-                        skippedCount++;
-                    }
-                }
-            }
-        }
+        // Step 2: R2 bucket auto-creation is DISABLED
+        // Only CSV import and mobile API sync should create products
+        console.log('ℹ️ R2 bucket auto-creation is disabled. Use CSV import to add products.');
         
         return c.json({
             success: true,
