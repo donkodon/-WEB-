@@ -2615,23 +2615,21 @@ app.post('/api/sync-to-mobile', async (c) => {
             const p = product as any;
             
             try {
-                const response = await fetch(`${MOBILE_API_URL}/api/products/bulk-import`, {
+                const response = await fetch(`${MOBILE_API_URL}/api/products`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        products: [{
-                            sku: p.sku,
-                            name: p.name || `商品 ${p.sku}`,
-                            brand: p.brand || null,
-                            size: p.size || null,
-                            color: p.color || null,
-                            price: p.price_sale || p.price || 0,
-                            barcode: p.barcode || null,
-                            category: p.category || null,
-                            description: p.description || null
-                        }]
+                        sku: p.sku,
+                        name: p.name || `商品 ${p.sku}`,
+                        brand: p.brand || null,
+                        size: p.size || null,
+                        color: p.color || null,
+                        price: p.price_sale || 0,
+                        barcode: p.barcode || null,
+                        category: p.category || null,
+                        description: p.description || null
                     })
                 });
                 
