@@ -35,7 +35,7 @@ app.get('/init', async (c) => {
     );
 
     -- Products table (SKU)
-    CREATE TABLE IF NOT EXISTS products (
+    CREATE TABLE IF NOT EXISTS product_master (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       sku TEXT UNIQUE NOT NULL,
       name TEXT NOT NULL,
@@ -51,17 +51,17 @@ app.get('/init', async (c) => {
       processed_url TEXT,
       status TEXT DEFAULT 'pending', 
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (product_id) REFERENCES products(id)
+      FOREIGN KEY (product_id) REFERENCES product_master(id)
     );
     
     -- Indexes
-    CREATE INDEX IF NOT EXISTS idx_products_sku ON products(sku);
+    CREATE INDEX IF NOT EXISTS idx_product_master_sku ON product_master(sku);
     CREATE INDEX IF NOT EXISTS idx_images_product_id ON images(product_id);
 
     -- Seed
     INSERT OR IGNORE INTO users (email, name) VALUES ('user@example.com', 'Kenji');
 
-    INSERT OR IGNORE INTO products (sku, name, category) VALUES 
+    INSERT OR IGNORE INTO product_master (sku, name, category) VALUES 
     ('TSHIRT-001-WHT', 'ベーシックコットンTシャツ（ホワイト）', 'Tops'),
     ('DNM-JCKT-NAVY', 'ヴィンテージデニムジャケット（ネイビー）', 'Outerwear'),
     ('SHIRT-LINEN-BEG', 'リネンシャツ（ベージュ）', 'Tops');
@@ -85,24 +85,24 @@ app.get('/init', async (c) => {
 // --- Helper: Fix Schema (Apply migration 0002 manually if needed) ---
 app.get('/fix-schema', async (c) => {
     const alterations = [
-        "ALTER TABLE products ADD COLUMN brand TEXT",
-        "ALTER TABLE products ADD COLUMN brand_kana TEXT",
-        "ALTER TABLE products ADD COLUMN size TEXT",
-        "ALTER TABLE products ADD COLUMN color TEXT",
-        "ALTER TABLE products ADD COLUMN category_sub TEXT",
-        "ALTER TABLE products ADD COLUMN price_cost INTEGER",
-        "ALTER TABLE products ADD COLUMN season TEXT",
-        "ALTER TABLE products ADD COLUMN rank TEXT",
-        "ALTER TABLE products ADD COLUMN release_date TEXT",
-        "ALTER TABLE products ADD COLUMN buyer TEXT",
-        "ALTER TABLE products ADD COLUMN store_name TEXT",
-        "ALTER TABLE products ADD COLUMN price_ref INTEGER",
-        "ALTER TABLE products ADD COLUMN price_sale INTEGER",
-        "ALTER TABLE products ADD COLUMN price_list INTEGER",
-        "ALTER TABLE products ADD COLUMN location TEXT",
-        "ALTER TABLE products ADD COLUMN stock_quantity INTEGER",
-        "ALTER TABLE products ADD COLUMN barcode TEXT",
-        "ALTER TABLE products ADD COLUMN status TEXT"
+        "ALTER TABLE product_master ADD COLUMN brand TEXT",
+        "ALTER TABLE product_master ADD COLUMN brand_kana TEXT",
+        "ALTER TABLE product_master ADD COLUMN size TEXT",
+        "ALTER TABLE product_master ADD COLUMN color TEXT",
+        "ALTER TABLE product_master ADD COLUMN category_sub TEXT",
+        "ALTER TABLE product_master ADD COLUMN price_cost INTEGER",
+        "ALTER TABLE product_master ADD COLUMN season TEXT",
+        "ALTER TABLE product_master ADD COLUMN rank TEXT",
+        "ALTER TABLE product_master ADD COLUMN release_date TEXT",
+        "ALTER TABLE product_master ADD COLUMN buyer TEXT",
+        "ALTER TABLE product_master ADD COLUMN store_name TEXT",
+        "ALTER TABLE product_master ADD COLUMN price_ref INTEGER",
+        "ALTER TABLE product_master ADD COLUMN price_sale INTEGER",
+        "ALTER TABLE product_master ADD COLUMN price_list INTEGER",
+        "ALTER TABLE product_master ADD COLUMN location TEXT",
+        "ALTER TABLE product_master ADD COLUMN stock_quantity INTEGER",
+        "ALTER TABLE product_master ADD COLUMN barcode TEXT",
+        "ALTER TABLE product_master ADD COLUMN status TEXT"
     ];
 
     const results = [];
@@ -236,12 +236,12 @@ app.post('/login', async (c) => {
         
         // Check if product exists, create if not
         const product = await c.env.DB.prepare(`
-          SELECT id FROM products WHERE sku = ?
+          SELECT id FROM product_master WHERE sku = ?
         `).bind(sku).first();
         
         if (!product) {
           await c.env.DB.prepare(`
-            INSERT OR IGNORE INTO products (sku, name, category)
+            INSERT OR IGNORE INTO product_master (sku, name, category)
             VALUES (?, ?, ?)
           `).bind(sku, `商品 ${sku}`, 'Imported').run();
         }
@@ -256,7 +256,7 @@ app.post('/login', async (c) => {
           await c.env.DB.prepare(`
             INSERT INTO images (product_id, original_url, status, created_at)
             SELECT id, ?, 'pending', datetime(?, 'unixepoch', 'subsec')
-            FROM products WHERE sku = ?
+            FROM product_master WHERE sku = ?
           `).bind(imageUrl, parseInt(timestamp) / 1000, sku).run();
           
           syncedCount++;
@@ -277,7 +277,7 @@ app.post('/login', async (c) => {
 app.get('/dashboard', async (c) => {
   // 1. Get all SKUs from local DB (just for reference)
   const localProductsResult = await c.env.DB.prepare(`
-    SELECT DISTINCT sku FROM products ORDER BY id DESC
+    SELECT DISTINCT sku FROM product_master ORDER BY id DESC
   `).all();
 
   // 2. Fetch all images from local database
@@ -322,7 +322,7 @@ app.get('/dashboard', async (c) => {
   for (const lp of localProductsResult.results) {
     const sku = (lp as any).sku;
     const fullProduct = await c.env.DB.prepare(`
-      SELECT * FROM products WHERE sku = ?
+      SELECT * FROM product_master WHERE sku = ?
     `).bind(sku).first();
     
     if (fullProduct) {
@@ -1978,17 +1978,26 @@ app.post('/api/import-csv', async (c) => {
     if (!file || !(file instanceof File)) return c.text('No file uploaded', 400);
 
     const buffer = await file.arrayBuffer();
-    // Try decoding as Shift-JIS first (common for Japanese CSVs)
-    let text = new TextDecoder('shift-jis').decode(buffer);
     
-    // Simple heuristic: check for known headers
-    if (!text.includes('ID') && !text.includes('商品名') && !text.includes('sku')) {
-        // Fallback to UTF-8
-        text = new TextDecoder('utf-8').decode(buffer);
+    // Try UTF-8 first (most common)
+    let text = new TextDecoder('utf-8').decode(buffer);
+    
+    // If UTF-8 produces invalid characters, try Shift-JIS
+    // Check for UTF-8 BOM or valid UTF-8 headers
+    const hasUtf8Bom = buffer.byteLength >= 3 && 
+        new Uint8Array(buffer, 0, 3).toString() === '239,187,191';
+    
+    if (!hasUtf8Bom && !text.includes('ID') && !text.includes('商品名') && !text.includes('SKU') && !text.includes('sku')) {
+        // Fallback to Shift-JIS for legacy Japanese CSVs
+        try {
+            text = new TextDecoder('shift-jis').decode(buffer);
+        } catch (e) {
+            // Keep UTF-8 if Shift-JIS fails
+            console.warn('⚠️ Shift-JIS decoding failed, using UTF-8');
+        }
     }
 
     const lines = text.split(/\r\n|\n|\r/);
-    const headers = lines[0].split(',');
     
     // Simple CSV parser logic needed for data lines to handle quotes
     const parseCSVLine = (line: string) => {
@@ -2012,6 +2021,9 @@ app.post('/api/import-csv', async (c) => {
         result.push(val);
         return result;
     };
+    
+    // Parse header row using the same parser
+    const headers = parseCSVLine(lines[0]);
 
     // Mapping indexes based on header row (fuzzy matching)
     // User requested specific column mapping:
@@ -2029,7 +2041,7 @@ app.post('/api/import-csv', async (c) => {
         barcode: getIndex(['バーコード', 'Barcode']),      // Col A
         sku: getIndex(['ID', 'sku', 'SKU']),               // Col B
         brand: getIndex(['ブランド', 'Brand']),            // Col C
-        // Col D (BrandKana) skipped
+        brand_kana: getIndex(['ブランドカナ', 'BrandKana']), // Col D
         name: getIndex(['品名', '商品名', 'Name']),        // Col E
         size: getIndex(['サイズ', 'Size']),                // Col F
         color: getIndex(['カラー', 'Color']),              // Col G
@@ -2054,9 +2066,13 @@ app.post('/api/import-csv', async (c) => {
 
     let count = 0;
     
+    // Debug: Log index mapping
+    console.log('📋 CSV Index Mapping:', idx);
+    console.log('📋 Headers:', headers);
+    
     // Prepared statement for insertion
     const stmt = c.env.DB.prepare(`
-        INSERT OR REPLACE INTO products (
+        INSERT OR REPLACE INTO product_master (
             sku, name, brand, brand_kana, size, color, price_cost, price_sale, 
             stock_quantity, barcode, status, category, category_sub, season, 
             rank, buyer, store_name, price_ref, price_list, location, created_at
@@ -2070,6 +2086,14 @@ app.post('/api/import-csv', async (c) => {
         if (!line) continue;
         
         const row = parseCSVLine(line);
+        
+        // Debug: Log first row
+        if (i === 1) {
+            console.log('🔍 First Row Parsed:', row);
+            console.log('🔍 SKU (idx=' + idx.sku + '):', row[idx.sku]);
+            console.log('🔍 Name (idx=' + idx.name + '):', row[idx.name]);
+        }
+        
         // Basic validation: must have SKU or Name
         if (!row[idx.sku] && !row[idx.name]) continue;
 
@@ -2133,11 +2157,11 @@ app.post('/api/products/bulk-import', async (c) => {
         const batch = [];
 
         const stmt = c.env.DB.prepare(`
-            INSERT OR REPLACE INTO products (
+            INSERT OR REPLACE INTO product_master (
                 sku, barcode, name, brand, category, size, color, 
                 price_sale, status, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(
-                (SELECT created_at FROM products WHERE sku = ?), 
+                (SELECT created_at FROM product_master WHERE sku = ?), 
                 ?
             ))
         `);
@@ -2147,7 +2171,7 @@ app.post('/api/products/bulk-import', async (c) => {
 
             // Check if product exists
             const existing = await c.env.DB.prepare(
-                'SELECT sku FROM products WHERE sku = ?'
+                'SELECT sku FROM product_master WHERE sku = ?'
             ).bind(product.sku).first();
 
             if (existing) {
@@ -2233,7 +2257,7 @@ app.get('/api/products/list', async (c) => {
             price_sale, stock_quantity, status, 
             barcode, rank, 
             created_at 
-        FROM products 
+        FROM product_master 
         ORDER BY id DESC
     `).all();
 
@@ -2259,7 +2283,7 @@ app.get('/api/products/search', async (c) => {
             SELECT 
                 sku, barcode, name, brand, category, size, color, 
                 price_sale as price, status, created_at, created_at as updated_at
-            FROM products 
+            FROM product_master 
             WHERE sku = ?
         `).bind(sku).first();
 
@@ -2274,7 +2298,7 @@ app.get('/api/products/search', async (c) => {
         const images = await c.env.DB.prepare(`
             SELECT id, original_url, processed_url, status, created_at as photographed_at
             FROM images
-            WHERE product_id = (SELECT id FROM products WHERE sku = ?)
+            WHERE product_id = (SELECT id FROM product_master WHERE sku = ?)
             ORDER BY id DESC
         `).bind(sku).all();
 
@@ -2387,8 +2411,9 @@ app.get('/api/products/search', async (c) => {
 app.post('/api/sync-from-mobile', async (c) => {
     try {
         const MOBILE_API_URL = c.env.MOBILE_API_URL || 'https://measure-master-api.jinkedon2.workers.dev';
+        const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
         
-        console.log('🔄 Syncing product data from mobile app API...');
+        console.log('🔄 Syncing product data from mobile app API and R2 bucket...');
         
         // Get all products from local database
         const localProducts = await c.env.DB.prepare(`
@@ -2397,63 +2422,162 @@ app.post('/api/sync-from-mobile', async (c) => {
         
         const localSkus = new Set(localProducts.results.map((p: any) => p.sku));
         let syncedCount = 0;
+        let insertedCount = 0;
         let skippedCount = 0;
         
-        // For each local product, try to fetch updated data from mobile API
-        for (const localProduct of localProducts.results) {
-            const sku = (localProduct as any).sku;
+        // Step 1: Fetch all products from mobile API
+        console.log('📡 Fetching all products from mobile API...');
+        const allProductsResponse = await fetch(`${MOBILE_API_URL}/api/products`);
+        
+        if (allProductsResponse.ok) {
+            const allProductsData = await allProductsResponse.json();
             
-            try {
-                const response = await fetch(`${MOBILE_API_URL}/api/products/search?sku=${sku}`);
-                
-                if (!response.ok) {
-                    console.log(`⚠️ Product ${sku} not found in mobile API`);
-                    skippedCount++;
-                    continue;
-                }
-                
-                const data = await response.json();
-                
-                if (data.success && data.product) {
-                    const product = data.product;
+            if (allProductsData.success && allProductsData.products) {
+                for (const product of allProductsData.products) {
+                    const sku = product.sku;
                     
-                    // Update product data in local database
-                    await c.env.DB.prepare(`
-                        UPDATE products SET
-                            name = ?,
-                            brand = ?,
-                            size = ?,
-                            color = ?,
-                            price_sale = ?,
-                            barcode = ?,
-                            category = ?
-                        WHERE sku = ?
-                    `).bind(
-                        product.name || '',
-                        product.brand || null,
-                        product.size || null,
-                        product.color || null,
-                        product.price || 0,
-                        product.barcode || null,
-                        product.category || null,
-                        sku
-                    ).run();
-                    
-                    syncedCount++;
-                    console.log(`✅ Synced product: ${sku}`);
+                    try {
+                        if (localSkus.has(sku)) {
+                            // Update existing product
+                            await c.env.DB.prepare(`
+                                UPDATE product_master SET
+                                    name = ?,
+                                    brand = ?,
+                                    size = ?,
+                                    color = ?,
+                                    price_sale = ?,
+                                    barcode = ?,
+                                    category = ?
+                                WHERE sku = ?
+                            `).bind(
+                                product.name || '',
+                                product.brand || null,
+                                product.size || null,
+                                product.color || null,
+                                product.price || 0,
+                                product.barcode || null,
+                                product.category || null,
+                                sku
+                            ).run();
+                            
+                            syncedCount++;
+                            console.log(`✅ Updated product: ${sku}`);
+                        } else {
+                            // Insert new product
+                            await c.env.DB.prepare(`
+                                INSERT INTO product_master (
+                                    sku, name, brand, size, color, price_sale, barcode, category, status, created_at
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                            `).bind(
+                                sku,
+                                product.name || `商品 ${sku}`,
+                                product.brand || null,
+                                product.size || null,
+                                product.color || null,
+                                product.price || 0,
+                                product.barcode || null,
+                                product.category || null,
+                                'Active'
+                            ).run();
+                            
+                            insertedCount++;
+                            console.log(`✨ Inserted new product: ${sku}`);
+                        }
+                    } catch (e) {
+                        console.error(`❌ Failed to sync product ${sku}:`, e);
+                        skippedCount++;
+                    }
                 }
-            } catch (e) {
-                console.error(`❌ Failed to sync product ${sku}:`, e);
-                skippedCount++;
+            }
+        }
+        
+        // Step 2: Check R2 bucket for orphaned images (images without product master)
+        console.log('🗂️ Checking R2 bucket for orphaned images...');
+        
+        if (c.env.PRODUCT_IMAGES) {
+            const list = await c.env.PRODUCT_IMAGES.list();
+            const r2Skus = new Set<string>();
+            
+            // Extract unique SKUs from R2 filenames
+            for (const obj of list.objects) {
+                const filename = obj.key;
+                const parts = filename.replace('.jpg', '').split('_');
+                
+                if (parts.length >= 1) {
+                    const sku = parts[0];
+                    r2Skus.add(sku);
+                }
+            }
+            
+            // Get updated local SKUs after mobile API sync
+            const updatedLocalProducts = await c.env.DB.prepare(`
+                SELECT sku FROM products
+            `).all();
+            const updatedLocalSkus = new Set(updatedLocalProducts.results.map((p: any) => p.sku));
+            
+            // Create products for SKUs that exist in R2 but not in local DB
+            for (const sku of r2Skus) {
+                if (!updatedLocalSkus.has(sku)) {
+                    try {
+                        // Check if this SKU exists in mobile API first
+                        const response = await fetch(`${MOBILE_API_URL}/api/products/search?sku=${sku}`);
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            
+                            if (data.success && data.product) {
+                                const product = data.product;
+                                
+                                await c.env.DB.prepare(`
+                                    INSERT INTO product_master (
+                                        sku, name, brand, size, color, price_sale, barcode, category, status, created_at
+                                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                                `).bind(
+                                    sku,
+                                    product.name || `商品 ${sku}`,
+                                    product.brand || null,
+                                    product.size || null,
+                                    product.color || null,
+                                    product.price || 0,
+                                    product.barcode || null,
+                                    product.category || null,
+                                    'Active'
+                                ).run();
+                                
+                                insertedCount++;
+                                console.log(`✨ Created product from mobile API: ${sku}`);
+                            }
+                        } else {
+                            // Mobile API doesn't have this product - create placeholder from R2
+                            await c.env.DB.prepare(`
+                                INSERT INTO product_master (
+                                    sku, name, category, status, created_at
+                                ) VALUES (?, ?, ?, ?, datetime('now'))
+                            `).bind(
+                                sku,
+                                `商品 ${sku} (R2のみ)`,
+                                'Imported',
+                                'Pending'
+                            ).run();
+                            
+                            insertedCount++;
+                            console.log(`📦 Created placeholder from R2: ${sku}`);
+                        }
+                    } catch (e) {
+                        console.error(`❌ Failed to create product for SKU ${sku}:`, e);
+                        skippedCount++;
+                    }
+                }
             }
         }
         
         return c.json({
             success: true,
             synced: syncedCount,
+            inserted: insertedCount,
             skipped: skippedCount,
-            total: localProducts.results.length,
-            message: `Successfully synced ${syncedCount} products from mobile app API`
+            total: syncedCount + insertedCount,
+            message: `Successfully synced ${syncedCount} products, inserted ${insertedCount} new products`
         });
         
     } catch (error: any) {
@@ -2763,7 +2887,7 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
             
             // Get product ID
             const productResult = await c.env.DB.prepare(`
-                SELECT id FROM products WHERE sku = ?
+                SELECT id FROM product_master WHERE sku = ?
             `).bind(sku).first();
             
             if (productResult) {
@@ -3027,13 +3151,13 @@ app.post('/api/sync-from-bubble', async (c) => {
                 
                 // Check if product exists
                 const product = await c.env.DB.prepare(`
-                    SELECT id FROM products WHERE sku = ?
+                    SELECT id FROM product_master WHERE sku = ?
                 `).bind(sku).first();
                 
                 if (!product) {
                     // Create product if not exists
                     await c.env.DB.prepare(`
-                        INSERT OR IGNORE INTO products (sku, name, category)
+                        INSERT OR IGNORE INTO product_master (sku, name, category)
                         VALUES (?, ?, ?)
                     `).bind(sku, `商品 ${sku}`, 'Imported').run();
                 }
@@ -3052,7 +3176,7 @@ app.post('/api/sync-from-bubble', async (c) => {
                 await c.env.DB.prepare(`
                     INSERT INTO images (product_id, original_url, status, created_at)
                     SELECT id, ?, 'pending', datetime(?, 'unixepoch', 'subsec')
-                    FROM products WHERE sku = ?
+                    FROM product_master WHERE sku = ?
                 `).bind(imageUrl, parseInt(timestamp) / 1000, sku).run();
                 
                 syncedCount++;
@@ -3118,12 +3242,12 @@ app.post('/api/register-image', async (c) => {
         
         // Check if product exists, create if not
         const product = await c.env.DB.prepare(`
-            SELECT id FROM products WHERE sku = ?
+            SELECT id FROM product_master WHERE sku = ?
         `).bind(sku).first();
         
         if (!product) {
             await c.env.DB.prepare(`
-                INSERT INTO products (sku, name, category)
+                INSERT INTO product_master (sku, name, category)
                 VALUES (?, ?, ?)
             `).bind(sku, `商品 ${sku}`, 'Imported').run();
         }
@@ -3144,7 +3268,7 @@ app.post('/api/register-image', async (c) => {
         // Insert image
         const result = await c.env.DB.prepare(`
             INSERT INTO images (product_id, original_url, status)
-            SELECT id, ?, 'pending' FROM products WHERE sku = ?
+            SELECT id, ?, 'pending' FROM product_master WHERE sku = ?
         `).bind(imageUrl, sku).run();
         
         return c.json({ 
