@@ -2223,27 +2223,16 @@ app.get('/api/products/search', async (c) => {
             console.log(`📱 Found ${mobileAppImages.length} mobile app images for SKU: ${sku}`);
         }
 
-        // Combine WEB app images and mobile app images
-        const allImages = [
-            ...images.results.map((img: any) => ({
-                id: img.id,
-                sku: sku,
-                item_code: `${sku}_${img.id}`,
-                image_urls: JSON.stringify([img.original_url]),
-                source: 'webapp',
-                condition: 'Unknown',
-                photographed_at: img.photographed_at
-            })),
-            ...mobileAppImages.map((img, index) => ({
-                id: `mobile_${index}`,
-                sku: sku,
-                item_code: img.filename.replace('.jpg', ''),
-                image_urls: JSON.stringify([img.url]),
-                source: 'mobile',
-                condition: 'Unknown',
-                photographed_at: img.uploaded
-            }))
-        ];
+        // All images come from mobile app only (no WEB app images table)
+        const allImages = mobileAppImages.map((img, index) => ({
+            id: `mobile_${index}`,
+            sku: sku,
+            item_code: img.filename.replace('.jpg', ''),
+            image_urls: JSON.stringify([img.url]),
+            source: 'mobile',
+            condition: 'Unknown',
+            photographed_at: img.uploaded
+        }));
 
         return c.json({
             success: true,
@@ -2253,7 +2242,6 @@ app.get('/api/products/search', async (c) => {
                 capturedItems: allImages,
                 latestItem: allImages.length > 0 ? allImages[0] : null,
                 capturedCount: allImages.length,
-                webAppImageCount: images.results.length,
                 mobileAppImageCount: mobileAppImages.length
             }
         });
@@ -2780,9 +2768,7 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
             originalUrl = imageResult.original_url as string;
 
             // Update status to processing
-            await c.env.DB.prepare(`
-                UPDATE images SET status = 'processing' WHERE id = ?
-            `).bind(imageId).run();
+            // images table removed - UPDATE operation disabled
         }
 
         // ==========================================
@@ -2806,9 +2792,7 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
                     
                     // Update DB (only for non-R2 images)
                     if (!isR2Image) {
-                        await c.env.DB.prepare(`
-                            UPDATE images SET processed_url = ?, status = 'completed' WHERE id = ?
-                        `).bind(processedDataUrl, imageId).run();
+                        // images table removed - UPDATE operation disabled
                     }
 
                     return c.json({ 
@@ -2841,14 +2825,10 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
 
                 // Update DB - now also for R2 images if we have a DB record
                 if (!isR2Image) {
-                    await c.env.DB.prepare(`
-                        UPDATE images SET processed_url = ?, status = 'completed' WHERE id = ?
-                    `).bind(result.imageDataUrl, imageId).run();
+                    // images table removed - UPDATE operation disabled
                 } else if (dbImageId) {
                     // R2 image with DB record - save processed URL
-                    await c.env.DB.prepare(`
-                        UPDATE images SET processed_url = ?, status = 'completed' WHERE id = ?
-                    `).bind(result.imageDataUrl, dbImageId).run();
+                    // images table removed - UPDATE operation disabled
                     console.log(`✅ Saved processed image to DB for R2 image: ${dbImageId}`);
                 }
 
@@ -2917,13 +2897,9 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
         if (!response.ok) {
             // Mark as failed
             if (!isR2Image) {
-                await c.env.DB.prepare(`
-                    UPDATE images SET status = 'failed' WHERE id = ?
-                `).bind(imageId).run();
+                // images table removed - UPDATE operation disabled
             } else if (dbImageId) {
-                await c.env.DB.prepare(`
-                    UPDATE images SET status = 'failed' WHERE id = ?
-                `).bind(dbImageId).run();
+                // images table removed - UPDATE operation disabled
             }
             const errorText = await response.text();
             throw new Error(`Background removal failed: ${response.statusText} - ${errorText}`);
@@ -2944,13 +2920,9 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
 
         // Update database with processed image
         if (!isR2Image) {
-            await c.env.DB.prepare(`
-                UPDATE images SET processed_url = ?, status = 'completed' WHERE id = ?
-            `).bind(dataUrl, imageId).run();
+            // images table removed - UPDATE operation disabled
         } else if (dbImageId) {
-            await c.env.DB.prepare(`
-                UPDATE images SET processed_url = ?, status = 'completed' WHERE id = ?
-            `).bind(dataUrl, dbImageId).run();
+            // images table removed - UPDATE operation disabled
             console.log(`✅ Saved processed image to DB for R2 image: ${dbImageId}`);
         }
 
@@ -3414,9 +3386,7 @@ app.post('/api/save-edited-image/:imageId', async (c) => {
         }
         
         // Update processed_url with edited image data
-        await c.env.DB.prepare(`
-            UPDATE images SET processed_url = ?, status = 'completed' WHERE id = ?
-        `).bind(imageData, imageId).run();
+        // images table removed - UPDATE operation disabled
         
         return c.json({ 
             success: true,
