@@ -684,18 +684,35 @@ app.get('/dashboard', async (c) => {
                                 // Draw image on top
                                 ctx.drawImage(img, 0, 0);
                                 
-                                // Convert to blob and add to ZIP
-                                canvas.toBlob((blob) => {
+                                // Convert to blob and add to ZIP (await the Promise)
+                                const blob = await new Promise((resolve) => {
+                                    canvas.toBlob((b) => resolve(b), 'image/png');
+                                });
+                                if (blob) {
                                     folder.file(data.filename, blob);
-                                }, 'image/png');
-                                
-                                successCount++;
+                                    successCount++;
+                                } else {
+                                    console.error('Failed to create blob for:', imageId);
+                                    skipCount++;
+                                }
                             } else {
                                 // For regular URLs, fetch and add to ZIP
+                                console.log('Fetching image from URL:', data.imageUrl);
                                 const imgResponse = await fetch(data.imageUrl);
+                                if (!imgResponse.ok) {
+                                    console.error('Failed to fetch image:', imgResponse.status);
+                                    skipCount++;
+                                    continue;
+                                }
                                 const blob = await imgResponse.blob();
-                                folder.file(data.filename, blob);
-                                successCount++;
+                                console.log('Got blob, size:', blob.size);
+                                if (blob.size > 0) {
+                                    folder.file(data.filename, blob);
+                                    successCount++;
+                                } else {
+                                    console.error('Empty blob for:', imageId);
+                                    skipCount++;
+                                }
                             }
                         } catch (e) {
                             console.error('Error downloading processed image ' + imageId + ':', e);
@@ -3863,16 +3880,41 @@ app.get('/api/download-image/:imageId', async (c) => {
 app.get('/api/download-processed-image/:imageId', async (c) => {
     try {
         const imageId = c.req.param('imageId');
+        const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
         
-        // Get image data with product info
-        // images table removed
+        // R2画像ID形式: r2_{SKU}_{filename_without_ext}
+        if (!imageId.startsWith('r2_')) {
+            return c.json({ error: 'Invalid image ID format' }, 400);
+        }
         
-        if (!result) {
-            return c.json({ error: 'Image not found' }, 404);
+        // Extract SKU from image ID
+        const parts = imageId.replace('r2_', '').split('_');
+        const sku = parts[0];
+        
+        // R2バケットで白抜き画像を検索
+        const processedKeyPattern = `processed/${imageId}_`;
+        let processedUrl = null;
+        let processedKey = null;
+        
+        if (c.env.PRODUCT_IMAGES) {
+            try {
+                const r2List = await c.env.PRODUCT_IMAGES.list({ prefix: processedKeyPattern });
+                if (r2List.objects && r2List.objects.length > 0) {
+                    // 最新の白抜き画像を使用
+                    const latestProcessed = r2List.objects.sort((a, b) => 
+                        (b.uploaded?.getTime() || 0) - (a.uploaded?.getTime() || 0)
+                    )[0];
+                    processedKey = latestProcessed.key;
+                    processedUrl = `${R2_PUBLIC_URL}/${processedKey}`;
+                    console.log(`✅ Found processed image: ${processedKey}`);
+                }
+            } catch (e) {
+                console.error(`❌ Failed to check processed images:`, e);
+            }
         }
         
         // Check if processed image exists
-        if (!result.processed_url) {
+        if (!processedUrl) {
             return c.json({ 
                 error: 'No processed image available',
                 message: '白抜き処理が完了していません'
@@ -3880,15 +3922,13 @@ app.get('/api/download-processed-image/:imageId', async (c) => {
         }
         
         // Generate filename
-        const sku = (result.sku as string) || 'UNKNOWN';
-        const imageIdStr = (result.id as number).toString().padStart(4, '0');
-        const filename = `${sku}_processed_${imageIdStr}.png`;
+        const filename = `${sku}_processed_${imageId.replace('r2_', '')}.png`;
         
         return c.json({
-            imageUrl: result.processed_url,
+            imageUrl: processedUrl,
             filename: filename,
             sku: sku,
-            status: result.status
+            status: 'completed'
         });
         
     } catch (error: any) {
