@@ -243,149 +243,152 @@ app.get('/dashboard', async (c) => {
     }
     
     // ========================================
-    // D1 product_items テーブルから画像情報を取得
-    // R2バケットからSKU別に画像を取得
+    // R2バケットから直接画像を取得（シンプル版）
+    // product_masterからSKU情報のみ取得し、R2バケットをスキャン
     // ========================================
     
     const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
     
-    // 1. product_items テーブルから全てのアイテムを取得（SKU別にグループ化）
-    console.log('🔄 Fetching product items from D1 product_items table...');
+    // 1. product_master テーブルから全てのSKUを取得
+    console.log('🔄 Fetching SKUs from product_master table...');
     
-    const productItemsResult = await c.env.DB.prepare(`
+    const productMasterResult = await c.env.DB.prepare(`
       SELECT 
-        pi.*,
-        pm.name as master_name,
-        pm.brand,
-        pm.size as master_size,
-        pm.color as master_color,
-        pm.price_sale,
-        pm.barcode,
-        pm.category,
-        pm.rank
-      FROM product_items pi
-      LEFT JOIN product_master pm ON pi.sku = pm.sku
-      ORDER BY pi.sku, pi.created_at DESC
+        sku,
+        name,
+        brand,
+        size,
+        color,
+        price_sale,
+        barcode,
+        category,
+        rank
+      FROM product_master
+      ORDER BY sku
     `).all();
     
-    console.log(`✅ Retrieved ${productItemsResult.results.length} items from product_items`);
+    console.log(`✅ Retrieved ${productMasterResult.results.length} SKUs from product_master`);
     
-    // 2. SKU別にグループ化
+    // 2. SKU別にマップを作成
     const skuMap = new Map<string, any>();
     
-    for (const item of productItemsResult.results) {
-      const pi = item as any;
-      const sku = pi.sku;
-      
-      if (!skuMap.has(sku)) {
-        skuMap.set(sku, {
-          id: pi.id,
-          sku: sku,
-          name: pi.master_name || `商品 ${sku}`,
-          brand: pi.brand || null,
-          size: pi.master_size || null,
-          color: pi.master_color || null,
-          price_sale: pi.price_sale || 0,
-          barcode: pi.barcode || null,
-          category: pi.category || null,
-          rank: pi.rank || pi.product_rank || null,
-          items: [],
-          images: []
-        });
-      }
-      
-      // アイテムを追加
-      const productData = skuMap.get(sku);
-      productData.items.push({
-        id: pi.id,
-        item_code: pi.item_code,
-        image_urls: pi.image_urls,
-        actual_measurements: pi.actual_measurements,
-        condition: pi.condition,
-        material: pi.material,
-        product_rank: pi.product_rank,
-        inspection_notes: pi.inspection_notes,
-        photographed_at: pi.photographed_at,
-        status: pi.status
+    for (const item of productMasterResult.results) {
+      const pm = item as any;
+      skuMap.set(pm.sku, {
+        id: pm.sku, // SKUをIDとして使用
+        sku: pm.sku,
+        name: pm.name || `商品 ${pm.sku}`,
+        brand: pm.brand || null,
+        size: pm.size || null,
+        color: pm.color || null,
+        price_sale: pm.price_sale || 0,
+        barcode: pm.barcode || null,
+        category: pm.category || null,
+        rank: pm.rank || null,
+        images: []
       });
     }
     
-    // 3. product_items の image_urls から実際の画像を取得
-    console.log('🔄 Processing images from product_items image_urls...');
+    // 3. R2バケットから直接画像をスキャン
+    console.log('🔄 Scanning R2 bucket for images...');
     
-    for (const [sku, productData] of skuMap.entries()) {
-      // 各アイテムの image_urls から画像を取得
-      for (const item of productData.items) {
-        if (!item.image_urls) continue;
+    if (c.env.PRODUCT_IMAGES) {
+      try {
+        // R2バケット全体をリスト（SKUフォルダ配下の画像）
+        const r2ListResult = await c.env.PRODUCT_IMAGES.list({ 
+          limit: 1000,
+          delimiter: '/'
+        });
         
-        // JSON配列をパース
-        let imageUrlsArray: string[] = [];
-        try {
-          imageUrlsArray = JSON.parse(item.image_urls);
-        } catch (e) {
-          console.error(`❌ Failed to parse image_urls for item ${item.item_code}:`, e);
-          continue;
-        }
+        console.log(`📂 Found ${r2ListResult.delimitedPrefixes?.length || 0} SKU folders`);
         
-        // 各画像URLを処理
-        for (let i = 0; i < imageUrlsArray.length; i++) {
-          const originalImageUrl = imageUrlsArray[i];
-          
-          // image-upload-api.jinkedon2.workers.dev のURLからファイル名を抽出
-          // 例: https://image-upload-api.jinkedon2.workers.dev/1025L280001_2.jpg
-          const urlParts = originalImageUrl.split('/');
-          const filename = urlParts[urlParts.length - 1]; // "1025L280001_2.jpg"
-          
-          // R2のパスを構築: {SKU}/{filename}
-          const r2Key = `${sku}/${filename}`;
-          const imageUrl = `${R2_PUBLIC_URL}/${r2Key}`;
-          
-          console.log(`📷 Processing image: ${filename} -> ${r2Key}`);
-          
-          // 画像IDを生成（一意なID）
-          const imageId = `r2_${sku}_${filename.replace(/\.[^/.]+$/, '')}`; // 拡張子を除去
-          
-          // 白抜き済み画像をR2バケットからチェック
-          let processedUrl = null;
-          const processedKeyPattern = `processed/${imageId}_`;
-          
-          // R2バケットで白抜き画像を検索
-          if (c.env.PRODUCT_IMAGES) {
-            try {
-              const r2List = await c.env.PRODUCT_IMAGES.list({ prefix: processedKeyPattern });
-              if (r2List.objects && r2List.objects.length > 0) {
-                // 最新の白抜き画像を使用（タイムスタンプ順で最後のもの）
-                const latestProcessed = r2List.objects.sort((a, b) => 
-                  (b.uploaded?.getTime() || 0) - (a.uploaded?.getTime() || 0)
-                )[0];
-                processedUrl = `${R2_PUBLIC_URL}/${latestProcessed.key}`;
-                console.log(`✅ Found processed image: ${latestProcessed.key}`);
+        // 各SKUフォルダをスキャン
+        if (r2ListResult.delimitedPrefixes) {
+          for (const prefix of r2ListResult.delimitedPrefixes) {
+            const sku = prefix.replace('/', ''); // "1025L280001/" -> "1025L280001"
+            
+            // このSKUがproduct_masterに存在しない場合、追加
+            if (!skuMap.has(sku)) {
+              skuMap.set(sku, {
+                id: sku,
+                sku: sku,
+                name: `商品 ${sku}`,
+                brand: null,
+                size: null,
+                color: null,
+                price_sale: 0,
+                barcode: null,
+                category: null,
+                rank: null,
+                images: []
+              });
+            }
+            
+            // SKUフォルダ内の画像をリスト
+            const skuImagesResult = await c.env.PRODUCT_IMAGES.list({ 
+              prefix: prefix,
+              limit: 100
+            });
+            
+            console.log(`📷 SKU ${sku}: Found ${skuImagesResult.objects.length} images`);
+            
+            const productData = skuMap.get(sku);
+            
+            // 各画像を処理
+            for (const obj of skuImagesResult.objects) {
+              const filename = obj.key.split('/')[1]; // "1025L280001/image.jpg" -> "image.jpg"
+              if (!filename) continue; // フォルダのみの場合スキップ
+              
+              const imageUrl = `${R2_PUBLIC_URL}/${obj.key}`;
+              const imageId = `r2_${sku}_${filename.replace(/\.[^/.]+$/, '')}`; // 拡張子を除去
+              
+              // 白抜き済み画像をチェック
+              let processedUrl = null;
+              const processedKeyPattern = `processed/${imageId}_`;
+              
+              try {
+                const r2ProcessedList = await c.env.PRODUCT_IMAGES.list({ prefix: processedKeyPattern });
+                if (r2ProcessedList.objects && r2ProcessedList.objects.length > 0) {
+                  const latestProcessed = r2ProcessedList.objects.sort((a, b) => 
+                    (b.uploaded?.getTime() || 0) - (a.uploaded?.getTime() || 0)
+                  )[0];
+                  processedUrl = `${R2_PUBLIC_URL}/${latestProcessed.key}`;
+                  console.log(`✅ Found processed image: ${latestProcessed.key}`);
+                }
+              } catch (e) {
+                console.error(`❌ Failed to check processed images for ${imageId}:`, e);
               }
-            } catch (e) {
-              console.error(`❌ Failed to check processed images for ${imageId}:`, e);
+              
+              // 画像情報を追加
+              productData.images.push({
+                id: imageId,
+                original_url: imageUrl,
+                processed_url: processedUrl,
+                status: processedUrl ? 'completed' : 'ready',
+                created_at: obj.uploaded?.toISOString() || new Date().toISOString(),
+                filename: filename,
+                sku: sku
+              });
             }
           }
-          
-          // 画像情報を追加
-          productData.images.push({
-            id: imageId,
-            original_url: imageUrl,
-            processed_url: processedUrl,
-            status: processedUrl ? 'completed' : 'ready',
-            created_at: new Date().toISOString(),
-            filename: filename,
-            sku: sku,
-            item_id: item.id,
-            item_code: item.item_code
-          });
         }
+      } catch (e) {
+        console.error(`❌ Failed to scan R2 bucket:`, e);
       }
     }
     
-    // 4. 結果を配列に変換
-    const products = Array.from(skuMap.values());
+    // 4. 画像のないSKUを除外
+    const skuMapFiltered = new Map<string, any>();
+    for (const [sku, productData] of skuMap.entries()) {
+      if (productData.images.length > 0) {
+        skuMapFiltered.set(sku, productData);
+      }
+    }
     
-    console.log(`📦 Total products: ${products.length}`);
+    // 5. 結果を配列に変換
+    const products = Array.from(skuMapFiltered.values());
+    
+    console.log(`📦 Total products with images: ${products.length}`);
     for (const p of products) {
       console.log(`  - ${p.sku}: ${p.name} (${p.images.length} images)`);
     }
