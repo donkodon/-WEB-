@@ -324,39 +324,44 @@ app.get('/dashboard', async (c) => {
               });
             }
             
-            // SKUフォルダ内の画像をリスト
+            // SKUフォルダ内の全ファイルを一括取得（パフォーマンス最適化）
             const skuImagesResult = await c.env.PRODUCT_IMAGES.list({ 
               prefix: prefix,
               limit: 100
             });
             
-            console.log(`📷 SKU ${sku}: Found ${skuImagesResult.objects.length} images`);
+            console.log(`📷 SKU ${sku}: Found ${skuImagesResult.objects.length} files`);
+            
+            // ファイル名リストをSetに格納（高速検索用）
+            const fileSet = new Set(skuImagesResult.objects.map(obj => obj.key));
             
             const productData = skuMap.get(sku);
             
+            // 元画像のみを処理（_p.png は除外）
+            const originalImages = skuImagesResult.objects.filter(obj => {
+              const filename = obj.key.split('/')[1];
+              return filename && !filename.endsWith('_p.png');
+            });
+            
+            console.log(`📷 SKU ${sku}: Processing ${originalImages.length} original images`);
+            
             // 各画像を処理
-            for (const obj of skuImagesResult.objects) {
-              const filename = obj.key.split('/')[1]; // "1025L280001/image.jpg" -> "image.jpg"
-              if (!filename) continue; // フォルダのみの場合スキップ
+            for (const obj of originalImages) {
+              const filename = obj.key.split('/')[1]; // "1025L280001/1025L280001_1.jpg" -> "1025L280001_1.jpg"
+              if (!filename) continue;
               
               const imageUrl = `${R2_PUBLIC_URL}/${obj.key}`;
-              const imageId = `r2_${sku}_${filename.replace(/\.[^/.]+$/, '')}`; // 拡張子を除去
+              const imageId = `r2_${sku}_${filename.replace(/\.[^/.]+$/, '')}`; // "r2_1025L280001_1025L280001_1"
               
-              // 白抜き済み画像をチェック
+              // 白抜き済み画像の存在確認（Setを使った高速検索）
+              // {SKU}/{filename}_p.png の形式をチェック
+              const filenameWithoutExt = filename.replace(/\.[^/.]+$/, ''); // "1025L280001_1.jpg" -> "1025L280001_1"
+              const processedKey = `${prefix}${filenameWithoutExt}_p.png`; // "1025L280001/1025L280001_1_p.png"
+              
               let processedUrl = null;
-              const processedKeyPattern = `processed/${imageId}_`;
-              
-              try {
-                const r2ProcessedList = await c.env.PRODUCT_IMAGES.list({ prefix: processedKeyPattern });
-                if (r2ProcessedList.objects && r2ProcessedList.objects.length > 0) {
-                  const latestProcessed = r2ProcessedList.objects.sort((a, b) => 
-                    (b.uploaded?.getTime() || 0) - (a.uploaded?.getTime() || 0)
-                  )[0];
-                  processedUrl = `${R2_PUBLIC_URL}/${latestProcessed.key}`;
-                  console.log(`✅ Found processed image: ${latestProcessed.key}`);
-                }
-              } catch (e) {
-                console.error(`❌ Failed to check processed images for ${imageId}:`, e);
+              if (fileSet.has(processedKey)) {
+                processedUrl = `${R2_PUBLIC_URL}/${processedKey}`;
+                console.log(`✅ Found processed image: ${processedKey}`);
               }
               
               // 画像情報を追加
@@ -3372,8 +3377,12 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
                     const imageBuffer = await imageResponse.arrayBuffer();
                     
                     // Upload to R2 bucket
-                    const timestamp = Date.now();
-                    const r2Key = `processed/${imageId}_${timestamp}.png`;
+                    // 新形式: {SKU}/{filename}_p.png（processedフォルダ廃止）
+                    // 例: r2_1025L280001_1025L280001_1 → 1025L280001/1025L280001_1_p.png
+                    const parts = imageId.replace('r2_', '').split('_');
+                    const sku = parts[0];
+                    const filenamePart = parts.slice(1).join('_');
+                    const r2Key = `${sku}/${filenamePart}_p.png`;
                     
                     if (c.env.PRODUCT_IMAGES) {
                         await c.env.PRODUCT_IMAGES.put(r2Key, imageBuffer, {
@@ -3428,8 +3437,12 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
                 }
                 
                 // Upload to R2 bucket
-                const timestamp = Date.now();
-                const r2Key = `processed/${imageId}_${timestamp}.png`;
+                // 新形式: {SKU}/{filename}_p.png（processedフォルダ廃止）
+                // 例: r2_1025L280001_1025L280001_1 → 1025L280001/1025L280001_1_p.png
+                const parts = imageId.replace('r2_', '').split('_');
+                const sku = parts[0];
+                const filenamePart = parts.slice(1).join('_');
+                const r2Key = `${sku}/${filenamePart}_p.png`;
                 
                 if (c.env.PRODUCT_IMAGES) {
                     await c.env.PRODUCT_IMAGES.put(r2Key, bytes, {
@@ -3519,15 +3532,17 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
         const imageBuffer = await response.arrayBuffer();
         
         // Upload to R2 bucket
-        const timestamp = Date.now();
-        const contentType = response.headers.get('content-type') || 'image/png';
-        const extension = contentType.includes('jpeg') ? 'jpg' : 'png';
-        const r2Key = `processed/${imageId}_${timestamp}.${extension}`;
+        // 新形式: {SKU}/{filename}_p.png（processedフォルダ廃止）
+        // 例: r2_1025L280001_1025L280001_1 → 1025L280001/1025L280001_1_p.png
+        const parts = imageId.replace('r2_', '').split('_');
+        const sku = parts[0];
+        const filenamePart = parts.slice(1).join('_');
+        const r2Key = `${sku}/${filenamePart}_p.png`;
         
         if (c.env.PRODUCT_IMAGES) {
             await c.env.PRODUCT_IMAGES.put(r2Key, imageBuffer, {
                 httpMetadata: {
-                    contentType: contentType
+                    contentType: 'image/png'
                 }
             });
             console.log(`✅ Uploaded processed image to R2: ${r2Key}`);
@@ -3954,31 +3969,26 @@ app.get('/api/download-processed-image/:imageId', async (c) => {
         // Extract SKU from image ID
         const parts = imageId.replace('r2_', '').split('_');
         const sku = parts[0];
+        const filenamePart = parts.slice(1).join('_');
         
-        // R2バケットで白抜き画像を検索
-        const processedKeyPattern = `processed/${imageId}_`;
+        // 新形式で白抜き画像をチェック: {SKU}/{filename}_p.png
+        const processedKey = `${sku}/${filenamePart}_p.png`;
         let processedUrl = null;
-        let processedKey = null;
         
         if (c.env.PRODUCT_IMAGES) {
             try {
-                const r2List = await c.env.PRODUCT_IMAGES.list({ prefix: processedKeyPattern });
-                if (r2List.objects && r2List.objects.length > 0) {
-                    // 最新の白抜き画像を使用
-                    const latestProcessed = r2List.objects.sort((a, b) => 
-                        (b.uploaded?.getTime() || 0) - (a.uploaded?.getTime() || 0)
-                    )[0];
-                    processedKey = latestProcessed.key;
+                const r2Object = await c.env.PRODUCT_IMAGES.head(processedKey);
+                if (r2Object) {
                     processedUrl = `${R2_PUBLIC_URL}/${processedKey}`;
                     console.log(`✅ Found processed image: ${processedKey}`);
                 }
             } catch (e) {
-                console.error(`❌ Failed to check processed images:`, e);
+                console.error(`❌ Failed to check processed image:`, e);
             }
         }
         
         // Check if processed image exists
-        if (!processedKey) {
+        if (!processedUrl) {
             return c.json({ 
                 error: 'No processed image available',
                 message: '白抜き処理が完了していません'
@@ -4244,28 +4254,28 @@ app.get('/api/download-product-data/:imageId', async (c) => {
         const imageUrls = JSON.parse(result.image_urls as string);
         console.log('📷 Image URLs:', imageUrls);
         
-        // R2から白抜き画像をチェック
-        const processedKeyPattern = `processed/${imageId}_`;
+        // imageIdから画像番号を抽出
+        // 例: r2_1025L280001_1025L280001_4 → 番号 = 4
+        const imageNumber = parts[parts.length - 1];
+        
+        // ファイル名を構築
+        // 例: 1025L280001_4.jpg / 1025L280001_4_p.png
+        const baseFilename = `${sku}_${imageNumber}`;
+        const processedKey = `${sku}/${baseFilename}_p.png`;
+        
         let imageUrl = null;
         let isProcessed = false;
         
+        // 白抜き画像をチェック（{sku}/{filename}_p.png）
         try {
-            const r2ProcessedList = await c.env.PRODUCT_IMAGES.list({ prefix: processedKeyPattern });
-            if (r2ProcessedList.objects && r2ProcessedList.objects.length > 0) {
+            const r2Object = await c.env.PRODUCT_IMAGES.get(processedKey);
+            if (r2Object) {
                 // 白抜き画像がある場合
-                const latestProcessed = r2ProcessedList.objects.sort((a, b) => 
-                    (b.uploaded?.getTime() || 0) - (a.uploaded?.getTime() || 0)
-                )[0];
-                
-                // R2から直接画像データを取得
-                const r2Object = await c.env.PRODUCT_IMAGES.get(latestProcessed.key);
-                if (r2Object) {
-                    const imageData = await r2Object.arrayBuffer();
-                    const base64 = btoa(String.fromCharCode(...new Uint8Array(imageData)));
-                    imageUrl = `data:image/png;base64,${base64}`;
-                    isProcessed = true;
-                    console.log('✅ Found processed image:', latestProcessed.key);
-                }
+                const imageData = await r2Object.arrayBuffer();
+                const base64 = btoa(String.fromCharCode(...new Uint8Array(imageData)));
+                imageUrl = `data:image/png;base64,${base64}`;
+                isProcessed = true;
+                console.log('✅ Found processed image:', processedKey);
             }
         } catch (error) {
             console.log('⚠️ No processed image found, using original');
@@ -4273,9 +4283,6 @@ app.get('/api/download-product-data/:imageId', async (c) => {
         
         // 白抜き画像がない場合、オリジナル画像を使用
         if (!imageUrl && imageUrls.length > 0) {
-            // imageIdから画像番号を抽出
-            // 例: r2_1025L280001_1025L280001_4 → 番号 = 4
-            const imageNumber = parts[parts.length - 1];
             const targetUrl = imageUrls.find((url: string) => url.includes(`_${imageNumber}.`));
             imageUrl = targetUrl || imageUrls[0];
             
