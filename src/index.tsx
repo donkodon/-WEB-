@@ -412,7 +412,7 @@ app.get('/dashboard', async (c) => {
             </button>
             <button id="btn-download-processed" class="bg-white border border-green-200 text-green-600 px-4 py-2 rounded-lg flex items-center hover:bg-green-50 transition-colors text-sm font-medium">
                 <i class="fas fa-magic mr-2"></i>
-                編集画像DL
+                商品データDL
             </button>
             <button id="btn-sync-mobile" class="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center hover:bg-blue-700 transition-colors text-sm font-medium">
                 <i class="fas fa-sync-alt mr-2"></i>
@@ -605,7 +605,7 @@ app.get('/dashboard', async (c) => {
             });
         })();
         
-        // Processed Image Download Function
+        // Product Data Download Function (商品データDL)
         (function() {
             const btnDownloadProcessed = document.getElementById('btn-download-processed');
             if (!btnDownloadProcessed) return;
@@ -627,30 +627,31 @@ app.get('/dashboard', async (c) => {
                     return;
                 }
                 
-                const confirmation = confirm(imageIds.length + '枚の編集済み画像（白抜き済み）をZIPでダウンロードしますか？');
+                const confirmation = confirm(imageIds.length + '枚の商品データ（画像+CSV）をZIPでダウンロードしますか？');
                 if (!confirmation) return;
                 
                 try {
                     btnDownloadProcessed.disabled = true;
-                    btnDownloadProcessed.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>ZIP作成中...';
+                    btnDownloadProcessed.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>商品データ作成中...';
                     
                     // Create ZIP file
                     const zip = new JSZip();
-                    const folder = zip.folder('processed_images');
-                    let successCount = 0;
-                    let skipCount = 0;
+                    const imagesFolder = zip.folder('images');
+                    let imageSuccessCount = 0;
+                    let imageSkipCount = 0;
                     const filenameSet = new Set(); // Track filenames to prevent duplicates
                     
                     console.log('📊 Total images to process:', imageIds.length);
                     console.log('📋 Image IDs:', imageIds);
                     
+                    // Step 1: Download images
                     for (const imageId of imageIds) {
                         try {
                             console.log('🔄 Processing imageId:', imageId);
-                            const response = await fetch('/api/download-processed-image/' + imageId);
+                            const response = await fetch('/api/download-product-data/' + imageId);
                             if (!response.ok) {
-                                console.error('Failed to download processed image:', imageId);
-                                skipCount++;
+                                console.error('Failed to download product image:', imageId);
+                                imageSkipCount++;
                                 continue;
                             }
                             
@@ -658,14 +659,14 @@ app.get('/dashboard', async (c) => {
                             console.log('📦 Response data:', data);
                             
                             if (!data.imageUrl) {
-                                console.warn('No processed image available for:', imageId);
-                                skipCount++;
+                                console.warn('No image available for:', imageId);
+                                imageSkipCount++;
                                 continue;
                             }
                             
                             if (!data.filename) {
                                 console.error('Invalid response for image:', imageId);
-                                skipCount++;
+                                imageSkipCount++;
                                 continue;
                             }
                             
@@ -716,12 +717,12 @@ app.get('/dashboard', async (c) => {
                                 });
                                 if (blob) {
                                     console.log('✅ Adding to ZIP (data URL):', uniqueFilename, 'Size:', blob.size);
-                                    folder.file(uniqueFilename, blob);
-                                    successCount++;
-                                    console.log('✅ Successfully added. Total success count:', successCount);
+                                    imagesFolder.file(uniqueFilename, blob);
+                                    imageSuccessCount++;
+                                    console.log('✅ Successfully added. Total success count:', imageSuccessCount);
                                 } else {
                                     console.error('Failed to create blob for:', imageId);
-                                    skipCount++;
+                                    imageSkipCount++;
                                 }
                             } else {
                                 // For regular URLs, fetch and add to ZIP
@@ -729,54 +730,77 @@ app.get('/dashboard', async (c) => {
                                 const imgResponse = await fetch(data.imageUrl);
                                 if (!imgResponse.ok) {
                                     console.error('Failed to fetch image:', imgResponse.status);
-                                    skipCount++;
+                                    imageSkipCount++;
                                     continue;
                                 }
                                 const blob = await imgResponse.blob();
                                 console.log('Got blob, size:', blob.size);
                                 if (blob.size > 0) {
                                     console.log('✅ Adding to ZIP (URL):', uniqueFilename, 'Size:', blob.size);
-                                    folder.file(uniqueFilename, blob);
-                                    successCount++;
-                                    console.log('✅ Successfully added. Total success count:', successCount);
+                                    imagesFolder.file(uniqueFilename, blob);
+                                    imageSuccessCount++;
+                                    console.log('✅ Successfully added. Total success count:', imageSuccessCount);
                                 } else {
                                     console.error('Empty blob for:', imageId);
-                                    skipCount++;
+                                    imageSkipCount++;
                                 }
                             }
                         } catch (e) {
-                            console.error('❌ Error downloading processed image ' + imageId + ':', e);
+                            console.error('❌ Error downloading product image ' + imageId + ':', e);
                             console.error('❌ Error stack:', e.stack);
-                            skipCount++;
+                            imageSkipCount++;
                         }
                         
-                        console.log('🔄 Loop iteration complete. Success:', successCount, 'Skip:', skipCount);
+                        console.log('🔄 Loop iteration complete. Success:', imageSuccessCount, 'Skip:', imageSkipCount);
                     }
                     
-                    console.log('🏁 Processing loop finished. Final counts - Success:', successCount, 'Skip:', skipCount);
+                    console.log('🏁 Image processing finished. Final counts - Success:', imageSuccessCount, 'Skip:', imageSkipCount);
                     
-                    // Generate and download ZIP
+                    // Step 2: Generate CSV
+                    console.log('📄 Generating CSV...');
+                    btnDownloadProcessed.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>CSV生成中...';
+                    
+                    try {
+                        const csvResponse = await fetch('/api/export-product-items', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ imageIds })
+                        });
+                        
+                        if (csvResponse.ok) {
+                            const csvBlob = await csvResponse.blob();
+                            console.log('✅ CSV generated, size:', csvBlob.size);
+                            zip.file('商品情報.csv', csvBlob);
+                        } else {
+                            console.error('CSV generation failed:', csvResponse.status);
+                        }
+                    } catch (csvError) {
+                        console.error('❌ CSV generation error:', csvError);
+                    }
+                    
+                    // Step 3: Generate and download ZIP
                     console.log('📦 Generating ZIP file...');
-                    console.log('📊 Files in ZIP:', Object.keys(folder.files).length);
-                    console.log('📋 File list:', Object.keys(folder.files));
+                    btnDownloadProcessed.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>ZIP作成中...';
                     
                     const zipBlob = await zip.generateAsync({ type: 'blob' });
                     const timestamp = new Date().toISOString().slice(0, 10);
                     console.log('✅ ZIP generated, size:', zipBlob.size);
-                    saveAs(zipBlob, 'processed_images_' + timestamp + '.zip');
+                    saveAs(zipBlob, '商品データ_' + timestamp + '.zip');
                     
-                    let message = 'ダウンロード完了\\n成功: ' + successCount + '枚';
-                    if (skipCount > 0) {
-                        message += '\\nスキップ（未処理）: ' + skipCount + '枚';
+                    let message = '商品データダウンロード完了\\n画像: ' + imageSuccessCount + '枚';
+                    if (imageSkipCount > 0) {
+                        message += '\\nスキップ: ' + imageSkipCount + '枚';
                     }
-                    message += '\\n合計: ' + imageIds.length + '枚';
+                    message += '\\nCSV: 1ファイル';
                     alert(message);
                 } catch (e) {
-                    console.error('Processed image download error:', e);
-                    alert('編集画像ダウンロードに失敗しました: ' + e.message);
+                    console.error('Product data download error:', e);
+                    alert('商品データダウンロードに失敗しました: ' + e.message);
                 } finally {
                     btnDownloadProcessed.disabled = false;
-                    btnDownloadProcessed.innerHTML = '<i class="fas fa-magic mr-2"></i>編集画像DL';
+                    btnDownloadProcessed.innerHTML = '<i class="fas fa-magic mr-2"></i>商品データDL';
                 }
             });
         })();
@@ -4041,6 +4065,250 @@ app.post('/api/save-edited-image/:imageId', async (c) => {
         return c.json({ 
             error: 'Failed to save image', 
             details: error.message 
+        }, 500);
+    }
+});
+
+// ========================================
+// 商品データDL機能
+// ========================================
+
+// 新しいCSV出力API: product_itemsテーブルから直接データ取得
+app.post('/api/export-product-items', async (c) => {
+    try {
+        const body = await c.req.json();
+        const imageIds = body.imageIds as string[];
+        
+        if (!imageIds || !Array.isArray(imageIds) || imageIds.length === 0) {
+            return c.text('No image IDs provided', 400);
+        }
+        
+        console.log('📊 CSV Export - imageIds:', imageIds);
+        
+        // imageIdsからSKUを抽出
+        // 例: r2_1025L280001_1025L280001_4 → SKU = 1025L280001
+        const skus = [...new Set(imageIds.map(id => {
+            const parts = id.split('_');
+            return parts[1]; // 2番目の部分がSKU
+        }).filter(Boolean))];
+        
+        console.log('📦 Extracted SKUs:', skus);
+        
+        if (skus.length === 0) {
+            return c.text('No valid SKUs found', 400);
+        }
+        
+        // product_itemsテーブルから該当データを取得
+        const placeholders = skus.map(() => '?').join(',');
+        const query = `
+            SELECT 
+                sku,
+                item_code,
+                name,
+                barcode,
+                color,
+                category,
+                price,
+                size,
+                brand,
+                actual_measurements,
+                condition,
+                material,
+                product_rank,
+                inspection_notes,
+                status
+            FROM product_items
+            WHERE sku IN (${placeholders})
+            ORDER BY sku, item_code
+        `;
+        
+        const result = await c.env.DB.prepare(query).bind(...skus).all();
+        
+        console.log('✅ Query result:', result.results?.length, 'items');
+        
+        if (!result.results || result.results.length === 0) {
+            return c.text('No data found', 404);
+        }
+        
+        // CSVヘッダー（日本語）
+        const headers = [
+            'SKU',
+            'アイテムコード',
+            '商品名',
+            'バーコード',
+            'カラー',
+            'カテゴリ',
+            '価格',
+            'サイズ',
+            'ブランド',
+            '実寸',
+            'コンディション',
+            '素材',
+            'ランク',
+            '検品メモ',
+            'ステータス'
+        ];
+        
+        // CSV行を生成
+        const csvLines = [headers.join(',')];
+        
+        // Helper function to escape CSV values
+        const escapeCSV = (value: any): string => {
+            if (value === null || value === undefined) return '';
+            const str = String(value);
+            // Contains comma, newline, or quote -> wrap in quotes and escape quotes
+            if (str.includes(',') || str.includes('\n') || str.includes('"')) {
+                return '"' + str.replace(/"/g, '""') + '"';
+            }
+            return str;
+        };
+        
+        for (const row of result.results as any[]) {
+            const line = [
+                escapeCSV(row.sku),
+                escapeCSV(row.item_code),
+                escapeCSV(row.name),
+                escapeCSV(row.barcode),
+                escapeCSV(row.color),
+                escapeCSV(row.category),
+                escapeCSV(row.price),
+                escapeCSV(row.size),
+                escapeCSV(row.brand),
+                escapeCSV(row.actual_measurements),
+                escapeCSV(row.condition),
+                escapeCSV(row.material),
+                escapeCSV(row.product_rank),
+                escapeCSV(row.inspection_notes),
+                escapeCSV(row.status)
+            ];
+            csvLines.push(line.join(','));
+        }
+        
+        // UTF-8 BOM + CSV content
+        const BOM = '\uFEFF';
+        const csvContent = BOM + csvLines.join('\n');
+        
+        console.log('✅ CSV generated:', csvLines.length, 'lines');
+        
+        return new Response(csvContent, {
+            headers: {
+                'Content-Type': 'text/csv; charset=utf-8',
+                'Content-Disposition': 'attachment; filename="product_items.csv"'
+            }
+        });
+        
+    } catch (error: any) {
+        console.error('❌ CSV export error:', error);
+        return c.text('CSV export failed: ' + error.message, 500);
+    }
+});
+
+// 画像ダウンロードAPI: 表示中の画像を返す（processed_url || original_url）
+app.get('/api/download-product-data/:imageId', async (c) => {
+    try {
+        const imageId = c.req.param('imageId');
+        
+        console.log('🖼️ Download product data - imageId:', imageId);
+        
+        if (!imageId || !imageId.startsWith('r2_')) {
+            return c.json({ error: 'Invalid image ID format' }, 400);
+        }
+        
+        // imageIdからSKUを抽出
+        // 例: r2_1025L280001_1025L280001_4 → SKU = 1025L280001
+        const parts = imageId.split('_');
+        const sku = parts[1];
+        
+        if (!sku) {
+            return c.json({ error: 'Cannot extract SKU from image ID' }, 400);
+        }
+        
+        console.log('📦 Extracted SKU:', sku);
+        
+        // product_itemsからimage_urlsを取得
+        const result = await c.env.DB.prepare(`
+            SELECT image_urls 
+            FROM product_items 
+            WHERE sku = ?
+            LIMIT 1
+        `).bind(sku).first();
+        
+        if (!result || !result.image_urls) {
+            return c.json({ 
+                error: 'No image data found',
+                message: 'この画像のデータが見つかりません'
+            }, 404);
+        }
+        
+        // image_urlsをパース
+        const imageUrls = JSON.parse(result.image_urls as string);
+        console.log('📷 Image URLs:', imageUrls);
+        
+        // R2から白抜き画像をチェック
+        const processedKeyPattern = `processed/${imageId}_`;
+        let imageUrl = null;
+        let isProcessed = false;
+        
+        try {
+            const r2ProcessedList = await c.env.PRODUCT_IMAGES.list({ prefix: processedKeyPattern });
+            if (r2ProcessedList.objects && r2ProcessedList.objects.length > 0) {
+                // 白抜き画像がある場合
+                const latestProcessed = r2ProcessedList.objects.sort((a, b) => 
+                    (b.uploaded?.getTime() || 0) - (a.uploaded?.getTime() || 0)
+                )[0];
+                
+                // R2から直接画像データを取得
+                const r2Object = await c.env.PRODUCT_IMAGES.get(latestProcessed.key);
+                if (r2Object) {
+                    const imageData = await r2Object.arrayBuffer();
+                    const base64 = btoa(String.fromCharCode(...new Uint8Array(imageData)));
+                    imageUrl = `data:image/png;base64,${base64}`;
+                    isProcessed = true;
+                    console.log('✅ Found processed image:', latestProcessed.key);
+                }
+            }
+        } catch (error) {
+            console.log('⚠️ No processed image found, using original');
+        }
+        
+        // 白抜き画像がない場合、オリジナル画像を使用
+        if (!imageUrl && imageUrls.length > 0) {
+            // imageIdから画像番号を抽出
+            // 例: r2_1025L280001_1025L280001_4 → 番号 = 4
+            const imageNumber = parts[parts.length - 1];
+            const targetUrl = imageUrls.find((url: string) => url.includes(`_${imageNumber}.`));
+            imageUrl = targetUrl || imageUrls[0];
+            
+            console.log('📸 Using original image:', imageUrl);
+        }
+        
+        if (!imageUrl) {
+            return c.json({ 
+                error: 'No image available',
+                message: '画像が見つかりません'
+            }, 404);
+        }
+        
+        // ファイル名を生成
+        const imageIdPart = imageId.replace('r2_', '');
+        const filename = isProcessed 
+            ? `${imageIdPart}_processed.png`
+            : `${imageIdPart}.jpg`;
+        
+        console.log('📝 Generated filename:', filename);
+        
+        return c.json({
+            imageUrl: imageUrl,
+            filename: filename,
+            sku: sku,
+            status: isProcessed ? 'completed' : 'original'
+        });
+        
+    } catch (error: any) {
+        console.error('❌ Download product data error:', error);
+        return c.json({ 
+            error: 'Failed to get product data',
+            details: error.message
         }, 500);
     }
 });
