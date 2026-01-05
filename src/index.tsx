@@ -350,7 +350,9 @@ app.get('/dashboard', async (c) => {
               const filename = obj.key.split('/')[1]; // "1025L280001/1025L280001_1.jpg" -> "1025L280001_1.jpg"
               if (!filename) continue;
               
-              const imageUrl = `${R2_PUBLIC_URL}/${obj.key}`;
+              // キャッシュバスター追加: タイムスタンプをURLに付与
+              const timestamp = Date.now();
+              const imageUrl = `${R2_PUBLIC_URL}/${obj.key}?t=${timestamp}`;
               const imageId = `r2_${sku}_${filename.replace(/\.[^/.]+$/, '')}`; // "r2_1025L280001_1025L280001_1"
               
               // 白抜き済み画像の存在確認（Setを使った高速検索）
@@ -360,7 +362,7 @@ app.get('/dashboard', async (c) => {
               
               let processedUrl = null;
               if (fileSet.has(processedKey)) {
-                processedUrl = `${R2_PUBLIC_URL}/${processedKey}`;
+                processedUrl = `${R2_PUBLIC_URL}/${processedKey}?t=${timestamp}`;
                 console.log(`✅ Found processed image: ${processedKey}`);
               }
               
@@ -4213,7 +4215,7 @@ app.post('/api/export-product-items', async (c) => {
     }
 });
 
-// 画像ダウンロードAPI: 表示中の画像を返す（processed_url || original_url）
+// 画像ダウンロードAPI: R2から直接取得（DBに依存しない）
 app.get('/api/download-product-data/:imageId', async (c) => {
     try {
         const imageId = c.req.param('imageId');
@@ -4224,85 +4226,81 @@ app.get('/api/download-product-data/:imageId', async (c) => {
             return c.json({ error: 'Invalid image ID format' }, 400);
         }
         
-        // imageIdからSKUを抽出
-        // 例: r2_1025L280001_1025L280001_4 → SKU = 1025L280001
+        // imageIdからSKUとファイル名部分を抽出
+        // 例: r2_1025L280001_1025L280001_5 → SKU=1025L280001, filenamePart=1025L280001_5
         const parts = imageId.split('_');
         const sku = parts[1];
+        const filenamePart = parts.slice(2).join('_'); // "1025L280001_5"
         
-        if (!sku) {
-            return c.json({ error: 'Cannot extract SKU from image ID' }, 400);
+        if (!sku || !filenamePart) {
+            return c.json({ error: 'Cannot extract SKU or filename from image ID' }, 400);
         }
         
-        console.log('📦 Extracted SKU:', sku);
+        console.log('📦 Extracted SKU:', sku, 'Filename part:', filenamePart);
         
-        // product_itemsからimage_urlsを取得
-        const result = await c.env.DB.prepare(`
-            SELECT image_urls 
-            FROM product_items 
-            WHERE sku = ?
-            LIMIT 1
-        `).bind(sku).first();
-        
-        if (!result || !result.image_urls) {
-            return c.json({ 
-                error: 'No image data found',
-                message: 'この画像のデータが見つかりません'
-            }, 404);
-        }
-        
-        // image_urlsをパース
-        const imageUrls = JSON.parse(result.image_urls as string);
-        console.log('📷 Image URLs:', imageUrls);
-        
-        // imageIdから画像番号を抽出
-        // 例: r2_1025L280001_1025L280001_4 → 番号 = 4
-        const imageNumber = parts[parts.length - 1];
-        
-        // ファイル名を構築
-        // 例: 1025L280001_4.jpg / 1025L280001_4_p.png
-        const baseFilename = `${sku}_${imageNumber}`;
-        const processedKey = `${sku}/${baseFilename}_p.png`;
-        
-        let imageUrl = null;
+        // R2から直接取得（DBは使わない）
+        let r2Object = null;
         let isProcessed = false;
+        let key = '';
         
-        // 白抜き画像をチェック（{sku}/{filename}_p.png）
+        // 1. 白抜き画像を優先チェック（{sku}/{filename}_p.png）
+        const processedKey = `${sku}/${filenamePart}_p.png`;
+        console.log('🔍 Checking processed image:', processedKey);
+        
         try {
-            const r2Object = await c.env.PRODUCT_IMAGES.get(processedKey);
+            r2Object = await c.env.PRODUCT_IMAGES.get(processedKey);
             if (r2Object) {
-                // 白抜き画像がある場合
-                const imageData = await r2Object.arrayBuffer();
-                const base64 = btoa(String.fromCharCode(...new Uint8Array(imageData)));
-                imageUrl = `data:image/png;base64,${base64}`;
+                key = processedKey;
                 isProcessed = true;
                 console.log('✅ Found processed image:', processedKey);
             }
         } catch (error) {
-            console.log('⚠️ No processed image found, using original');
+            console.log('⚠️ No processed image found');
         }
         
-        // 白抜き画像がない場合、オリジナル画像を使用
-        if (!imageUrl && imageUrls.length > 0) {
-            const targetUrl = imageUrls.find((url: string) => url.includes(`_${imageNumber}.`));
-            imageUrl = targetUrl || imageUrls[0];
+        // 2. 白抜き画像がない場合、オリジナル画像をチェック
+        if (!r2Object) {
+            // 複数の拡張子を試行（jpg, jpeg, png, webp）
+            const extensions = ['jpg', 'jpeg', 'png', 'webp'];
             
-            console.log('📸 Using original image:', imageUrl);
+            for (const ext of extensions) {
+                const originalKey = `${sku}/${filenamePart}.${ext}`;
+                console.log('🔍 Checking original image:', originalKey);
+                
+                try {
+                    r2Object = await c.env.PRODUCT_IMAGES.get(originalKey);
+                    if (r2Object) {
+                        key = originalKey;
+                        isProcessed = false;
+                        console.log('✅ Found original image:', originalKey);
+                        break;
+                    }
+                } catch (error) {
+                    // 次の拡張子を試す
+                }
+            }
         }
         
-        if (!imageUrl) {
+        // 3. どちらも見つからない場合は404
+        if (!r2Object) {
+            console.log('❌ No image found for:', filenamePart);
             return c.json({ 
                 error: 'No image available',
                 message: '画像が見つかりません'
             }, 404);
         }
         
-        // ファイル名を生成
-        const imageIdPart = imageId.replace('r2_', '');
-        const filename = isProcessed 
-            ? `${imageIdPart}_processed.png`
-            : `${imageIdPart}.jpg`;
+        // 4. バイナリをBase64に変換して返す
+        const arrayBuffer = await r2Object.arrayBuffer();
+        const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+        const mimeType = isProcessed ? 'image/png' : 'image/jpeg';
+        const imageUrl = `data:${mimeType};base64,${base64}`;
         
-        console.log('📝 Generated filename:', filename);
+        // ファイル名を生成
+        const extension = isProcessed ? '_processed.png' : '.jpg';
+        const filename = `${filenamePart}${extension}`;
+        
+        console.log('📝 Generated filename:', filename, 'Size:', arrayBuffer.byteLength, 'bytes');
         
         return c.json({
             imageUrl: imageUrl,
