@@ -4290,9 +4290,19 @@ app.get('/api/download-product-data/:imageId', async (c) => {
             }, 404);
         }
         
-        // 4. バイナリをBase64に変換して返す
+        // 4. バイナリをBase64に変換して返す（チャンク方式で stackoverflow回避）
         const arrayBuffer = await r2Object.arrayBuffer();
-        const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+        const uint8Array = new Uint8Array(arrayBuffer);
+        
+        // 大きいファイルの場合、チャンクに分けて変換
+        let binary = '';
+        const chunkSize = 0x8000; // 32KB chunks
+        for (let i = 0; i < uint8Array.length; i += chunkSize) {
+            const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, uint8Array.length));
+            binary += String.fromCharCode(...chunk);
+        }
+        
+        const base64 = btoa(binary);
         const mimeType = isProcessed ? 'image/png' : 'image/jpeg';
         const imageUrl = `data:${mimeType};base64,${base64}`;
         
