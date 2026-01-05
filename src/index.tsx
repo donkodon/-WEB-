@@ -352,7 +352,8 @@ app.get('/dashboard', async (c) => {
               
               // キャッシュバスター追加: タイムスタンプをURLに付与
               const timestamp = Date.now();
-              const imageUrl = `${R2_PUBLIC_URL}/${obj.key}?t=${timestamp}`;
+              // プロキシURL経由に変更（R2公開URL → Workers プロキシ）
+              const imageUrl = `/api/image-proxy/${sku}/${filename}?t=${timestamp}`;
               const imageId = `r2_${sku}_${filename.replace(/\.[^/.]+$/, '')}`; // "r2_1025L280001_1025L280001_1"
               
               // 白抜き済み画像の存在確認（Setを使った高速検索）
@@ -362,7 +363,9 @@ app.get('/dashboard', async (c) => {
               
               let processedUrl = null;
               if (fileSet.has(processedKey)) {
-                processedUrl = `${R2_PUBLIC_URL}/${processedKey}?t=${timestamp}`;
+                // プロキシURL経由に変更
+                const processedFilename = `${filenameWithoutExt}_p.png`;
+                processedUrl = `/api/image-proxy/${sku}/${processedFilename}?t=${timestamp}`;
                 console.log(`✅ Found processed image: ${processedKey}`);
               }
               
@@ -4290,27 +4293,15 @@ app.get('/api/download-product-data/:imageId', async (c) => {
             }, 404);
         }
         
-        // 4. バイナリをBase64に変換して返す（チャンク方式で stackoverflow回避）
-        const arrayBuffer = await r2Object.arrayBuffer();
-        const uint8Array = new Uint8Array(arrayBuffer);
+        // 4. プロキシURLを返す（Base64変換なし、33%オーバーヘッド削減）
+        const extension = key.split('.').pop()?.toLowerCase() || 'jpg';
+        const filename = `${filenamePart}${isProcessed ? '_processed' : ''}.${extension}`;
         
-        // 大きいファイルの場合、チャンクに分けて変換
-        let binary = '';
-        const chunkSize = 0x8000; // 32KB chunks
-        for (let i = 0; i < uint8Array.length; i += chunkSize) {
-            const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, uint8Array.length));
-            binary += String.fromCharCode(...chunk);
-        }
+        // プロキシURL経由で画像を配信（バイナリ直接）
+        const imageUrl = `/api/image-proxy/${sku}/${key.split('/')[1]}`;
         
-        const base64 = btoa(binary);
-        const mimeType = isProcessed ? 'image/png' : 'image/jpeg';
-        const imageUrl = `data:${mimeType};base64,${base64}`;
-        
-        // ファイル名を生成
-        const extension = isProcessed ? '_processed.png' : '.jpg';
-        const filename = `${filenamePart}${extension}`;
-        
-        console.log('📝 Generated filename:', filename, 'Size:', arrayBuffer.byteLength, 'bytes');
+        console.log('📝 Generated filename:', filename);
+        console.log('🔗 Proxy URL:', imageUrl);
         
         return c.json({
             imageUrl: imageUrl,
@@ -4323,6 +4314,92 @@ app.get('/api/download-product-data/:imageId', async (c) => {
         console.error('❌ Download product data error:', error);
         return c.json({ 
             error: 'Failed to get product data',
+            details: error.message
+        }, 500);
+    }
+});
+
+// --- API: 画像プロキシ（R2からバイナリを直接返す） ---
+app.get('/api/image-proxy/:sku/:filename', async (c) => {
+    try {
+        const { sku, filename } = c.req.param();
+        
+        console.log('🖼️ Image proxy request - SKU:', sku, 'Filename:', filename);
+        
+        // 1. SKUのバリデーション（英数字とアンダースコアのみ）
+        if (!/^[A-Za-z0-9_]+$/.test(sku)) {
+            console.log('❌ Invalid SKU format:', sku);
+            return c.json({ error: 'Invalid SKU format' }, 400);
+        }
+        
+        // 2. ファイル名のバリデーション
+        // - パストラバーサル防止（../ や ..\）
+        // - スラッシュやバックスラッシュを含まない
+        if (
+            filename.includes('..') ||
+            filename.includes('/') ||
+            filename.includes('\\')
+        ) {
+            console.log('❌ Invalid filename (path traversal):', filename);
+            return c.json({ error: 'Invalid filename' }, 400);
+        }
+        
+        // 3. 拡張子のホワイトリスト
+        const allowedExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+        const hasValidExtension = allowedExtensions.some(ext => 
+            filename.toLowerCase().endsWith(ext)
+        );
+        
+        if (!hasValidExtension) {
+            console.log('❌ Unsupported file type:', filename);
+            return c.json({ error: 'Unsupported file type' }, 400);
+        }
+        
+        // 4. ファイル名の長さチェック（DoS攻撃防止）
+        if (filename.length > 255) {
+            console.log('❌ Filename too long:', filename.length);
+            return c.json({ error: 'Filename too long' }, 400);
+        }
+        
+        // R2から画像を取得
+        const key = `${sku}/${filename}`;
+        console.log('🔍 Fetching from R2:', key);
+        
+        const r2Object = await c.env.PRODUCT_IMAGES.get(key);
+        
+        if (!r2Object) {
+            console.log('❌ Image not found:', key);
+            return c.notFound();
+        }
+        
+        // Content-Typeを拡張子から判定
+        const ext = filename.split('.').pop()?.toLowerCase() || '';
+        const contentTypeMap: Record<string, string> = {
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'png': 'image/png',
+            'webp': 'image/webp',
+            'gif': 'image/gif'
+        };
+        const contentType = contentTypeMap[ext] || 'application/octet-stream';
+        
+        console.log('✅ Image found - Size:', r2Object.size, 'Type:', contentType);
+        
+        // バイナリを直接返す（Base64変換なし）
+        return new Response(r2Object.body, {
+            headers: {
+                'Content-Type': contentType,
+                'Content-Length': r2Object.size?.toString() || '',
+                'Cache-Control': 'public, max-age=0, must-revalidate',
+                'ETag': r2Object.httpEtag || '',
+                'Last-Modified': r2Object.uploaded?.toUTCString() || ''
+            }
+        });
+        
+    } catch (error: any) {
+        console.error('❌ Image proxy error:', error);
+        return c.json({ 
+            error: 'Failed to fetch image',
             details: error.message
         }, 500);
     }
