@@ -4320,4 +4320,253 @@ app.get('/api/download-product-data/:imageId', async (c) => {
     }
 });
 
+// --- API: R2バケット確認用（デバッグ） ---
+app.get('/api/debug/r2-list', async (c) => {
+    try {
+        const prefix = c.req.query('prefix') || '';
+        
+        if (!c.env.PRODUCT_IMAGES) {
+            return c.json({ error: 'R2 bucket not configured' }, 500);
+        }
+        
+        // R2バケットの内容をリスト
+        const listed = await c.env.PRODUCT_IMAGES.list({
+            prefix: prefix,
+            limit: 100
+        });
+        
+        const results = {
+            prefix: prefix,
+            count: listed.objects.length,
+            truncated: listed.truncated,
+            objects: listed.objects.map(obj => ({
+                key: obj.key,
+                size: obj.size,
+                uploaded: obj.uploaded?.toISOString(),
+                httpEtag: obj.httpEtag
+            }))
+        };
+        
+        return c.json(results, 200, {
+            'Content-Type': 'application/json; charset=utf-8'
+        });
+        
+    } catch (error: any) {
+        console.error('R2 list error:', error);
+        return c.json({ 
+            error: 'Failed to list R2 objects',
+            details: error.message
+        }, 500);
+    }
+});
+
+// --- Debug: R2フォルダビューア ---
+app.get('/debug/r2-folder', async (c) => {
+    try {
+        const sku = c.req.query('sku') || '';
+        const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
+        
+        if (!c.env.PRODUCT_IMAGES) {
+            return c.html(`
+                <html>
+                <head>
+                    <title>R2 Error</title>
+                    <script src="https://cdn.tailwindcss.com"></script>
+                </head>
+                <body class="bg-gray-100 p-8">
+                    <div class="max-w-4xl mx-auto bg-white rounded-lg shadow p-6">
+                        <h1 class="text-2xl font-bold text-red-600 mb-4">❌ R2バケットが設定されていません</h1>
+                    </div>
+                </body>
+                </html>
+            `);
+        }
+        
+        // SKUが指定されていない場合、SKUフォルダ一覧を表示
+        if (!sku) {
+            const listed = await c.env.PRODUCT_IMAGES.list({ 
+                delimiter: '/',
+                limit: 100
+            });
+            
+            const folders = listed.delimitedPrefixes?.map(prefix => prefix.replace('/', '')) || [];
+            
+            return c.html(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>R2 Folder Browser</title>
+                    <script src="https://cdn.tailwindcss.com"></script>
+                </head>
+                <body class="bg-gray-100 p-8">
+                    <div class="max-w-4xl mx-auto">
+                        <div class="bg-white rounded-lg shadow p-6">
+                            <h1 class="text-3xl font-bold text-gray-800 mb-6">
+                                <i class="fas fa-folder text-yellow-500 mr-2"></i>
+                                R2 Folder Browser
+                            </h1>
+                            <p class="text-gray-600 mb-6">SKUフォルダ一覧（${folders.length}個）</p>
+                            
+                            <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                ${folders.map(folder => `
+                                    <a href="/debug/r2-folder?sku=${folder}" 
+                                       class="bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg p-4 flex items-center transition-colors">
+                                        <i class="fas fa-folder text-blue-500 text-2xl mr-3"></i>
+                                        <span class="font-mono text-sm">${folder}</span>
+                                    </a>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet"/>
+                </body>
+                </html>
+            `);
+        }
+        
+        // 特定のSKUフォルダの内容を表示
+        const prefix = `${sku}/`;
+        const listed = await c.env.PRODUCT_IMAGES.list({
+            prefix: prefix,
+            limit: 100
+        });
+        
+        const files = listed.objects.map(obj => {
+            const filename = obj.key.split('/')[1];
+            const isProcessed = filename.endsWith('_p.png');
+            const isImage = /\.(jpg|jpeg|png|webp|gif)$/i.test(filename);
+            
+            return {
+                key: obj.key,
+                filename: filename,
+                url: `${R2_PUBLIC_URL}/${obj.key}`,
+                size: obj.size,
+                uploaded: obj.uploaded?.toISOString(),
+                isProcessed: isProcessed,
+                isImage: isImage,
+                sizeKB: Math.round(obj.size / 1024)
+            };
+        });
+        
+        const originalImages = files.filter(f => f.isImage && !f.isProcessed);
+        const processedImages = files.filter(f => f.isProcessed);
+        
+        return c.html(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>R2 Folder: ${sku}</title>
+                <script src="https://cdn.tailwindcss.com"></script>
+                <style>
+                    .image-card { position: relative; overflow: hidden; }
+                    .image-card img { transition: transform 0.3s; }
+                    .image-card:hover img { transform: scale(1.05); }
+                </style>
+            </head>
+            <body class="bg-gray-100 p-8">
+                <div class="max-w-6xl mx-auto">
+                    <!-- Header -->
+                    <div class="mb-6">
+                        <a href="/debug/r2-folder" class="text-blue-600 hover:underline mb-2 inline-block">
+                            <i class="fas fa-arrow-left mr-2"></i>フォルダ一覧に戻る
+                        </a>
+                        <div class="bg-white rounded-lg shadow p-6">
+                            <h1 class="text-3xl font-bold text-gray-800 mb-2">
+                                <i class="fas fa-folder-open text-yellow-500 mr-2"></i>
+                                ${sku}
+                            </h1>
+                            <p class="text-gray-600">
+                                全${files.length}ファイル（元画像: ${originalImages.length}枚、白抜き画像: ${processedImages.length}枚）
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <!-- 元画像 -->
+                    <div class="bg-white rounded-lg shadow p-6 mb-6">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-4">
+                            <i class="fas fa-image text-blue-500 mr-2"></i>
+                            元画像（${originalImages.length}枚）
+                        </h2>
+                        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                            ${originalImages.map(file => `
+                                <div class="image-card bg-gray-50 rounded-lg overflow-hidden border border-gray-200">
+                                    <a href="${file.url}" target="_blank">
+                                        <img src="${file.url}" 
+                                             alt="${file.filename}"
+                                             class="w-full h-48 object-cover"
+                                             loading="lazy">
+                                    </a>
+                                    <div class="p-3">
+                                        <p class="font-mono text-xs text-gray-600 truncate mb-1" title="${file.filename}">
+                                            ${file.filename}
+                                        </p>
+                                        <p class="text-xs text-gray-500">${file.sizeKB} KB</p>
+                                        <p class="text-xs text-gray-400">${new Date(file.uploaded).toLocaleString('ja-JP')}</p>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        ${originalImages.length === 0 ? '<p class="text-gray-500 text-center py-8">元画像がありません</p>' : ''}
+                    </div>
+                    
+                    <!-- 白抜き画像 -->
+                    <div class="bg-white rounded-lg shadow p-6">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-4">
+                            <i class="fas fa-magic text-green-500 mr-2"></i>
+                            白抜き画像（${processedImages.length}枚）
+                        </h2>
+                        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                            ${processedImages.map(file => `
+                                <div class="image-card bg-gray-50 rounded-lg overflow-hidden border border-green-200">
+                                    <a href="${file.url}" target="_blank">
+                                        <img src="${file.url}" 
+                                             alt="${file.filename}"
+                                             class="w-full h-48 object-contain bg-white"
+                                             loading="lazy">
+                                    </a>
+                                    <div class="p-3">
+                                        <p class="font-mono text-xs text-gray-600 truncate mb-1" title="${file.filename}">
+                                            ${file.filename}
+                                        </p>
+                                        <p class="text-xs text-gray-500">${file.sizeKB} KB</p>
+                                        <p class="text-xs text-gray-400">${new Date(file.uploaded).toLocaleString('ja-JP')}</p>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        ${processedImages.length === 0 ? '<p class="text-gray-500 text-center py-8">白抜き画像がありません</p>' : ''}
+                    </div>
+                    
+                    <!-- 削除ボタン（将来用） -->
+                    <div class="mt-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                        <p class="text-sm text-yellow-800">
+                            <i class="fas fa-info-circle mr-2"></i>
+                            画像を削除したい場合は、Cloudflare Dashboardから直接削除できます
+                        </p>
+                    </div>
+                </div>
+                <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet"/>
+            </body>
+            </html>
+        `);
+        
+    } catch (error: any) {
+        console.error('R2 folder browser error:', error);
+        return c.html(`
+            <html>
+            <head>
+                <title>Error</title>
+                <script src="https://cdn.tailwindcss.com"></script>
+            </head>
+            <body class="bg-gray-100 p-8">
+                <div class="max-w-4xl mx-auto bg-white rounded-lg shadow p-6">
+                    <h1 class="text-2xl font-bold text-red-600 mb-4">❌ エラーが発生しました</h1>
+                    <pre class="bg-gray-100 p-4 rounded text-sm">${error.message}</pre>
+                </div>
+            </body>
+            </html>
+        `);
+    }
+});
+
 export default app
