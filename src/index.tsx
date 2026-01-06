@@ -337,10 +337,10 @@ app.get('/dashboard', async (c) => {
             
             const productData = skuMap.get(sku);
             
-            // 元画像のみを処理（_p.png は除外）
+            // 元画像のみを処理（_p.png と _settings.json は除外）
             const originalImages = skuImagesResult.objects.filter(obj => {
               const filename = obj.key.split('/')[1];
-              return filename && !filename.endsWith('_p.png');
+              return filename && !filename.endsWith('_p.png') && !filename.endsWith('_settings.json');
             });
             
             console.log(`📷 SKU ${sku}: Processing ${originalImages.length} original images`);
