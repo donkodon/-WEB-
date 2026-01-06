@@ -4395,24 +4395,55 @@ app.post('/api/save-edited-image/:imageId', async (c) => {
             return c.json({ error: 'imageData is required' }, 400);
         }
         
-        // Verify image exists
-        // images table removed
+        console.log('💾 Saving edited image:', imageId);
         
-        if (!imageResult) {
-            return c.json({ error: 'Image not found' }, 404);
+        // Extract SKU and filename from imageId
+        // Format: r2_1025L280001_1025L280001_1 → SKU = 1025L280001, filename = 1025L280001_1
+        if (!imageId.startsWith('r2_')) {
+            return c.json({ error: 'Invalid imageId format' }, 400);
         }
         
-        // Update processed_url with edited image data
-        // images table removed - UPDATE operation disabled
+        const parts = imageId.split('_');
+        if (parts.length < 3) {
+            return c.json({ error: 'Cannot extract SKU from imageId' }, 400);
+        }
+        
+        const sku = parts[1];
+        const filenamePart = parts.slice(2).join('_');
+        
+        // Build R2 key for processed image: {sku}/{filename}_p.png
+        const r2Key = `${sku}/${filenamePart}_p.png`;
+        
+        console.log('📂 R2 key:', r2Key);
+        
+        // Convert base64 to binary
+        const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
+        const binaryString = atob(base64Data);
+        const imageBuffer = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            imageBuffer[i] = binaryString.charCodeAt(i);
+        }
+        
+        console.log('📊 Image size:', imageBuffer.length, 'bytes');
+        
+        // Upload to R2 (overwrites existing file)
+        await c.env.PRODUCT_IMAGES.put(r2Key, imageBuffer, {
+            httpMetadata: {
+                contentType: 'image/png'
+            }
+        });
+        
+        console.log('✅ Saved edited image to R2:', r2Key);
         
         return c.json({ 
             success: true,
             imageId,
+            r2Key,
             message: 'Image saved successfully'
         });
         
     } catch (error: any) {
-        console.error('Save image error:', error);
+        console.error('❌ Save image error:', error);
         return c.json({ 
             error: 'Failed to save image', 
             details: error.message 
