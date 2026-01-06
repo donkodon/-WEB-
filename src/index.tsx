@@ -1533,6 +1533,10 @@ app.get('/edit/:id', async (c) => {
                 // --- MASK CANVAS (Stores manual strokes) ---
                 const maskCanvas = document.createElement('canvas');
                 const maskCtx = maskCanvas.getContext('2d');
+                
+                // --- ERASER PATHS TRACKING (Phase 2.5) ---
+                let eraserPaths = []; // Array of {id, points, size, opacity, timestamp}
+                let currentPath = null; // Current path being drawn
 
                 // --- UI ELEMENTS ---
                 const els = {
@@ -1567,11 +1571,15 @@ app.get('/edit/:id', async (c) => {
                 }
 
                 // --- INIT ---
-                img.onload = () => {
+                img.onload = async () => {
                     canvas.width = img.width;
                     canvas.height = img.height;
                     maskCanvas.width = img.width;
                     maskCanvas.height = img.height;
+                    
+                    // Load saved edit settings from R2
+                    await loadEditSettings();
+                    
                     render();
                 };
 
@@ -1631,6 +1639,113 @@ app.get('/edit/:id', async (c) => {
                     }
                 }
 
+                // --- LOAD EDIT SETTINGS (Phase 2.5) ---
+                const loadEditSettings = async () => {
+                    try {
+                        const imageId = '${id}';
+                        console.log('📖 Loading edit settings for:', imageId);
+                        
+                        const response = await fetch('/api/edit-settings/' + imageId);
+                        const data = await response.json();
+                        
+                        if (data.exists && data.settings) {
+                            console.log('✅ Edit settings loaded:', data.settings);
+                            
+                            // Apply adjustments to UI sliders
+                            if (data.settings.adjustments) {
+                                const adj = data.settings.adjustments;
+                                
+                                if (adj.brightness !== undefined) {
+                                    state.brightness = adj.brightness;
+                                    els.brightness.value = adj.brightness;
+                                    els.valBrightness.textContent = adj.brightness;
+                                }
+                                
+                                if (adj.hue !== undefined) {
+                                    state.hue = adj.hue;
+                                    els.hue.value = adj.hue;
+                                    els.valHue.textContent = adj.hue;
+                                }
+                                
+                                if (adj.wb !== undefined) {
+                                    state.wb = adj.wb;
+                                    els.wb.value = adj.wb;
+                                    els.valWb.textContent = adj.wb;
+                                }
+                            }
+                            
+                            // Restore eraser paths to maskCanvas
+                            if (data.settings.eraser_paths && data.settings.eraser_paths.length > 0) {
+                                eraserPaths = data.settings.eraser_paths;
+                                console.log('🎨 Restoring', eraserPaths.length, 'eraser paths');
+                                
+                                // Redraw all eraser paths on maskCanvas
+                                eraserPaths.forEach(path => {
+                                    if (!path.points || path.points.length < 2) return;
+                                    
+                                    maskCtx.lineWidth = (path.size || 24) * 2;
+                                    maskCtx.lineCap = 'round';
+                                    maskCtx.lineJoin = 'round';
+                                    maskCtx.globalCompositeOperation = 'source-over';
+                                    maskCtx.strokeStyle = 'rgba(0,0,0,1)';
+                                    
+                                    maskCtx.beginPath();
+                                    maskCtx.moveTo(path.points[0][0], path.points[0][1]);
+                                    
+                                    for (let i = 1; i < path.points.length; i++) {
+                                        maskCtx.lineTo(path.points[i][0], path.points[i][1]);
+                                    }
+                                    
+                                    maskCtx.stroke();
+                                });
+                                
+                                console.log('✅ Eraser paths restored to maskCanvas');
+                            }
+                        } else {
+                            console.log('⚠️ No saved settings found, using defaults');
+                        }
+                    } catch (error) {
+                        console.error('❌ Error loading edit settings:', error);
+                    }
+                };
+                
+                // --- SAVE EDIT SETTINGS (Phase 2.5) ---
+                const saveEditSettings = async () => {
+                    try {
+                        const imageId = '${id}';
+                        console.log('💾 Saving edit settings for:', imageId);
+                        
+                        // Collect current adjustments from state
+                        const adjustments = {
+                            brightness: state.brightness,
+                            hue: state.hue,
+                            wb: state.wb
+                        };
+                        
+                        // Send to API
+                        const response = await fetch('/api/edit-settings/' + imageId, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                adjustments: adjustments,
+                                eraser_paths: eraserPaths
+                            })
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                            console.log('✅ Edit settings saved successfully');
+                        } else {
+                            console.error('❌ Failed to save edit settings:', result.error);
+                        }
+                    } catch (error) {
+                        console.error('❌ Error saving edit settings:', error);
+                    }
+                };
+
                 // --- TOOL SELECTION ---
                 const setTool = (tool) => {
                     state.tool = (state.tool === tool) ? 'none' : tool;
@@ -1689,7 +1804,10 @@ app.get('/edit/:id', async (c) => {
                     els.btnSave.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> 保存中...';
                     
                     try {
-                        // Save to database via API
+                        // 1. Save edit settings to R2 (Phase 2.5)
+                        await saveEditSettings();
+                        
+                        // 2. Save processed image to database via API
                         const response = await fetch('/api/save-edited-image/${id}', {
                             method: 'POST',
                             headers: {
@@ -1740,6 +1858,17 @@ app.get('/edit/:id', async (c) => {
                         if (state.tool !== 'none') {
                             maskCtx.beginPath();
                             maskCtx.moveTo(pos.x, pos.y);
+                            
+                            // Start tracking eraser path (Phase 2.5)
+                            if (state.tool === 'eraser') {
+                                currentPath = {
+                                    id: 'path_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+                                    points: [[pos.x, pos.y]],
+                                    size: state.brushSize,
+                                    opacity: 1.0,
+                                    timestamp: new Date().toISOString()
+                                };
+                            }
                         }
                     }
                 });
@@ -1768,6 +1897,11 @@ app.get('/edit/:id', async (c) => {
                         if (state.tool === 'eraser') {
                             maskCtx.globalCompositeOperation = 'source-over';
                             maskCtx.strokeStyle = 'rgba(0,0,0,1)';
+                            
+                            // Add point to current path (Phase 2.5)
+                            if (currentPath) {
+                                currentPath.points.push([pos.x, pos.y]);
+                            }
                         } else {
                             maskCtx.globalCompositeOperation = 'destination-out';
                             maskCtx.strokeStyle = 'rgba(0,0,0,1)';
@@ -1788,6 +1922,13 @@ app.get('/edit/:id', async (c) => {
                         applyCrop();
                     } else {
                         maskCtx.beginPath();
+                        
+                        // Save completed eraser path (Phase 2.5)
+                        if (state.tool === 'eraser' && currentPath && currentPath.points.length > 1) {
+                            eraserPaths.push(currentPath);
+                            console.log('✅ Eraser path saved:', currentPath.id, 'Points:', currentPath.points.length);
+                            currentPath = null;
+                        }
                     }
                 };
 
@@ -3030,6 +3171,201 @@ app.post('/api/sync-to-mobile', async (c) => {
         return c.json({ 
             success: false, 
             error: error.message || 'Sync failed' 
+        }, 500);
+    }
+});
+
+// ============================================================
+// === EDIT SETTINGS API (Phase 2.5) ===
+// ============================================================
+
+// --- GET /api/edit-settings/:imageId - Load edit settings from R2 ---
+app.get('/api/edit-settings/:imageId', async (c) => {
+    try {
+        const imageId = c.req.param('imageId');
+        console.log('📖 Loading edit settings for:', imageId);
+
+        // Validate imageId format (e.g., r2_1025L280001_1025L280001_1)
+        if (!imageId.startsWith('r2_')) {
+            return c.json({ error: 'Invalid imageId format' }, 400);
+        }
+
+        // Extract SKU and filename from imageId
+        // Format: r2_<SKU>_<filename_without_ext>
+        const parts = imageId.split('_');
+        if (parts.length < 3) {
+            return c.json({ error: 'Cannot extract SKU from imageId' }, 400);
+        }
+
+        const sku = parts[1];
+        const filenamePart = parts.slice(2).join('_'); // Handle filenames with underscores
+        
+        // Build settings key: {sku}/{filename}_settings.json
+        const settingsKey = `${sku}/${filenamePart}_settings.json`;
+        console.log('🔍 Looking for settings:', settingsKey);
+
+        // Try to fetch settings from R2
+        const settingsObject = await c.env.PRODUCT_IMAGES.get(settingsKey);
+
+        if (!settingsObject) {
+            console.log('⚠️ No settings found for:', settingsKey);
+            return c.json({ 
+                exists: false,
+                message: 'No edit settings found'
+            });
+        }
+
+        // Parse JSON settings
+        const settingsText = await settingsObject.text();
+        const settings = JSON.parse(settingsText);
+
+        console.log('✅ Edit settings loaded successfully');
+        return c.json({
+            exists: true,
+            settings: settings
+        });
+
+    } catch (error: any) {
+        console.error('❌ Error loading edit settings:', error);
+        return c.json({ 
+            error: 'Failed to load edit settings',
+            details: error.message 
+        }, 500);
+    }
+});
+
+// --- POST /api/edit-settings/:imageId - Save edit settings to R2 ---
+app.post('/api/edit-settings/:imageId', async (c) => {
+    try {
+        const imageId = c.req.param('imageId');
+        const body = await c.req.json();
+        console.log('💾 Saving edit settings for:', imageId);
+
+        // Validate imageId format
+        if (!imageId.startsWith('r2_')) {
+            return c.json({ error: 'Invalid imageId format' }, 400);
+        }
+
+        // Extract SKU and filename
+        const parts = imageId.split('_');
+        if (parts.length < 3) {
+            return c.json({ error: 'Cannot extract SKU from imageId' }, 400);
+        }
+
+        const sku = parts[1];
+        const filenamePart = parts.slice(2).join('_');
+        const settingsKey = `${sku}/${filenamePart}_settings.json`;
+
+        // Extract data from request body
+        const { adjustments, eraser_paths } = body;
+
+        // Check if settings are empty (no eraser paths and default adjustments)
+        const hasEraserPaths = eraser_paths && eraser_paths.length > 0;
+        const hasAdjustments = adjustments && (
+            adjustments.brightness !== 0 ||
+            adjustments.hue !== 0 ||
+            adjustments.wb !== 5500
+        );
+
+        // If empty, delete existing settings file (if any)
+        if (!hasEraserPaths && !hasAdjustments) {
+            console.log('🗑️ No edits detected, deleting settings file:', settingsKey);
+            try {
+                await c.env.PRODUCT_IMAGES.delete(settingsKey);
+                console.log('✅ Settings file deleted');
+            } catch (deleteError) {
+                console.log('⚠️ Settings file may not exist, skipping delete');
+            }
+            return c.json({
+                success: true,
+                message: 'Settings cleared (file deleted)',
+                imageId: imageId
+            });
+        }
+
+        // Build settings JSON structure
+        const settings = {
+            version: '1.0',
+            image_id: imageId,
+            sku: sku,
+            filename: `${filenamePart}.jpg`,
+            adjustments: adjustments || {
+                brightness: 0,
+                hue: 0,
+                wb: 5500
+            },
+            eraser_paths: eraser_paths || [],
+            metadata: {
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                edit_count: (eraser_paths || []).length
+            }
+        };
+
+        // Save to R2 as JSON
+        await c.env.PRODUCT_IMAGES.put(
+            settingsKey,
+            JSON.stringify(settings, null, 2),
+            {
+                httpMetadata: {
+                    contentType: 'application/json'
+                }
+            }
+        );
+
+        console.log('✅ Edit settings saved successfully:', settingsKey);
+        return c.json({
+            success: true,
+            message: 'Edit settings saved',
+            imageId: imageId,
+            settingsKey: settingsKey
+        });
+
+    } catch (error: any) {
+        console.error('❌ Error saving edit settings:', error);
+        return c.json({ 
+            error: 'Failed to save edit settings',
+            details: error.message 
+        }, 500);
+    }
+});
+
+// --- DELETE /api/edit-settings/:imageId - Delete edit settings from R2 ---
+app.delete('/api/edit-settings/:imageId', async (c) => {
+    try {
+        const imageId = c.req.param('imageId');
+        console.log('🗑️ Deleting edit settings for:', imageId);
+
+        // Validate imageId format
+        if (!imageId.startsWith('r2_')) {
+            return c.json({ error: 'Invalid imageId format' }, 400);
+        }
+
+        // Extract SKU and filename
+        const parts = imageId.split('_');
+        if (parts.length < 3) {
+            return c.json({ error: 'Cannot extract SKU from imageId' }, 400);
+        }
+
+        const sku = parts[1];
+        const filenamePart = parts.slice(2).join('_');
+        const settingsKey = `${sku}/${filenamePart}_settings.json`;
+
+        // Delete from R2
+        await c.env.PRODUCT_IMAGES.delete(settingsKey);
+
+        console.log('✅ Edit settings deleted:', settingsKey);
+        return c.json({
+            success: true,
+            message: 'Edit settings deleted',
+            imageId: imageId
+        });
+
+    } catch (error: any) {
+        console.error('❌ Error deleting edit settings:', error);
+        return c.json({ 
+            error: 'Failed to delete edit settings',
+            details: error.message 
         }, 500);
     }
 });
