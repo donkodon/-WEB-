@@ -345,6 +345,13 @@ app.get('/dashboard', async (c) => {
             
             console.log(`📷 SKU ${sku}: Processing ${originalImages.length} original images`);
             
+            // ファイル名でソート（シーケンス順）
+            originalImages.sort((a, b) => {
+              const filenameA = a.key.split('/')[1] || '';
+              const filenameB = b.key.split('/')[1] || '';
+              return filenameA.localeCompare(filenameB, undefined, { numeric: true, sensitivity: 'base' });
+            });
+            
             // 各画像を処理
             for (const obj of originalImages) {
               const filename = obj.key.split('/')[1]; // "1025L280001/1025L280001_1.jpg" -> "1025L280001_1.jpg"
