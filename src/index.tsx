@@ -345,11 +345,13 @@ app.get('/dashboard', async (c) => {
             
             console.log(`📷 SKU ${sku}: Processing ${originalImages.length} original images`);
             
-            // ファイル名でソート（シーケンス順）
+            // アップロード日時でソート（シーケンス順 = アップロード順）
+            // Flutter側が Sequence 1, 2, 3... の順にアップロードするため、
+            // uploaded タイムスタンプの昇順 = Sequence 順となる
             originalImages.sort((a, b) => {
-              const filenameA = a.key.split('/')[1] || '';
-              const filenameB = b.key.split('/')[1] || '';
-              return filenameA.localeCompare(filenameB, undefined, { numeric: true, sensitivity: 'base' });
+              const timeA = a.uploaded?.getTime() || 0;
+              const timeB = b.uploaded?.getTime() || 0;
+              return timeA - timeB; // 古い順（アップロード順）
             });
             
             // 各画像を処理
