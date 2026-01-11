@@ -289,111 +289,114 @@ app.get('/dashboard', async (c) => {
       });
     }
     
-    // 3. R2バケットから直接画像をスキャン
-    console.log('🔄 Scanning R2 bucket for images...');
+    // 3. product_items から image_urls を取得（Sequence順を保持）
+    console.log('🔄 Fetching image_urls from product_items table...');
     
+    const productItemsResult = await c.env.DB.prepare(`
+      SELECT sku, image_urls 
+      FROM product_items
+      WHERE image_urls IS NOT NULL AND image_urls != '[]'
+    `).all();
+    
+    console.log(`✅ Retrieved ${productItemsResult.results.length} products with image_urls`);
+    
+    // 4. R2バケットから全ファイルをリスト（存在確認用）
+    let r2FileSet = new Set<string>();
     if (c.env.PRODUCT_IMAGES) {
       try {
-        // R2バケット全体をリスト（SKUフォルダ配下の画像）
-        const r2ListResult = await c.env.PRODUCT_IMAGES.list({ 
-          limit: 1000,
-          delimiter: '/'
-        });
-        
-        console.log(`📂 Found ${r2ListResult.delimitedPrefixes?.length || 0} SKU folders`);
-        
-        // 各SKUフォルダをスキャン
-        if (r2ListResult.delimitedPrefixes) {
-          for (const prefix of r2ListResult.delimitedPrefixes) {
-            const sku = prefix.replace('/', ''); // "1025L280001/" -> "1025L280001"
-            
-            // このSKUがproduct_masterに存在しない場合、追加
-            if (!skuMap.has(sku)) {
-              skuMap.set(sku, {
-                id: sku,
-                sku: sku,
-                name: `商品 ${sku}`,
-                brand: null,
-                size: null,
-                color: null,
-                price_sale: 0,
-                barcode: null,
-                category: null,
-                rank: null,
-                images: []
-              });
-            }
-            
-            // SKUフォルダ内の全ファイルを一括取得（パフォーマンス最適化）
-            const skuImagesResult = await c.env.PRODUCT_IMAGES.list({ 
-              prefix: prefix,
-              limit: 100
-            });
-            
-            console.log(`📷 SKU ${sku}: Found ${skuImagesResult.objects.length} files`);
-            
-            // ファイル名リストをSetに格納（高速検索用）
-            const fileSet = new Set(skuImagesResult.objects.map(obj => obj.key));
-            
-            const productData = skuMap.get(sku);
-            
-            // 元画像のみを処理（_p.png と _settings.json は除外）
-            const originalImages = skuImagesResult.objects.filter(obj => {
-              const filename = obj.key.split('/')[1];
-              return filename && !filename.endsWith('_p.png') && !filename.endsWith('_settings.json');
-            });
-            
-            console.log(`📷 SKU ${sku}: Processing ${originalImages.length} original images`);
-            
-            // アップロード日時でソート（シーケンス順 = アップロード順）
-            // Flutter側が Sequence 1, 2, 3... の順にアップロードするため、
-            // uploaded タイムスタンプの昇順 = Sequence 順となる
-            originalImages.sort((a, b) => {
-              const timeA = a.uploaded?.getTime() || 0;
-              const timeB = b.uploaded?.getTime() || 0;
-              return timeA - timeB; // 古い順（アップロード順）
-            });
-            
-            // 各画像を処理
-            for (const obj of originalImages) {
-              const filename = obj.key.split('/')[1]; // "1025L280001/1025L280001_1.jpg" -> "1025L280001_1.jpg"
-              if (!filename) continue;
-              
-              // キャッシュバスター追加: タイムスタンプをURLに付与
-              const timestamp = Date.now();
-              // プロキシURL経由に変更（R2公開URL → Workers プロキシ）
-              const imageUrl = `/api/image-proxy/${sku}/${filename}?t=${timestamp}`;
-              const imageId = `r2_${sku}_${filename.replace(/\.[^/.]+$/, '')}`; // "r2_1025L280001_1025L280001_1"
-              
-              // 白抜き済み画像の存在確認（Setを使った高速検索）
-              // {SKU}/{filename}_p.png の形式をチェック
-              const filenameWithoutExt = filename.replace(/\.[^/.]+$/, ''); // "1025L280001_1.jpg" -> "1025L280001_1"
-              const processedKey = `${prefix}${filenameWithoutExt}_p.png`; // "1025L280001/1025L280001_1_p.png"
-              
-              let processedUrl = null;
-              if (fileSet.has(processedKey)) {
-                // プロキシURL経由に変更
-                const processedFilename = `${filenameWithoutExt}_p.png`;
-                processedUrl = `/api/image-proxy/${sku}/${processedFilename}?t=${timestamp}`;
-                console.log(`✅ Found processed image: ${processedKey}`);
-              }
-              
-              // 画像情報を追加
-              productData.images.push({
-                id: imageId,
-                original_url: imageUrl,
-                processed_url: processedUrl,
-                status: processedUrl ? 'completed' : 'ready',
-                created_at: obj.uploaded?.toISOString() || new Date().toISOString(),
-                filename: filename,
-                sku: sku
-              });
-            }
-          }
-        }
+        const r2ListResult = await c.env.PRODUCT_IMAGES.list({ limit: 1000 });
+        r2FileSet = new Set(r2ListResult.objects.map(obj => obj.key));
+        console.log(`📂 R2: Found ${r2FileSet.size} files`);
       } catch (e) {
-        console.error(`❌ Failed to scan R2 bucket:`, e);
+        console.error(`❌ Failed to list R2 bucket:`, e);
       }
+    }
+    
+    // 5. product_items の image_urls を元に画像リストを構築
+    for (const item of productItemsResult.results) {
+      const pi = item as any;
+      const sku = pi.sku;
+      
+      // image_urls をパース（JSON配列）
+      let imageUrls: string[] = [];
+      try {
+        imageUrls = JSON.parse(pi.image_urls || '[]');
+      } catch (e) {
+        console.error(`❌ Failed to parse image_urls for SKU ${sku}:`, e);
+        continue;
+      }
+      
+      if (imageUrls.length === 0) continue;
+      
+      // このSKUがproduct_masterに存在しない場合、追加
+      if (!skuMap.has(sku)) {
+        skuMap.set(sku, {
+          id: sku,
+          sku: sku,
+          name: `商品 ${sku}`,
+          brand: null,
+          size: null,
+          color: null,
+          price_sale: 0,
+          barcode: null,
+          category: null,
+          rank: null,
+          images: []
+        });
+      }
+      
+      const productData = skuMap.get(sku);
+      const timestamp = Date.now();
+      
+      // ✅ image_urls の配列順序 = Sequence順（ソート不要）
+      console.log(`📷 SKU ${sku}: Processing ${imageUrls.length} images from image_urls`);
+      
+      for (let i = 0; i < imageUrls.length; i++) {
+        const imageUrl = imageUrls[i];
+        
+        // URLからファイル名を抽出
+        // 例: "https://image-upload-api.jinkedon2.workers.dev/1025L280001/1025L280001_eed23072-...jpg"
+        const urlParts = imageUrl.split('/');
+        const filename = urlParts[urlParts.length - 1]; // "1025L280001_eed23072-...jpg"
+        
+        // R2キーを構築
+        const r2Key = `${sku}/${filename}`;
+        
+        // R2に存在するか確認
+        if (!r2FileSet.has(r2Key)) {
+          console.warn(`⚠️ Image not found in R2: ${r2Key}`);
+          continue;
+        }
+        
+        // プロキシURL経由で画像を提供
+        const proxyUrl = `/api/image-proxy/${sku}/${filename}?t=${timestamp}`;
+        const imageId = `r2_${sku}_${filename.replace(/\.[^/.]+$/, '')}`;
+        
+        // 白抜き済み画像の存在確認
+        const filenameWithoutExt = filename.replace(/\.[^/.]+$/, '');
+        const processedKey = `${sku}/${filenameWithoutExt}_p.png`;
+        
+        let processedUrl = null;
+        if (r2FileSet.has(processedKey)) {
+          processedUrl = `/api/image-proxy/${sku}/${filenameWithoutExt}_p.png?t=${timestamp}`;
+          console.log(`✅ Found processed image: ${processedKey}`);
+        }
+        
+        // 画像情報を追加（Sequence順を保持）
+        productData.images.push({
+          id: imageId,
+          original_url: proxyUrl,
+          processed_url: processedUrl,
+          status: processedUrl ? 'completed' : 'ready',
+          created_at: new Date().toISOString(),
+          filename: filename,
+          sku: sku,
+          sequence: i + 1, // Sequence番号（1, 2, 3...）
+          is_main: i === 0 // 最初の画像がメイン画像
+        });
+      }
+      
+      console.log(`✅ SKU ${sku}: Added ${productData.images.length} images in sequence order`);
     }
     
     // 4. 画像のないSKUを除外
