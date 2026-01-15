@@ -293,7 +293,7 @@ app.get('/dashboard', async (c) => {
     console.log('🔄 Fetching image_urls from product_items table...');
     
     const productItemsResult = await c.env.DB.prepare(`
-      SELECT sku, image_urls 
+      SELECT sku, image_urls, updated_at 
       FROM product_items
       WHERE image_urls IS NOT NULL AND image_urls != '[]'
     `).all();
@@ -346,7 +346,10 @@ app.get('/dashboard', async (c) => {
       }
       
       const productData = skuMap.get(sku);
-      const timestamp = Date.now();
+      
+      // Phase A: Get updated_at for cache busting
+      const updatedAt = pi.updated_at || new Date().toISOString();
+      const cacheVersion = new Date(updatedAt).getTime();
       
       // ✅ image_urls の配列順序 = Sequence順（ソート不要）
       console.log(`📷 SKU ${sku}: Processing ${imageUrls.length} images from image_urls`);
@@ -369,30 +372,43 @@ app.get('/dashboard', async (c) => {
         }
         
         // プロキシURL経由で画像を提供
-        const proxyUrl = `/api/image-proxy/${sku}/${filename}?t=${timestamp}`;
+        const proxyUrl = `/api/image-proxy/${sku}/${filename}?v=${cacheVersion}`;
         const imageId = `r2_${sku}_${filename.replace(/\.[^/.]+$/, '')}`;
         
-        // 白抜き済み画像の存在確認
+        // Phase A: 画像の優先順位チェック
+        // 1️⃣ _f.png (最新の完成品) > 2️⃣ _p.png (白抜き画像) > 3️⃣ 元画像
         const filenameWithoutExt = filename.replace(/\.[^/.]+$/, '');
+        const finalKey = `${sku}/${filenameWithoutExt}_f.png`;
         const processedKey = `${sku}/${filenameWithoutExt}_p.png`;
         
-        let processedUrl = null;
-        if (r2FileSet.has(processedKey)) {
-          processedUrl = `/api/image-proxy/${sku}/${filenameWithoutExt}_p.png?t=${timestamp}`;
+        let displayUrl = null;
+        let status = 'ready';
+        
+        if (r2FileSet.has(finalKey)) {
+          displayUrl = `/api/image-proxy/${sku}/${filenameWithoutExt}_f.png?v=${cacheVersion}`;
+          status = 'final';
+          console.log(`✅ Found final image: ${finalKey}`);
+        } else if (r2FileSet.has(processedKey)) {
+          displayUrl = `/api/image-proxy/${sku}/${filenameWithoutExt}_p.png?v=${cacheVersion}`;
+          status = 'processed';
           console.log(`✅ Found processed image: ${processedKey}`);
+        } else {
+          displayUrl = proxyUrl;
+          status = 'ready';
         }
         
         // 画像情報を追加（Sequence順を保持）
         productData.images.push({
           id: imageId,
           original_url: proxyUrl,
-          processed_url: processedUrl,
-          status: processedUrl ? 'completed' : 'ready',
+          processed_url: displayUrl,  // Phase A: 優先順位に基づいたURL
+          status: status,              // Phase A: 'final', 'processed', or 'ready'
           created_at: new Date().toISOString(),
           filename: filename,
           sku: sku,
-          sequence: i + 1, // Sequence番号（1, 2, 3...）
-          is_main: i === 0 // 最初の画像がメイン画像
+          sequence: i + 1,            // Sequence番号（1, 2, 3...）
+          is_main: i === 0,           // 最初の画像がメイン画像
+          updated_at: updatedAt       // Phase A: キャッシュバスティング用
         });
       }
       
@@ -1338,22 +1354,46 @@ app.get('/edit/:id', async (c) => {
       // Construct original image URL
       const originalUrl = `${R2_PUBLIC_URL}/${sku}/${filenamePart}.jpg`;
       
-      // Check for processed image in R2
-      let processedUrl = null;
+      // Phase A: Check for images in priority order
+      // 1️⃣ _f.png (最新の完成品) > 2️⃣ _p.png (白抜き画像) > 3️⃣ 元画像
+      let baseImageUrl = null;
+      let status = 'ready';
+      
       if (c.env.PRODUCT_IMAGES) {
-        const r2List = await c.env.PRODUCT_IMAGES.list({ prefix: `processed/${id}_` });
-        if (r2List.objects.length > 0) {
-          processedUrl = `${R2_PUBLIC_URL}/${r2List.objects[0].key}`;
+        const finalKey = `${sku}/${filenamePart}_f.png`;
+        const processedKey = `${sku}/${filenamePart}_p.png`;
+        
+        try {
+          // Check for _f.png
+          const finalObject = await c.env.PRODUCT_IMAGES.head(finalKey);
+          if (finalObject) {
+            baseImageUrl = `${R2_PUBLIC_URL}/${finalKey}`;
+            status = 'final';
+            console.log(`✅ Edit screen using final image: ${finalKey}`);
+          }
+        } catch (e) {
+          // _f.png doesn't exist, try _p.png
+          try {
+            const processedObject = await c.env.PRODUCT_IMAGES.head(processedKey);
+            if (processedObject) {
+              baseImageUrl = `${R2_PUBLIC_URL}/${processedKey}`;
+              status = 'processed';
+              console.log(`✅ Edit screen using processed image: ${processedKey}`);
+            }
+          } catch (e2) {
+            // Neither exists, use original
+            console.log(`ℹ️ Edit screen using original image`);
+          }
         }
       }
       
       imageResult = {
         id: id,
         original_url: originalUrl,
-        processed_url: processedUrl,
+        processed_url: baseImageUrl || originalUrl,  // Phase A: ベース画像
         sku: sku,
         product_name: `商品 ${sku}`,
-        status: processedUrl ? 'completed' : 'ready'
+        status: status
       };
     }
   }
@@ -1813,21 +1853,32 @@ app.get('/edit/:id', async (c) => {
                     els.btnSave.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> 保存中...';
                     
                     try {
-                        // Save edit settings to R2 (settings.json only)
-                        await saveEditSettings();
+                        // Phase A: Save both Canvas image (_f.png) and settings.json
                         
-                        // ✅ Canvas 画像は保存しない（settings.json だけを保存）
-                        // 理由: 
-                        // - _p.png は「白抜き画像」専用（remove.bg の結果のみ）
-                        // - 編集内容は settings.json に保存
-                        // - 表示・ダウンロード時に Canvas で合成
+                        // 1. Get Canvas data as base64
+                        const imageData = canvas.toDataURL('image/png');
+                        
+                        // 2. Save Canvas image as _f.png
+                        const saveImageResponse = await fetch('/api/save-edited-image/' + imageId, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ imageData: imageData })
+                        });
+                        
+                        if (!saveImageResponse.ok) {
+                            const error = await saveImageResponse.json();
+                            throw new Error(error.details || error.error || 'Failed to save image');
+                        }
+                        
+                        // 3. Save edit settings to settings.json
+                        await saveEditSettings();
                         
                         alert('編集内容を保存しました！');
                         window.location.href = '/dashboard';
                         
                     } catch (e) {
                         console.error('Save error:', e);
-                        alert('保存中にエラーが発生しました');
+                        alert('保存中にエラーが発生しました: ' + e.message);
                         els.btnSave.disabled = false;
                         els.btnSave.innerHTML = '<i class="fas fa-save mr-2"></i> 保存して次へ';
                     }
@@ -4409,10 +4460,12 @@ app.post('/api/save-edited-image/:imageId', async (c) => {
         const sku = parts[1];
         const filenamePart = parts.slice(2).join('_');
         
-        // Build R2 key for processed image: {sku}/{filename}_p.png
-        const r2Key = `${sku}/${filenamePart}_p.png`;
+        // Phase A: Build R2 key for FINAL image: {sku}/{filename}_f.png
+        // _f.png = Final/Completed image (with edits applied)
+        // _p.png = Processed/White-background only (preserved)
+        const finalKey = `${sku}/${filenamePart}_f.png`;
         
-        console.log('📂 R2 key:', r2Key);
+        console.log('📂 Final image key:', finalKey);
         
         // Convert base64 to binary
         const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
@@ -4424,20 +4477,29 @@ app.post('/api/save-edited-image/:imageId', async (c) => {
         
         console.log('📊 Image size:', imageBuffer.length, 'bytes');
         
-        // Upload to R2 (overwrites existing file)
-        await c.env.PRODUCT_IMAGES.put(r2Key, imageBuffer, {
+        // Upload to R2 (overwrites existing _f.png)
+        await c.env.PRODUCT_IMAGES.put(finalKey, imageBuffer, {
             httpMetadata: {
                 contentType: 'image/png'
             }
         });
         
-        console.log('✅ Saved edited image to R2:', r2Key);
+        console.log('✅ Saved final image to R2:', finalKey);
+        
+        // Update D1 updated_at timestamp for cache busting
+        await c.env.DB.prepare(`
+            UPDATE product_items 
+            SET updated_at = CURRENT_TIMESTAMP 
+            WHERE sku = ?
+        `).bind(sku).run();
+        
+        console.log('✅ Updated D1 timestamp for SKU:', sku);
         
         return c.json({ 
             success: true,
             imageId,
-            r2Key,
-            message: 'Image saved successfully'
+            finalKey,
+            message: 'Final image saved successfully'
         });
         
     } catch (error: any) {
