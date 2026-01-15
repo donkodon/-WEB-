@@ -1344,53 +1344,68 @@ app.get('/edit/:id', async (c) => {
   let imageResult: any = null;
   
   if (id.startsWith('r2_')) {
-    const R2_PUBLIC_URL = 'https://pub-300562464768499b8fcaee903d0f9861.r2.dev';
     const parts = id.replace('r2_', '').split('_');
     
     if (parts.length >= 2) {
       const sku = parts[0];
       const filenamePart = parts.slice(1).join('_');
       
-      // Construct original image URL
-      const originalUrl = `${R2_PUBLIC_URL}/${sku}/${filenamePart}.jpg`;
+      // Option 1: Use same logic as dashboard (r2FileSet + proxy URL + cache busting)
       
-      // Phase A: Check for images in priority order
-      // 1️⃣ _f.png (最新の完成品) > 2️⃣ _p.png (白抜き画像) > 3️⃣ 元画像
-      let baseImageUrl = null;
-      let status = 'ready';
+      // 1. Get updated_at from D1 for cache busting
+      let updatedAt = new Date().toISOString();
+      try {
+        const dbResult = await c.env.DB.prepare(`
+          SELECT updated_at FROM product_items WHERE sku = ? LIMIT 1
+        `).bind(sku).first();
+        if (dbResult && dbResult.updated_at) {
+          updatedAt = dbResult.updated_at as string;
+        }
+      } catch (e) {
+        console.warn(`⚠️ Failed to get updated_at for SKU ${sku}:`, e);
+      }
+      const cacheVersion = new Date(updatedAt).getTime();
       
+      // 2. List R2 bucket to check file existence
+      let r2FileSet = new Set<string>();
       if (c.env.PRODUCT_IMAGES) {
-        const finalKey = `${sku}/${filenamePart}_f.png`;
-        const processedKey = `${sku}/${filenamePart}_p.png`;
-        
         try {
-          // Check for _f.png
-          const finalObject = await c.env.PRODUCT_IMAGES.head(finalKey);
-          if (finalObject) {
-            baseImageUrl = `${R2_PUBLIC_URL}/${finalKey}`;
-            status = 'final';
-            console.log(`✅ Edit screen using final image: ${finalKey}`);
-          }
+          const r2ListResult = await c.env.PRODUCT_IMAGES.list({ limit: 1000 });
+          r2FileSet = new Set(r2ListResult.objects.map(obj => obj.key));
+          console.log(`📂 Edit screen: R2 has ${r2FileSet.size} files`);
         } catch (e) {
-          // _f.png doesn't exist, try _p.png
-          try {
-            const processedObject = await c.env.PRODUCT_IMAGES.head(processedKey);
-            if (processedObject) {
-              baseImageUrl = `${R2_PUBLIC_URL}/${processedKey}`;
-              status = 'processed';
-              console.log(`✅ Edit screen using processed image: ${processedKey}`);
-            }
-          } catch (e2) {
-            // Neither exists, use original
-            console.log(`ℹ️ Edit screen using original image`);
-          }
+          console.error(`❌ Failed to list R2 bucket:`, e);
         }
       }
+      
+      // 3. Check for images in priority order: _f.png > _p.png > .jpg
+      const finalKey = `${sku}/${filenamePart}_f.png`;
+      const processedKey = `${sku}/${filenamePart}_p.png`;
+      const originalKey = `${sku}/${filenamePart}.jpg`;
+      
+      let baseImageUrl = null;
+      let originalUrl = null;
+      let status = 'ready';
+      
+      if (r2FileSet.has(finalKey)) {
+        baseImageUrl = `/api/image-proxy/${sku}/${filenamePart}_f.png?v=${cacheVersion}`;
+        status = 'final';
+        console.log(`✅ Edit screen using final image: ${finalKey}`);
+      } else if (r2FileSet.has(processedKey)) {
+        baseImageUrl = `/api/image-proxy/${sku}/${filenamePart}_p.png?v=${cacheVersion}`;
+        status = 'processed';
+        console.log(`✅ Edit screen using processed image: ${processedKey}`);
+      } else {
+        console.log(`ℹ️ Edit screen using original image`);
+      }
+      
+      // Set original URL (always .jpg)
+      originalUrl = `/api/image-proxy/${sku}/${filenamePart}.jpg?v=${cacheVersion}`;
       
       imageResult = {
         id: id,
         original_url: originalUrl,
-        processed_url: baseImageUrl || originalUrl,  // Phase A: ベース画像
+        processed_url: baseImageUrl || originalUrl,  // Fallback to original if no processed version
         sku: sku,
         product_name: `商品 ${sku}`,
         status: status
