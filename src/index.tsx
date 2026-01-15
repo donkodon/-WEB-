@@ -1112,7 +1112,7 @@ app.get('/dashboard', async (c) => {
                 </div>
             </div>
             
-            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 image-grid" data-sku={product.sku}>
                 {/* Debug Info */}
                 {product.images.length === 0 && (
                   <div class="col-span-full text-center py-8 text-gray-400">
@@ -1123,9 +1123,15 @@ app.get('/dashboard', async (c) => {
                 
                 {/* Existing Images */}
                 {product.images.map((img: any) => (
-                   <div class="relative group aspect-square" data-image-id={img.id}>
+                   <div class="relative group aspect-square cursor-move sortable-item" data-image-id={img.id}>
                        <div class="w-full h-full bg-white rounded-lg overflow-hidden border border-gray-100 relative">
                            <img src={img.processed_url || img.original_url} class="w-full h-full object-cover p-2" style="background-color: white;" />
+                           
+                           {/* Drag Handle */}
+                           <div class="drag-handle absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 rounded px-1.5 py-1 shadow-sm cursor-grab active:cursor-grabbing">
+                               <i class="fas fa-grip-vertical text-gray-500 text-sm"></i>
+                           </div>
+                           
                            <div class="absolute top-2 left-2 z-10">
                                <input 
                                    type="checkbox" 
@@ -1266,6 +1272,118 @@ app.get('/dashboard', async (c) => {
                 alert('通信エラーが発生しました');
                 parent.innerHTML = originalContent;
             }
+        }
+      `}} />
+      
+      {/* Sortable.js for Drag & Drop */}
+      <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+      
+      {/* Initialize Sortable for each image grid */}
+      <script dangerouslySetInnerHTML={{__html: `
+        document.addEventListener('DOMContentLoaded', () => {
+          console.log('🎯 Initializing Sortable for image grids...');
+          
+          // Find all image grids
+          const imageGrids = document.querySelectorAll('.image-grid');
+          console.log('📦 Found', imageGrids.length, 'image grids');
+          
+          imageGrids.forEach((gridEl, index) => {
+            const sku = gridEl.dataset.sku;
+            
+            if (!sku) {
+              console.warn('⚠️ No SKU found for grid', index);
+              return;
+            }
+            
+            console.log('✅ Setting up Sortable for SKU:', sku);
+            
+            new Sortable(gridEl, {
+              animation: 150,
+              handle: '.drag-handle',
+              draggable: '.sortable-item',
+              ghostClass: 'sortable-ghost',
+              dragClass: 'sortable-drag',
+              onEnd: async (evt) => {
+                console.log('🔄 Drag ended for SKU:', sku);
+                console.log('   Old index:', evt.oldIndex, '→ New index:', evt.newIndex);
+                
+                // 新しい順序を取得
+                const imageIds = Array.from(gridEl.querySelectorAll('.sortable-item[data-image-id]'))
+                  .map(el => el.dataset.imageId)
+                  .filter(id => id); // undefined を除外
+                
+                console.log('📋 New order:', imageIds);
+                
+                if (imageIds.length === 0) {
+                  console.warn('⚠️ No image IDs found');
+                  return;
+                }
+                
+                try {
+                  // サーバーに送信
+                  const response = await fetch('/api/reorder-images', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sku, imageIds })
+                  });
+                  
+                  const result = await response.json();
+                  
+                  if (response.ok) {
+                    console.log('✅ Order saved:', result);
+                    
+                    // 成功メッセージを表示（3秒後に消える）
+                    const toast = document.createElement('div');
+                    toast.className = 'fixed bottom-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-fade-in';
+                    toast.innerHTML = '<i class="fas fa-check mr-2"></i>画像の順序を保存しました';
+                    document.body.appendChild(toast);
+                    setTimeout(() => {
+                      toast.style.animation = 'fade-out 0.3s';
+                      setTimeout(() => toast.remove(), 300);
+                    }, 3000);
+                    
+                    // ページをリロード（更新された順序を表示）
+                    setTimeout(() => location.reload(), 1000);
+                  } else {
+                    console.error('❌ Failed to save order:', result);
+                    alert('順序の保存に失敗しました: ' + (result.error || '不明なエラー'));
+                    location.reload(); // 元の順序に戻す
+                  }
+                } catch (error) {
+                  console.error('❌ Reorder error:', error);
+                  alert('順序の保存中にエラーが発生しました');
+                  location.reload(); // 元の順序に戻す
+                }
+              }
+            });
+          });
+        });
+      `}} />
+      
+      {/* CSS for Sortable animations */}
+      <style dangerouslySetInnerHTML={{__html: `
+        .sortable-ghost {
+          opacity: 0.4;
+          background-color: #e0f2fe;
+        }
+        .sortable-drag {
+          cursor: grabbing !important;
+          transform: rotate(2deg);
+          box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        .drag-handle:hover {
+          background-color: rgba(255,255,255,1);
+        }
+        @keyframes fade-in {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fade-out {
+          from { opacity: 1; transform: translateY(0); }
+          to { opacity: 0; transform: translateY(20px); }
+        }
+        .animate-fade-in {
+          animation: fade-in 0.3s;
         }
       `}} />
       
@@ -5094,6 +5212,87 @@ app.get('/debug/r2-folder', async (c) => {
             </body>
             </html>
         `);
+    }
+});
+
+// 画像順序変更API
+app.post('/api/reorder-images', async (c) => {
+    try {
+        const { sku, imageIds } = await c.req.json();
+        
+        console.log('🔄 Reorder images for SKU:', sku);
+        console.log('📋 New order:', imageIds);
+        
+        if (!sku || !imageIds || !Array.isArray(imageIds)) {
+            return c.json({ error: 'Invalid request: sku and imageIds array required' }, 400);
+        }
+        
+        // 1. 現在の image_urls を取得
+        const result = await c.env.DB.prepare(`
+            SELECT image_urls FROM product_items WHERE sku = ?
+        `).bind(sku).first();
+        
+        if (!result) {
+            return c.json({ error: 'SKU not found' }, 404);
+        }
+        
+        const currentImageUrls = JSON.parse(result.image_urls || '[]');
+        console.log('📦 Current image_urls:', currentImageUrls);
+        
+        if (currentImageUrls.length === 0) {
+            return c.json({ error: 'No images found for this SKU' }, 404);
+        }
+        
+        // 2. imageIds の順序に従って image_urls を並び替え
+        const newImageUrls: string[] = [];
+        
+        for (const imageId of imageIds) {
+            // imageId = "r2_1025L280001_1025L280001_uuid" から UUID部分を抽出
+            const parts = imageId.replace('r2_', '').split('_');
+            if (parts.length < 2) continue;
+            
+            // SKU以降の部分を結合（例: "1025L280001_uuid"）
+            const filenamePart = parts.slice(1).join('_');
+            
+            // currentImageUrls から該当するURLを探す
+            const matchingUrl = currentImageUrls.find(url => {
+                const urlFilename = url.split('/').pop() || '';
+                const urlFilenamePart = urlFilename.replace(/\.[^/.]+$/, ''); // 拡張子を除去
+                return urlFilenamePart === filenamePart;
+            });
+            
+            if (matchingUrl) {
+                newImageUrls.push(matchingUrl);
+            } else {
+                console.warn(`⚠️ No matching URL found for imageId: ${imageId}`);
+            }
+        }
+        
+        console.log('✅ New image_urls:', newImageUrls);
+        
+        // 3. 順序が変わっていない場合はスキップ
+        if (JSON.stringify(currentImageUrls) === JSON.stringify(newImageUrls)) {
+            return c.json({ success: true, message: 'Order unchanged', imageUrls: newImageUrls });
+        }
+        
+        // 4. D1 を更新
+        await c.env.DB.prepare(`
+            UPDATE product_items 
+            SET image_urls = ?, updated_at = CURRENT_TIMESTAMP 
+            WHERE sku = ?
+        `).bind(JSON.stringify(newImageUrls), sku).run();
+        
+        console.log('✅ Image order updated successfully for SKU:', sku);
+        
+        return c.json({ 
+            success: true, 
+            imageUrls: newImageUrls,
+            message: '画像の順序を更新しました'
+        });
+        
+    } catch (error: any) {
+        console.error('❌ Reorder images error:', error);
+        return c.json({ error: 'Failed to reorder images', details: error.message }, 500);
     }
 });
 
