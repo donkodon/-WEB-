@@ -1808,37 +1808,23 @@ app.get('/edit/:id', async (c) => {
 
                 // --- SAVE LOGIC ---
                 els.btnSave.addEventListener('click', async () => {
-                    // Get canvas data as base64
-                    const imageData = canvas.toDataURL('image/png');
-                    
                     // Show saving state
                     els.btnSave.disabled = true;
                     els.btnSave.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> 保存中...';
                     
                     try {
-                        // 1. Save edit settings to R2 (Phase 2.5)
+                        // Save edit settings to R2 (settings.json only)
                         await saveEditSettings();
                         
-                        // 2. Save processed image to database via API
-                        const response = await fetch('/api/save-edited-image/${id}', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({
-                                imageData: imageData
-                            })
-                        });
+                        // ✅ Canvas 画像は保存しない（settings.json だけを保存）
+                        // 理由: 
+                        // - _p.png は「白抜き画像」専用（remove.bg の結果のみ）
+                        // - 編集内容は settings.json に保存
+                        // - 表示・ダウンロード時に Canvas で合成
                         
-                        if (response.ok) {
-                            alert('編集内容を保存しました！');
-                            window.location.href = '/dashboard';
-                        } else {
-                            const error = await response.json();
-                            alert('保存に失敗しました: ' + (error.details || error.error));
-                            els.btnSave.disabled = false;
-                            els.btnSave.innerHTML = '<i class="fas fa-save mr-2"></i> 保存して次へ';
-                        }
+                        alert('編集内容を保存しました！');
+                        window.location.href = '/dashboard';
+                        
                     } catch (e) {
                         console.error('Save error:', e);
                         alert('保存中にエラーが発生しました');
