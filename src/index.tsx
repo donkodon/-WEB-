@@ -1565,6 +1565,7 @@ app.get('/edit/:id', async (c) => {
                 const processedSrc = "${imageSrc}";
                 const originalSrc = "${originalSrc}";
                 const isProcessed = ${isProcessed};
+                const imageId = "${id}";
                 let showingOriginal = false;
                 
                 img.src = processedSrc;
