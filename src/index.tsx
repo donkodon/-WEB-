@@ -4803,39 +4803,57 @@ app.get('/api/download-product-data/:imageId', async (c) => {
         console.log('📦 Extracted SKU:', sku, 'Filename part:', filenamePart);
         
         // R2から直接取得（DBは使わない）
+        // Phase A優先順位: _f.png（編集済み最新） > _p.png（白抜きのみ） > .jpg（元画像）
         let r2Object = null;
-        let isProcessed = false;
+        let status = 'original';
         let key = '';
         
-        // 1. 白抜き画像を優先チェック（{sku}/{filename}_p.png）
-        const processedKey = `${sku}/${filenamePart}_p.png`;
-        console.log('🔍 Checking processed image:', processedKey);
+        // 1. 最優先: 編集済み画像をチェック（{sku}/{filename}_f.png）⭐
+        const finalKey = `${sku}/${filenamePart}_f.png`;
+        console.log('🔍 Step 1: Checking final edited image:', finalKey);
         
         try {
-            r2Object = await c.env.PRODUCT_IMAGES.get(processedKey);
+            r2Object = await c.env.PRODUCT_IMAGES.get(finalKey);
             if (r2Object) {
-                key = processedKey;
-                isProcessed = true;
-                console.log('✅ Found processed image:', processedKey);
+                key = finalKey;
+                status = 'final';
+                console.log('✅ Found FINAL edited image:', finalKey);
             }
         } catch (error) {
-            console.log('⚠️ No processed image found');
+            console.log('⚠️ No final edited image found');
         }
         
-        // 2. 白抜き画像がない場合、オリジナル画像をチェック
+        // 2. フォールバック: 白抜き画像をチェック（{sku}/{filename}_p.png）
+        if (!r2Object) {
+            const processedKey = `${sku}/${filenamePart}_p.png`;
+            console.log('🔍 Step 2: Checking processed image:', processedKey);
+            
+            try {
+                r2Object = await c.env.PRODUCT_IMAGES.get(processedKey);
+                if (r2Object) {
+                    key = processedKey;
+                    status = 'processed';
+                    console.log('✅ Found processed image:', processedKey);
+                }
+            } catch (error) {
+                console.log('⚠️ No processed image found');
+            }
+        }
+        
+        // 3. 最終フォールバック: オリジナル画像をチェック
         if (!r2Object) {
             // 複数の拡張子を試行（jpg, jpeg, png, webp）
             const extensions = ['jpg', 'jpeg', 'png', 'webp'];
             
             for (const ext of extensions) {
                 const originalKey = `${sku}/${filenamePart}.${ext}`;
-                console.log('🔍 Checking original image:', originalKey);
+                console.log('🔍 Step 3: Checking original image:', originalKey);
                 
                 try {
                     r2Object = await c.env.PRODUCT_IMAGES.get(originalKey);
                     if (r2Object) {
                         key = originalKey;
-                        isProcessed = false;
+                        status = 'original';
                         console.log('✅ Found original image:', originalKey);
                         break;
                     }
@@ -4845,7 +4863,7 @@ app.get('/api/download-product-data/:imageId', async (c) => {
             }
         }
         
-        // 3. どちらも見つからない場合は404
+        // 4. どれも見つからない場合は404
         if (!r2Object) {
             console.log('❌ No image found for:', filenamePart);
             return c.json({ 
@@ -4854,21 +4872,22 @@ app.get('/api/download-product-data/:imageId', async (c) => {
             }, 404);
         }
         
-        // 4. プロキシURLを返す（Base64変換なし、33%オーバーヘッド削減）
+        // 5. プロキシURLを返す（Base64変換なし、33%オーバーヘッド削減）
         const extension = key.split('.').pop()?.toLowerCase() || 'jpg';
-        const filename = `${filenamePart}${isProcessed ? '_processed' : ''}.${extension}`;
+        const filename = `${filenamePart}_${status}.${extension}`;
         
         // プロキシURL経由で画像を配信（バイナリ直接）
         const imageUrl = `/api/image-proxy/${sku}/${key.split('/')[1]}`;
         
         console.log('📝 Generated filename:', filename);
         console.log('🔗 Proxy URL:', imageUrl);
+        console.log('📊 Status:', status);
         
         return c.json({
             imageUrl: imageUrl,
             filename: filename,
             sku: sku,
-            status: isProcessed ? 'completed' : 'original'
+            status: status
         });
         
     } catch (error: any) {
