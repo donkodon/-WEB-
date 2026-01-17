@@ -1989,10 +1989,26 @@ app.get('/edit/:id', async (c) => {
                     try {
                         // Phase A: Save both Canvas image (_f.png) and settings.json
                         
-                        // 1. Get Canvas data as base64
-                        const imageData = canvas.toDataURL('image/png');
+                        // 1. Create temporary canvas with white background
+                        // This prevents transparent pixels from having black RGB values (0,0,0)
+                        const tempCanvas = document.createElement('canvas');
+                        tempCanvas.width = canvas.width;
+                        tempCanvas.height = canvas.height;
+                        const tempCtx = tempCanvas.getContext('2d');
                         
-                        // 2. Save Canvas image as _f.png
+                        // Draw white background first
+                        tempCtx.fillStyle = '#FFFFFF';
+                        tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                        
+                        // Draw edited image on top (with transparency preserved)
+                        tempCtx.drawImage(canvas, 0, 0);
+                        
+                        // 2. Get Canvas data as base64 (transparent pixels now have white RGB values)
+                        const imageData = tempCanvas.toDataURL('image/png');
+                        
+                        console.log('📸 Image data prepared with white background for transparent pixels');
+                        
+                        // 3. Save Canvas image as _f.png
                         const saveImageResponse = await fetch('/api/save-edited-image/' + imageId, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -2004,7 +2020,7 @@ app.get('/edit/:id', async (c) => {
                             throw new Error(error.details || error.error || 'Failed to save image');
                         }
                         
-                        // 3. Save edit settings to settings.json
+                        // 4. Save edit settings to settings.json
                         await saveEditSettings();
                         
                         alert('編集内容を保存しました！');
