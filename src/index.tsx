@@ -616,7 +616,9 @@ app.get('/dashboard', async (c) => {
                                 }
                                 blob = new Blob([bytes], { type: 'image/png' });
                             } else {
-                                const imgResponse = await fetch(data.imageUrl);
+                                const imgResponse = await fetch(data.imageUrl, {
+                                    cache: 'no-cache'  // Always fetch fresh data, bypass browser cache
+                                });
                                 blob = await imgResponse.blob();
                             }
                             
@@ -765,7 +767,9 @@ app.get('/dashboard', async (c) => {
                             } else {
                                 // For regular URLs, fetch and add to ZIP
                                 console.log('Fetching image from URL:', data.imageUrl);
-                                const imgResponse = await fetch(data.imageUrl);
+                                const imgResponse = await fetch(data.imageUrl, {
+                                    cache: 'no-cache'  // Always fetch fresh data, bypass browser cache
+                                });
                                 if (!imgResponse.ok) {
                                     console.error('Failed to fetch image:', imgResponse.status);
                                     imageSkipCount++;
