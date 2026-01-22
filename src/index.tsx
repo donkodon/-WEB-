@@ -16,6 +16,11 @@ type Bindings = {
   AI: any // Cloudflare AI Workers binding
 }
 
+// ==========================================
+// Phase 1: Fixed company_id (will be dynamic in Phase 2 with Firebase Auth)
+// ==========================================
+const FIXED_COMPANY_ID = 'test_company';
+
 const app = new Hono<{ Bindings: Bindings }>()
 
 // Enable CORS for all routes
@@ -362,8 +367,8 @@ app.get('/dashboard', async (c) => {
         const urlParts = imageUrl.split('/');
         const filename = urlParts[urlParts.length - 1]; // "1025L280001_eed23072-...jpg"
         
-        // R2キーを構築
-        const r2Key = `${sku}/${filename}`;
+        // R2キーを構築 (Phase 1: Fixed company_id)
+        const r2Key = `${FIXED_COMPANY_ID}/${sku}/${filename}`;
         
         // R2に存在するか確認
         if (!r2FileSet.has(r2Key)) {
@@ -378,8 +383,8 @@ app.get('/dashboard', async (c) => {
         // Phase A: 画像の優先順位チェック
         // 1️⃣ _f.png (最新の完成品) > 2️⃣ _p.png (白抜き画像) > 3️⃣ 元画像
         const filenameWithoutExt = filename.replace(/\.[^/.]+$/, '');
-        const finalKey = `${sku}/${filenameWithoutExt}_f.png`;
-        const processedKey = `${sku}/${filenameWithoutExt}_p.png`;
+        const finalKey = `${FIXED_COMPANY_ID}/${sku}/${filenameWithoutExt}_f.png`;
+        const processedKey = `${FIXED_COMPANY_ID}/${sku}/${filenameWithoutExt}_p.png`;
         
         let displayUrl = null;
         let status = 'ready';
@@ -1500,10 +1505,10 @@ app.get('/edit/:id', async (c) => {
         }
       }
       
-      // 3. Check for images in priority order: _f.png > _p.png > .jpg
-      const finalKey = `${sku}/${filenamePart}_f.png`;
-      const processedKey = `${sku}/${filenamePart}_p.png`;
-      const originalKey = `${sku}/${filenamePart}.jpg`;
+      // 3. Check for images in priority order: _f.png > _p.png > .jpg (Phase 1: Fixed company_id)
+      const finalKey = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}_f.png`;
+      const processedKey = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}_p.png`;
+      const originalKey = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}.jpg`;
       
       let baseImageUrl = null;
       let originalUrl = null;
@@ -3404,7 +3409,7 @@ app.get('/api/edit-settings/:imageId', async (c) => {
         const filenamePart = parts.slice(2).join('_'); // Handle filenames with underscores
         
         // Build settings key: {sku}/{filename}_settings.json
-        const settingsKey = `${sku}/${filenamePart}_settings.json`;
+        const settingsKey = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}_settings.json`;
         console.log('🔍 Looking for settings:', settingsKey);
 
         // Try to fetch settings from R2
@@ -3457,7 +3462,7 @@ app.post('/api/edit-settings/:imageId', async (c) => {
 
         const sku = parts[1];
         const filenamePart = parts.slice(2).join('_');
-        const settingsKey = `${sku}/${filenamePart}_settings.json`;
+        const settingsKey = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}_settings.json`;
 
         // Extract data from request body
         const { adjustments, eraser_paths } = body;
@@ -3552,7 +3557,7 @@ app.delete('/api/edit-settings/:imageId', async (c) => {
 
         const sku = parts[1];
         const filenamePart = parts.slice(2).join('_');
-        const settingsKey = `${sku}/${filenamePart}_settings.json`;
+        const settingsKey = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}_settings.json`;
 
         // Delete from R2
         await c.env.PRODUCT_IMAGES.delete(settingsKey);
@@ -3870,7 +3875,7 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
                 let found = false;
                 
                 for (const ext of extensions) {
-                    const testKey = `${sku}/${filenamePart}.${ext}`;
+                    const testKey = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}.${ext}`;
                     const testUrl = `${R2_PUBLIC_URL}/${testKey}`;
                     
                     // Test if file exists in R2
@@ -3926,7 +3931,7 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
                     const parts = imageId.replace('r2_', '').split('_');
                     const sku = parts[0];
                     const filenamePart = parts.slice(1).join('_');
-                    const r2Key = `${sku}/${filenamePart}_p.png`;
+                    const r2Key = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}_p.png`;
                     
                     if (c.env.PRODUCT_IMAGES) {
                         await c.env.PRODUCT_IMAGES.put(r2Key, imageBuffer, {
@@ -3986,7 +3991,7 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
                 const parts = imageId.replace('r2_', '').split('_');
                 const sku = parts[0];
                 const filenamePart = parts.slice(1).join('_');
-                const r2Key = `${sku}/${filenamePart}_p.png`;
+                const r2Key = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}_p.png`;
                 
                 if (c.env.PRODUCT_IMAGES) {
                     await c.env.PRODUCT_IMAGES.put(r2Key, bytes, {
@@ -4515,8 +4520,8 @@ app.get('/api/download-processed-image/:imageId', async (c) => {
         const sku = parts[0];
         const filenamePart = parts.slice(1).join('_');
         
-        // 新形式で白抜き画像をチェック: {SKU}/{filename}_p.png
-        const processedKey = `${sku}/${filenamePart}_p.png`;
+        // 新形式で白抜き画像をチェック: {company_id}/{SKU}/{filename}_p.png (Phase 1: Fixed company_id)
+        const processedKey = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}_p.png`;
         let processedUrl = null;
         
         if (c.env.PRODUCT_IMAGES) {
@@ -4614,10 +4619,12 @@ app.post('/api/save-edited-image/:imageId', async (c) => {
         const sku = parts[1];
         const filenamePart = parts.slice(2).join('_');
         
-        // Phase A: Build R2 key for FINAL image: {sku}/{filename}_f.png
+        // Phase A: Build R2 key for FINAL image: {company_id}/{sku}/{filename}_f.png
         // _f.png = Final/Completed image (with edits applied)
         // _p.png = Processed/White-background only (preserved)
-        const finalKey = `${sku}/${filenamePart}_f.png`;
+        // Fixed company_id for Phase 1 (will be dynamic in Phase 2)
+        const companyId = 'test_company';
+        const finalKey = `${companyId}/${sku}/${filenamePart}_f.png`;
         
         console.log('📂 Final image key:', finalKey);
         
@@ -4828,8 +4835,8 @@ app.get('/api/download-product-data/:imageId', async (c) => {
         let status = 'original';
         let key = '';
         
-        // 1. 最優先: 編集済み画像をチェック（{sku}/{filename}_f.png）⭐
-        const finalKey = `${sku}/${filenamePart}_f.png`;
+        // 1. 最優先: 編集済み画像をチェック（{company_id}/{sku}/{filename}_f.png）⭐ (Phase 1: Fixed company_id)
+        const finalKey = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}_f.png`;
         console.log('🔍 Step 1: Checking final edited image:', finalKey);
         
         try {
@@ -4843,9 +4850,9 @@ app.get('/api/download-product-data/:imageId', async (c) => {
             console.log('⚠️ No final edited image found');
         }
         
-        // 2. フォールバック: 白抜き画像をチェック（{sku}/{filename}_p.png）
+        // 2. フォールバック: 白抜き画像をチェック（{company_id}/{sku}/{filename}_p.png） (Phase 1: Fixed company_id)
         if (!r2Object) {
-            const processedKey = `${sku}/${filenamePart}_p.png`;
+            const processedKey = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}_p.png`;
             console.log('🔍 Step 2: Checking processed image:', processedKey);
             
             try {
@@ -4866,7 +4873,7 @@ app.get('/api/download-product-data/:imageId', async (c) => {
             const extensions = ['jpg', 'jpeg', 'png', 'webp'];
             
             for (const ext of extensions) {
-                const originalKey = `${sku}/${filenamePart}.${ext}`;
+                const originalKey = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}.${ext}`;
                 console.log('🔍 Step 3: Checking original image:', originalKey);
                 
                 try {
@@ -4961,8 +4968,8 @@ app.get('/api/image-proxy/:sku/:filename', async (c) => {
             return c.json({ error: 'Filename too long' }, 400);
         }
         
-        // R2から画像を取得
-        const key = `${sku}/${filename}`;
+        // R2から画像を取得 (Phase 1: Fixed company_id)
+        const key = `${FIXED_COMPANY_ID}/${sku}/${filename}`;
         console.log('🔍 Fetching from R2:', key);
         
         const r2Object = await c.env.PRODUCT_IMAGES.get(key);
@@ -5067,14 +5074,17 @@ app.get('/debug/r2-folder', async (c) => {
             `);
         }
         
-        // SKUが指定されていない場合、SKUフォルダ一覧を表示
+        // SKUが指定されていない場合、SKUフォルダ一覧を表示 (Phase 1: Fixed company_id配下のみ)
         if (!sku) {
             const listed = await c.env.PRODUCT_IMAGES.list({ 
+                prefix: `${FIXED_COMPANY_ID}/`,
                 delimiter: '/',
                 limit: 100
             });
             
-            const folders = listed.delimitedPrefixes?.map(prefix => prefix.replace('/', '')) || [];
+            const folders = listed.delimitedPrefixes?.map(prefix => 
+                prefix.replace(`${FIXED_COMPANY_ID}/`, '').replace('/', '')
+            ) || [];
             
             return c.html(`
                 <!DOCTYPE html>
@@ -5109,15 +5119,15 @@ app.get('/debug/r2-folder', async (c) => {
             `);
         }
         
-        // 特定のSKUフォルダの内容を表示
-        const prefix = `${sku}/`;
+        // 特定のSKUフォルダの内容を表示 (Phase 1: Fixed company_id)
+        const prefix = `${FIXED_COMPANY_ID}/${sku}/`;
         const listed = await c.env.PRODUCT_IMAGES.list({
             prefix: prefix,
             limit: 100
         });
         
         const files = listed.objects.map(obj => {
-            const filename = obj.key.split('/')[1];
+            const filename = obj.key.split('/')[2]; // Phase 1: company_id/sku/filename
             const isProcessed = filename.endsWith('_p.png');
             const isImage = /\.(jpg|jpeg|png|webp|gif)$/i.test(filename);
             
