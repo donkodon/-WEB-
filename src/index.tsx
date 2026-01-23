@@ -451,15 +451,15 @@ app.get('/dashboard', async (c) => {
         // if (!r2Path.startsWith(FIXED_COMPANY_ID)) {
         //   r2Key = `${FIXED_COMPANY_ID}/${r2Path}`;
         // }
+        // R2に存在するか確認をスキップ（image-upload-api経由でアクセスするため）
+        // if (!r2FileSet.has(r2Key)) {
+        //   console.warn(`⚠️ Image not found in R2: ${r2Key}`);
+        //   continue;
+        // }
         
-        // R2に存在するか確認
-        if (!r2FileSet.has(r2Key)) {
-          console.warn(`⚠️ Image not found in R2: ${r2Key}`);
-          continue;
-        }
-        
-        // プロキシURL経由で画像を提供
-        const proxyUrl = `/api/image-proxy/${sku}/${filename}?v=${cacheVersion}`;
+        // ✅ image-upload-api経由で画像を提供（Flutter側が使用しているAPI）
+        const IMAGE_UPLOAD_API_URL = 'https://image-upload-api.jinkedon2.workers.dev';
+        const proxyUrl = `${IMAGE_UPLOAD_API_URL}/${r2Key}`;
         const imageId = `r2_${sku}_${filename.replace(/\.[^/.]+$/, '')}`;
         
         // Phase A: 画像の優先順位チェック
@@ -472,18 +472,25 @@ app.get('/dashboard', async (c) => {
         let displayUrl = null;
         let status = 'ready';
         
-        if (r2FileSet.has(finalKey)) {
-          displayUrl = `/api/image-proxy/${sku}/${filenameWithoutExt}_f.png?v=${cacheVersion}`;
-          status = 'final';
-          console.log(`✅ Found final image: ${finalKey}`);
-        } else if (r2FileSet.has(processedKey)) {
-          displayUrl = `/api/image-proxy/${sku}/${filenameWithoutExt}_p.png?v=${cacheVersion}`;
-          status = 'processed';
-          console.log(`✅ Found processed image: ${processedKey}`);
-        } else {
-          displayUrl = proxyUrl;
-          status = 'ready';
-        }
+        // image-upload-api経由でチェック（R2バケットではなく）
+        const finalUrl = `${IMAGE_UPLOAD_API_URL}/${finalKey}`;
+        const processedUrl = `${IMAGE_UPLOAD_API_URL}/${processedKey}`;
+        
+        // ⚠️ 簡易チェック: 全て ready 状態として扱う（最適化は後で）
+        displayUrl = proxyUrl;
+        status = 'ready';
+        
+        // TODO: 将来的に image-upload-api の /exists エンドポイントで確認
+        // if (r2FileSet.has(finalKey)) {
+        //   displayUrl = finalUrl;
+        //   status = 'final';
+        // } else if (r2FileSet.has(processedKey)) {
+        //   displayUrl = processedUrl;
+        //   status = 'processed';
+        // } else {
+        //   displayUrl = proxyUrl;
+        //   status = 'ready';
+        // }
         
         // 画像情報を追加（Sequence順を保持）
         productData.images.push({
