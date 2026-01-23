@@ -21,6 +21,66 @@ type Bindings = {
 // ==========================================
 const FIXED_COMPANY_ID = 'test_company';
 
+// ==========================================
+// ImageUrlHelper: Utility for converting between R2 paths and full URLs
+// ==========================================
+class ImageUrlHelper {
+  static readonly WORKERS_BASE_URL = 'https://image-upload-api.jinkedon2.workers.dev';
+  
+  /**
+   * Convert R2 path to full URL
+   * @param r2Path - R2 path (e.g., "test_company/1025L280001/uuid.jpg")
+   * @returns Full URL (e.g., "https://image-upload-api.jinkedon2.workers.dev/test_company/1025L280001/uuid.jpg")
+   */
+  static toFullUrl(r2Path: string): string {
+    if (!r2Path) return '';
+    // If already a full URL, return as-is
+    if (r2Path.startsWith('http://') || r2Path.startsWith('https://')) {
+      return r2Path;
+    }
+    return `${this.WORKERS_BASE_URL}/${r2Path}`;
+  }
+  
+  /**
+   * Convert full URL to R2 path
+   * @param fullUrl - Full URL (e.g., "https://image-upload-api.jinkedon2.workers.dev/test_company/1025L280001/uuid.jpg")
+   * @returns R2 path (e.g., "test_company/1025L280001/uuid.jpg")
+   */
+  static toR2Path(fullUrl: string): string {
+    if (!fullUrl) return '';
+    // If already an R2 path (no http://), return as-is
+    if (!fullUrl.startsWith('http://') && !fullUrl.startsWith('https://')) {
+      return fullUrl;
+    }
+    try {
+      const url = new URL(fullUrl);
+      // Remove leading '/' from pathname
+      return url.pathname.substring(1);
+    } catch (e) {
+      console.error('❌ Failed to parse URL:', fullUrl, e);
+      return fullUrl;
+    }
+  }
+  
+  /**
+   * Convert array of full URLs to R2 paths
+   * @param fullUrls - Array of full URLs
+   * @returns Array of R2 paths
+   */
+  static toR2Paths(fullUrls: string[]): string[] {
+    return fullUrls.map(url => this.toR2Path(url));
+  }
+  
+  /**
+   * Convert array of R2 paths to full URLs
+   * @param r2Paths - Array of R2 paths
+   * @returns Array of full URLs
+   */
+  static toFullUrls(r2Paths: string[]): string[] {
+    return r2Paths.map(path => this.toFullUrl(path));
+  }
+}
+
 const app = new Hono<{ Bindings: Bindings }>()
 
 // Enable CORS for all routes
@@ -362,13 +422,28 @@ app.get('/dashboard', async (c) => {
       for (let i = 0; i < imageUrls.length; i++) {
         const imageUrl = imageUrls[i];
         
-        // URLからファイル名を抽出
-        // 例: "https://image-upload-api.jinkedon2.workers.dev/1025L280001/1025L280001_eed23072-...jpg"
-        const urlParts = imageUrl.split('/');
-        const filename = urlParts[urlParts.length - 1]; // "1025L280001_eed23072-...jpg"
+        // ✅ Phase 1: imageUrl は R2パスまたはフルURLの可能性がある
+        // フルURLの場合: "https://image-upload-api.jinkedon2.workers.dev/test_company/1025L280001/uuid.jpg"
+        // R2パスの場合: "test_company/1025L280001/uuid.jpg"
+        let r2Path = imageUrl;
+        
+        // フルURLの場合はR2パスに変換
+        if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+          r2Path = ImageUrlHelper.toR2Path(imageUrl);
+        }
+        
+        // R2パスからファイル名を抽出
+        // 例: "test_company/1025L280001/uuid.jpg" → "uuid.jpg"
+        const pathParts = r2Path.split('/');
+        const filename = pathParts[pathParts.length - 1];
         
         // R2キーを構築 (Phase 1: Fixed company_id)
-        const r2Key = `${FIXED_COMPANY_ID}/${sku}/${filename}`;
+        // すでにcompany_idが含まれている場合はそのまま、含まれていない場合は追加
+        let r2Key = r2Path;
+        if (!r2Path.startsWith(FIXED_COMPANY_ID)) {
+          // 古い形式: "1025L280001/uuid.jpg" → 新形式: "test_company/1025L280001/uuid.jpg"
+          r2Key = `${FIXED_COMPANY_ID}/${r2Path}`;
+        }
         
         // R2に存在するか確認
         if (!r2FileSet.has(r2Key)) {
