@@ -438,45 +438,43 @@ app.get('/dashboard', async (c) => {
         const filename = pathParts[pathParts.length - 1];
         
         // R2キーを構築 (Phase 1: Fixed company_id)
-        // Flutter側がまだ company_id なしで保存しているため、company_id を削除
+        // ✅ 新形式のみ対応: test_company/1025L280001/uuid.jpg
         let r2Key = r2Path;
         
-        // company_id が含まれている場合は削除
-        if (r2Path.startsWith(`${FIXED_COMPANY_ID}/`)) {
-          // 新形式: "test_company/1025L280001/uuid.jpg" → 古形式: "1025L280001/uuid.jpg"
-          r2Key = r2Path.substring(FIXED_COMPANY_ID.length + 1);
+        // company_idが含まれていない場合は追加
+        if (!r2Path.startsWith(`${FIXED_COMPANY_ID}/`)) {
+          r2Key = `${FIXED_COMPANY_ID}/${r2Path}`;
         }
         
-        // ✅ Flutter側が company_id 付きで保存するようになったらこのコードに戻す
-        // if (!r2Path.startsWith(FIXED_COMPANY_ID)) {
-        //   r2Key = `${FIXED_COMPANY_ID}/${r2Path}`;
-        // }
+        console.log(`🔍 R2 Key: ${r2Key}`);
         // R2に存在するか確認をスキップ（image-upload-api経由でアクセスするため）
         // if (!r2FileSet.has(r2Key)) {
         //   console.warn(`⚠️ Image not found in R2: ${r2Key}`);
         //   continue;
         // }
         
-        // ✅ image-upload-api経由で画像を提供（Flutter側が使用しているAPI）
+        // ✅ image-upload-api経由で画像を提供（新形式のみ）
         const IMAGE_UPLOAD_API_URL = 'https://image-upload-api.jinkedon2.workers.dev';
         const proxyUrl = `${IMAGE_UPLOAD_API_URL}/${r2Key}`;
         const imageId = `r2_${sku}_${filename.replace(/\.[^/.]+$/, '')}`;
         
+        console.log(`📸 Image URL: ${proxyUrl}`);
         // Phase A: 画像の優先順位チェック
-        // 1️⃣ _f.png (最新の完成品) > 2️⃣ _p.png (白抜き画像) > 3️⃣ 元画像
+        // 1️⃣ _f.png (最終編集画像) > 2️⃣ _p.png (白抜き画像) > 3️⃣ 元画像
         const filenameWithoutExt = filename.replace(/\.[^/.]+$/, '');
-        // ⚠️ 一時的に company_id なしでチェック（Flutter側が company_id なしで保存しているため）
-        const finalKey = `${sku}/${filenameWithoutExt}_f.png`;
-        const processedKey = `${sku}/${filenameWithoutExt}_p.png`;
+        // ✅ 新形式: company_id 付きのパス
+        const finalKey = `${FIXED_COMPANY_ID}/${sku}/${filenameWithoutExt}_f.png`;
+        const processedKey = `${FIXED_COMPANY_ID}/${sku}/${filenameWithoutExt}_p.png`;
         
         let displayUrl = null;
         let status = 'ready';
         
-        // image-upload-api経由でチェック（R2バケットではなく）
+        // image-upload-api経由でチェック
         const finalUrl = `${IMAGE_UPLOAD_API_URL}/${finalKey}`;
         const processedUrl = `${IMAGE_UPLOAD_API_URL}/${processedKey}`;
         
-        // ⚠️ 簡易チェック: 全て ready 状態として扱う（最適化は後で）
+        // ⚠️ 簡易実装: 全て ready 状態として扱う
+        // TODO: 将来的に image-upload-api の /exists エンドポイントで確認
         displayUrl = proxyUrl;
         status = 'ready';
         
