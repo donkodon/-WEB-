@@ -438,12 +438,19 @@ app.get('/dashboard', async (c) => {
         const filename = pathParts[pathParts.length - 1];
         
         // R2キーを構築 (Phase 1: Fixed company_id)
-        // すでにcompany_idが含まれている場合はそのまま、含まれていない場合は追加
+        // Flutter側がまだ company_id なしで保存しているため、company_id を削除
         let r2Key = r2Path;
-        if (!r2Path.startsWith(FIXED_COMPANY_ID)) {
-          // 古い形式: "1025L280001/uuid.jpg" → 新形式: "test_company/1025L280001/uuid.jpg"
-          r2Key = `${FIXED_COMPANY_ID}/${r2Path}`;
+        
+        // company_id が含まれている場合は削除
+        if (r2Path.startsWith(`${FIXED_COMPANY_ID}/`)) {
+          // 新形式: "test_company/1025L280001/uuid.jpg" → 古形式: "1025L280001/uuid.jpg"
+          r2Key = r2Path.substring(FIXED_COMPANY_ID.length + 1);
         }
+        
+        // ✅ Flutter側が company_id 付きで保存するようになったらこのコードに戻す
+        // if (!r2Path.startsWith(FIXED_COMPANY_ID)) {
+        //   r2Key = `${FIXED_COMPANY_ID}/${r2Path}`;
+        // }
         
         // R2に存在するか確認
         if (!r2FileSet.has(r2Key)) {
@@ -458,8 +465,9 @@ app.get('/dashboard', async (c) => {
         // Phase A: 画像の優先順位チェック
         // 1️⃣ _f.png (最新の完成品) > 2️⃣ _p.png (白抜き画像) > 3️⃣ 元画像
         const filenameWithoutExt = filename.replace(/\.[^/.]+$/, '');
-        const finalKey = `${FIXED_COMPANY_ID}/${sku}/${filenameWithoutExt}_f.png`;
-        const processedKey = `${FIXED_COMPANY_ID}/${sku}/${filenameWithoutExt}_p.png`;
+        // ⚠️ 一時的に company_id なしでチェック（Flutter側が company_id なしで保存しているため）
+        const finalKey = `${sku}/${filenameWithoutExt}_f.png`;
+        const processedKey = `${sku}/${filenameWithoutExt}_p.png`;
         
         let displayUrl = null;
         let status = 'ready';
