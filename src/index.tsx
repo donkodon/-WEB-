@@ -109,14 +109,18 @@ app.get('/init', async (c) => {
     -- Products table (SKU)
     CREATE TABLE IF NOT EXISTS product_master (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      sku TEXT UNIQUE NOT NULL,
+      sku TEXT NOT NULL,
       name TEXT NOT NULL,
       category TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      company_id TEXT NOT NULL DEFAULT 'test_company',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(sku, company_id)
     );
 
     -- Indexes
     CREATE INDEX IF NOT EXISTS idx_product_master_sku ON product_master(sku);
+    CREATE INDEX IF NOT EXISTS idx_product_master_company_id ON product_master(company_id);
+    CREATE INDEX IF NOT EXISTS idx_product_master_sku_company ON product_master(sku, company_id);
 
     -- Seed
     INSERT OR IGNORE INTO users (email, name) VALUES ('user@example.com', 'Kenji');
@@ -156,7 +160,8 @@ app.get('/fix-schema', async (c) => {
         "ALTER TABLE product_master ADD COLUMN location TEXT",
         "ALTER TABLE product_master ADD COLUMN stock_quantity INTEGER",
         "ALTER TABLE product_master ADD COLUMN barcode TEXT",
-        "ALTER TABLE product_master ADD COLUMN status TEXT"
+        "ALTER TABLE product_master ADD COLUMN status TEXT",
+        "ALTER TABLE product_master ADD COLUMN company_id TEXT NOT NULL DEFAULT 'test_company'"
     ];
 
     const results = [];
@@ -3118,6 +3123,10 @@ app.post('/api/products/bulk-import', async (c) => {
             return c.json({ success: false, error: 'Invalid request: products array required' }, 400);
         }
 
+        // Get company_id from cookie (Phase 1: Dynamic company_id)
+        const companyId = getCompanyId(c);
+        console.log(`📦 CSV Import: company_id=${companyId}, products=${products.length}`);
+
         let inserted = 0;
         let updated = 0;
         const batch = [];
@@ -3125,9 +3134,9 @@ app.post('/api/products/bulk-import', async (c) => {
         const stmt = c.env.DB.prepare(`
             INSERT OR REPLACE INTO product_master (
                 sku, barcode, name, brand, category, size, color, 
-                price_sale, status, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(
-                (SELECT created_at FROM product_master WHERE sku = ?), 
+                price_sale, status, company_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(
+                (SELECT created_at FROM product_master WHERE sku = ? AND company_id = ?), 
                 ?
             ))
         `);
@@ -3135,10 +3144,10 @@ app.post('/api/products/bulk-import', async (c) => {
         for (const product of products) {
             if (!product.sku) continue;
 
-            // Check if product exists
+            // Check if product exists for this company
             const existing = await c.env.DB.prepare(
-                'SELECT sku FROM product_master WHERE sku = ?'
-            ).bind(product.sku).first();
+                'SELECT sku FROM product_master WHERE sku = ? AND company_id = ?'
+            ).bind(product.sku, companyId).first();
 
             if (existing) {
                 updated++;
@@ -3157,7 +3166,9 @@ app.post('/api/products/bulk-import', async (c) => {
                 product.color || null,
                 product.price || 0,
                 'Active',
+                companyId,    // Add company_id
                 product.sku,  // For COALESCE check
+                companyId,    // For COALESCE check
                 now           // Default created_at for new records
             ));
 
@@ -3363,10 +3374,14 @@ app.post('/api/sync-from-mobile', async (c) => {
         
         console.log('🔄 Syncing product data from mobile app API and R2 bucket...');
         
-        // Get all products from local database
+        // Get company_id from cookie (Phase 1: Dynamic company_id)
+        const companyId = getCompanyId(c);
+        console.log(`📦 Sync from mobile: company_id=${companyId}`);
+        
+        // Get all products from local database for this company
         const localProducts = await c.env.DB.prepare(`
-            SELECT sku FROM product_master
-        `).all();
+            SELECT sku FROM product_master WHERE company_id = ?
+        `).bind(companyId).all();
         
         const localSkus = new Set(localProducts.results.map((p: any) => p.sku));
         let syncedCount = 0;
@@ -3386,7 +3401,7 @@ app.post('/api/sync-from-mobile', async (c) => {
                     
                     try {
                         if (localSkus.has(sku)) {
-                            // Update existing product
+                            // Update existing product for this company
                             await c.env.DB.prepare(`
                                 UPDATE product_master SET
                                     name = ?,
@@ -3396,7 +3411,7 @@ app.post('/api/sync-from-mobile', async (c) => {
                                     price_sale = ?,
                                     barcode = ?,
                                     category = ?
-                                WHERE sku = ?
+                                WHERE sku = ? AND company_id = ?
                             `).bind(
                                 product.name || '',
                                 product.brand || null,
@@ -3405,17 +3420,18 @@ app.post('/api/sync-from-mobile', async (c) => {
                                 product.price || 0,
                                 product.barcode || null,
                                 product.category || null,
-                                sku
+                                sku,
+                                companyId
                             ).run();
                             
                             syncedCount++;
-                            console.log(`✅ Updated product: ${sku}`);
+                            console.log(`✅ Updated product: ${sku} for company_id: ${companyId}`);
                         } else {
-                            // Insert new product
+                            // Insert new product for this company
                             await c.env.DB.prepare(`
                                 INSERT INTO product_master (
-                                    sku, name, brand, size, color, price_sale, barcode, category, status, created_at
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                                    sku, name, brand, size, color, price_sale, barcode, category, status, company_id, created_at
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                             `).bind(
                                 sku,
                                 product.name || `商品 ${sku}`,
@@ -3425,11 +3441,12 @@ app.post('/api/sync-from-mobile', async (c) => {
                                 product.price || 0,
                                 product.barcode || null,
                                 product.category || null,
-                                'Active'
+                                'Active',
+                                companyId
                             ).run();
                             
                             insertedCount++;
-                            console.log(`✨ Inserted new product: ${sku}`);
+                            console.log(`✨ Inserted new product: ${sku} for company_id: ${companyId}`);
                         }
                     } catch (e) {
                         console.error(`❌ Failed to sync product ${sku}:`, e);
@@ -3468,10 +3485,14 @@ app.post('/api/sync-to-mobile', async (c) => {
         
         console.log('🔄 Syncing product data TO mobile app API...');
         
-        // Get all products from local database
+        // Get company_id from cookie (Phase 1: Dynamic company_id)
+        const companyId = getCompanyId(c);
+        console.log(`📦 Sync to mobile: company_id=${companyId}`);
+        
+        // Get all products from local database for this company
         const localProducts = await c.env.DB.prepare(`
-            SELECT * FROM product_master
-        `).all();
+            SELECT * FROM product_master WHERE company_id = ?
+        `).bind(companyId).all();
         
         let syncedCount = 0;
         let errorCount = 0;
