@@ -5023,21 +5023,21 @@ app.get('/api/download-product-data/:imageId', async (c) => {
             }
         }
         
-        // 3. 最終フォールバック: オリジナル画像をチェック
+        // 3. 最終フォールバック: オリジナル画像をチェック（WEB側のR2）
         if (!r2Object) {
             // 複数の拡張子を試行（jpg, jpeg, png, webp）
             const extensions = ['jpg', 'jpeg', 'png', 'webp'];
             
             for (const ext of extensions) {
                 const originalKey = `${companyId}/${sku}/${filenamePart}.${ext}`;
-                console.log('🔍 Step 3: Checking original image:', originalKey);
+                console.log('🔍 Step 3: Checking original image in WEB R2:', originalKey);
                 
                 try {
                     r2Object = await c.env.PRODUCT_IMAGES.get(originalKey);
                     if (r2Object) {
                         key = originalKey;
                         status = 'original';
-                        console.log('✅ Found original image:', originalKey);
+                        console.log('✅ Found original image in WEB R2:', originalKey);
                         break;
                     }
                 } catch (error) {
@@ -5046,24 +5046,88 @@ app.get('/api/download-product-data/:imageId', async (c) => {
             }
         }
         
-        // 4. どれも見つからない場合は404
+        // 4. 最終的なフォールバック: image-upload-api経由で元画像を取得
+        if (!r2Object) {
+            console.log('🔍 Step 4: Trying to fetch from image-upload-api');
+            const IMAGE_UPLOAD_API_URL = 'https://image-upload-api.jinkedon2.workers.dev';
+            const extensions = ['jpg', 'jpeg', 'png', 'webp'];
+            
+            let imageUrl = null;
+            let foundExt = 'jpg';
+            
+            for (const ext of extensions) {
+                const testUrl = `${IMAGE_UPLOAD_API_URL}/${companyId}/${sku}/${filenamePart}.${ext}`;
+                console.log('🔍 Testing:', testUrl);
+                
+                try {
+                    const response = await fetch(testUrl, { method: 'HEAD' });
+                    if (response.ok) {
+                        imageUrl = testUrl;
+                        foundExt = ext;
+                        status = 'original';
+                        console.log('✅ Found original image in image-upload-api:', testUrl);
+                        break;
+                    }
+                } catch (error) {
+                    // 次の拡張子を試す
+                }
+            }
+            
+            if (imageUrl) {
+                // image-upload-api経由で画像を取得してプロキシする
+                const filename = `${filenamePart}_${status}.${foundExt}`;
+                console.log('📝 Generated filename:', filename);
+                console.log('🔗 Fetching from image-upload-api:', imageUrl);
+                console.log('📊 Status:', status);
+                
+                try {
+                    // image-upload-apiから画像をフェッチ
+                    const response = await fetch(imageUrl);
+                    if (!response.ok) {
+                        throw new Error(`Failed to fetch from image-upload-api: ${response.status}`);
+                    }
+                    
+                    const imageBuffer = await response.arrayBuffer();
+                    console.log('✅ Successfully fetched image from image-upload-api, size:', imageBuffer.byteLength);
+                    
+                    // 画像データをBase64エンコードして返す
+                    const base64Image = btoa(
+                        new Uint8Array(imageBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+                    );
+                    const dataUrl = `data:image/${foundExt === 'jpg' || foundExt === 'jpeg' ? 'jpeg' : foundExt};base64,${base64Image}`;
+                    
+                    return c.json({
+                        imageUrl: dataUrl,
+                        filename: filename,
+                        sku: sku,
+                        status: status
+                    });
+                } catch (error) {
+                    console.error('❌ Error fetching from image-upload-api:', error);
+                    // Continue to check if there's an R2 object
+                }
+            }
+        }
+        
+        // 5. どれも見つからない場合は404
         if (!r2Object) {
             console.log('❌ No image found for:', filenamePart);
             return c.json({ 
                 error: 'No image available',
-                message: '画像が見つかりません'
+                message: '画像が見つかりません（WEB R2 と image-upload-api の両方で見つかりませんでした）'
             }, 404);
         }
         
-        // 5. プロキシURLを返す（Base64変換なし、33%オーバーヘッド削減）
+        // 6. WEB側のR2から取得した画像のプロキシURLを返す
         const extension = key.split('.').pop()?.toLowerCase() || 'jpg';
         const filename = `${filenamePart}_${status}.${extension}`;
         
         // プロキシURL経由で画像を配信（バイナリ直接）
-        const imageUrl = `/api/image-proxy/${sku}/${key.split('/')[1]}`;
+        const keyFilename = key.split('/').pop();
+        const imageUrl = `/api/image-proxy/${sku}/${keyFilename}`;
         
         console.log('📝 Generated filename:', filename);
-        console.log('🔗 Proxy URL:', imageUrl);
+        console.log('🔗 Proxy URL (WEB R2):', imageUrl);
         console.log('📊 Status:', status);
         
         return c.json({
