@@ -2332,13 +2332,13 @@ app.get('/settings', (c) => {
                      CSVインポート (在庫更新)
                  </h3>
                  
-                 <div id="drop-zone" class="border-2 border-dashed border-blue-100 bg-blue-50/50 rounded-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-blue-50 transition-colors h-64 relative">
-                     <input type="file" id="csv-input" class="hidden" accept=".csv,.tsv,text/csv,text/tab-separated-values" />
-                     <div class="bg-white w-16 h-16 rounded-full shadow-sm flex items-center justify-center mb-4 text-blue-500 text-2xl pointer-events-none">
+                 <input type="file" id="csv-input" class="hidden" accept=".csv,.tsv,text/csv,text/tab-separated-values" />
+                 <div id="drop-zone" class="border-2 border-dashed border-blue-100 bg-blue-50/50 rounded-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-blue-50 transition-colors h-64">
+                     <div class="bg-white w-16 h-16 rounded-full shadow-sm flex items-center justify-center mb-4 text-blue-500 text-2xl">
                          <i class="fas fa-cloud-upload-alt"></i>
                      </div>
-                     <p id="file-name" class="font-bold text-blue-600 mb-1 pointer-events-none">クリックして選択 <span class="text-gray-500 font-normal">またはドラッグ＆ドロップ</span></p>
-                     <p class="text-xs text-gray-400 pointer-events-none">CSV, TSV (最大 10MB)</p>
+                     <p id="file-name" class="font-bold text-blue-600 mb-1">クリックして選択 <span class="text-gray-500 font-normal">またはドラッグ＆ドロップ</span></p>
+                     <p class="text-xs text-gray-400">CSV, TSV (最大 10MB)</p>
                  </div>
                  
                  <div class="flex items-center justify-between mt-4">
