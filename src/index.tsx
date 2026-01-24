@@ -21,6 +21,13 @@ type Bindings = {
 // ==========================================
 const FIXED_COMPANY_ID = 'test_company';
 
+// Helper function to get company_id from cookie (Phase 1 dynamic company_id)
+function getCompanyId(c: any): string {
+  const cookies = c.req.header('Cookie') || '';
+  const companyIdMatch = cookies.match(/company_id=([^;]+)/);
+  return companyIdMatch ? companyIdMatch[1] : FIXED_COMPANY_ID;
+}
+
 // ==========================================
 // ImageUrlHelper: Utility for converting between R2 paths and full URLs
 // ==========================================
@@ -184,6 +191,25 @@ app.get('/', (c) => {
             
             <form action="/login" method="post" class="space-y-6">
               <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                  <i class="fas fa-building text-blue-600 mr-1"></i>
+                  企業ID
+                </label>
+                <input 
+                  type="text" 
+                  name="company_id" 
+                  value="test_company" 
+                  placeholder="例: test_company, ABC_company"
+                  class="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:outline-none" 
+                  required
+                />
+                <p class="text-xs text-gray-500 mt-1">
+                  <i class="fas fa-info-circle mr-1"></i>
+                  企業ごとにデータが分離されます（Phase 1: デモ用）
+                </p>
+              </div>
+              
+              <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">メールアドレス</label>
                 <input type="email" name="email" value="user@example.com" class="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
               </div>
@@ -262,7 +288,20 @@ app.get('/', (c) => {
 })
 
 app.post('/login', async (c) => {
-  // R2 image auto-sync removed - images are now fetched directly from R2 and mobile API when needed
+  // Get form data
+  const formData = await c.req.formData();
+  const companyId = formData.get('company_id') || 'test_company';
+  const email = formData.get('email');
+  
+  console.log(`🔐 Login attempt: company_id=${companyId}, email=${email}`);
+  
+  // Phase 1: Store company_id in cookie (no real authentication)
+  // Phase 2: Will use Firebase Auth with custom claims
+  
+  // Set cookie with company_id (expires in 30 days)
+  c.header('Set-Cookie', `company_id=${companyId}; Path=/; Max-Age=${30 * 24 * 60 * 60}; SameSite=Lax`);
+  
+  console.log(`✅ Login successful: company_id=${companyId}`);
   
   return c.redirect('/dashboard')
 })
@@ -270,6 +309,13 @@ app.post('/login', async (c) => {
 // --- Dashboard / Product List (Screenshot 2) ---
 app.get('/dashboard', async (c) => {
   try {
+    // ✅ Phase 1: Get company_id from cookie
+    const cookies = c.req.header('Cookie') || '';
+    const companyIdMatch = cookies.match(/company_id=([^;]+)/);
+    const companyId = companyIdMatch ? companyIdMatch[1] : FIXED_COMPANY_ID;
+    
+    console.log(`📊 Dashboard access: company_id=${companyId}`);
+    
     // Check if D1 database is available
     if (!c.env.DB) {
       return c.html(`
@@ -437,13 +483,13 @@ app.get('/dashboard', async (c) => {
         const pathParts = r2Path.split('/');
         const filename = pathParts[pathParts.length - 1];
         
-        // R2キーを構築 (Phase 1: Fixed company_id)
-        // ✅ 新形式のみ対応: test_company/1025L280001/uuid.jpg
+        // R2キーを構築 (Phase 1: Dynamic company_id from cookie)
+        // ✅ 新形式のみ対応: {company_id}/1025L280001/uuid.jpg
         let r2Key = r2Path;
         
         // company_idが含まれていない場合は追加
-        if (!r2Path.startsWith(`${FIXED_COMPANY_ID}/`)) {
-          r2Key = `${FIXED_COMPANY_ID}/${r2Path}`;
+        if (!r2Path.startsWith(`${companyId}/`)) {
+          r2Key = `${companyId}/${r2Path}`;
         }
         
         console.log(`🔍 R2 Key: ${r2Key}`);
@@ -462,9 +508,9 @@ app.get('/dashboard', async (c) => {
         // Phase A: 画像の優先順位チェック
         // 1️⃣ _f.png (最終編集画像) > 2️⃣ _p.png (白抜き画像) > 3️⃣ 元画像
         const filenameWithoutExt = filename.replace(/\.[^/.]+$/, '');
-        // ✅ 新形式: company_id 付きのパス
-        const finalKey = `${FIXED_COMPANY_ID}/${sku}/${filenameWithoutExt}_f.png`;
-        const processedKey = `${FIXED_COMPANY_ID}/${sku}/${filenameWithoutExt}_p.png`;
+        // ✅ 新形式: 動的 company_id 付きのパス
+        const finalKey = `${companyId}/${sku}/${filenameWithoutExt}_f.png`;
+        const processedKey = `${companyId}/${sku}/${filenameWithoutExt}_p.png`;
         
         let displayUrl = null;
         let status = 'ready';
@@ -1593,10 +1639,11 @@ app.get('/edit/:id', async (c) => {
         }
       }
       
-      // 3. Check for images in priority order: _f.png > _p.png > .jpg (Phase 1: Fixed company_id)
-      const finalKey = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}_f.png`;
-      const processedKey = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}_p.png`;
-      const originalKey = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}.jpg`;
+      // 3. Check for images in priority order: _f.png > _p.png > .jpg (Phase 1: Dynamic company_id)
+      const companyId = getCompanyId(c);
+      const finalKey = `${companyId}/${sku}/${filenamePart}_f.png`;
+      const processedKey = `${companyId}/${sku}/${filenamePart}_p.png`;
+      const originalKey = `${companyId}/${sku}/${filenamePart}.jpg`;
       
       let baseImageUrl = null;
       let originalUrl = null;
@@ -3496,8 +3543,9 @@ app.get('/api/edit-settings/:imageId', async (c) => {
         const sku = parts[1];
         const filenamePart = parts.slice(2).join('_'); // Handle filenames with underscores
         
-        // Build settings key: {sku}/{filename}_settings.json
-        const settingsKey = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}_settings.json`;
+        // Build settings key: {company_id}/{sku}/{filename}_settings.json (Phase 1: Dynamic company_id)
+        const companyId = getCompanyId(c);
+        const settingsKey = `${companyId}/${sku}/${filenamePart}_settings.json`;
         console.log('🔍 Looking for settings:', settingsKey);
 
         // Try to fetch settings from R2
@@ -3550,7 +3598,8 @@ app.post('/api/edit-settings/:imageId', async (c) => {
 
         const sku = parts[1];
         const filenamePart = parts.slice(2).join('_');
-        const settingsKey = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}_settings.json`;
+        const companyId = getCompanyId(c);
+        const settingsKey = `${companyId}/${sku}/${filenamePart}_settings.json`;
 
         // Extract data from request body
         const { adjustments, eraser_paths } = body;
@@ -3645,7 +3694,8 @@ app.delete('/api/edit-settings/:imageId', async (c) => {
 
         const sku = parts[1];
         const filenamePart = parts.slice(2).join('_');
-        const settingsKey = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}_settings.json`;
+        const companyId = getCompanyId(c);
+        const settingsKey = `${companyId}/${sku}/${filenamePart}_settings.json`;
 
         // Delete from R2
         await c.env.PRODUCT_IMAGES.delete(settingsKey);
@@ -3957,13 +4007,14 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
             if (parts.length >= 2) {
                 const sku = parts[0];
                 const filenamePart = parts.slice(1).join('_');
+                const companyId = getCompanyId(c);
                 
                 // Try common image extensions
                 const extensions = ['jpg', 'jpeg', 'png', 'webp'];
                 let found = false;
                 
                 for (const ext of extensions) {
-                    const testKey = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}.${ext}`;
+                    const testKey = `${companyId}/${sku}/${filenamePart}.${ext}`;
                     const testUrl = `${R2_PUBLIC_URL}/${testKey}`;
                     
                     // Test if file exists in R2
@@ -4014,12 +4065,13 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
                     const imageBuffer = await imageResponse.arrayBuffer();
                     
                     // Upload to R2 bucket
-                    // 新形式: {SKU}/{filename}_p.png（processedフォルダ廃止）
-                    // 例: r2_1025L280001_1025L280001_1 → 1025L280001/1025L280001_1_p.png
+                    // 新形式: {company_id}/{SKU}/{filename}_p.png（processedフォルダ廃止）
+                    // 例: r2_1025L280001_1025L280001_1 → test_company/1025L280001/1025L280001_1_p.png
                     const parts = imageId.replace('r2_', '').split('_');
                     const sku = parts[0];
                     const filenamePart = parts.slice(1).join('_');
-                    const r2Key = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}_p.png`;
+                    const companyId = getCompanyId(c);
+                    const r2Key = `${companyId}/${sku}/${filenamePart}_p.png`;
                     
                     if (c.env.PRODUCT_IMAGES) {
                         await c.env.PRODUCT_IMAGES.put(r2Key, imageBuffer, {
@@ -4074,12 +4126,13 @@ app.post('/api/remove-bg-image/:imageId', async (c) => {
                 }
                 
                 // Upload to R2 bucket
-                // 新形式: {SKU}/{filename}_p.png（processedフォルダ廃止）
-                // 例: r2_1025L280001_1025L280001_1 → 1025L280001/1025L280001_1_p.png
+                // 新形式: {company_id}/{SKU}/{filename}_p.png（processedフォルダ廃止）
+                // 例: r2_1025L280001_1025L280001_1 → test_company/1025L280001/1025L280001_1_p.png
                 const parts = imageId.replace('r2_', '').split('_');
                 const sku = parts[0];
                 const filenamePart = parts.slice(1).join('_');
-                const r2Key = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}_p.png`;
+                const companyId = getCompanyId(c);
+                const r2Key = `${companyId}/${sku}/${filenamePart}_p.png`;
                 
                 if (c.env.PRODUCT_IMAGES) {
                     await c.env.PRODUCT_IMAGES.put(r2Key, bytes, {
@@ -4607,9 +4660,10 @@ app.get('/api/download-processed-image/:imageId', async (c) => {
         const parts = imageId.replace('r2_', '').split('_');
         const sku = parts[0];
         const filenamePart = parts.slice(1).join('_');
+        const companyId = getCompanyId(c);
         
-        // 新形式で白抜き画像をチェック: {company_id}/{SKU}/{filename}_p.png (Phase 1: Fixed company_id)
-        const processedKey = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}_p.png`;
+        // 新形式で白抜き画像をチェック: {company_id}/{SKU}/{filename}_p.png (Phase 1: Dynamic company_id)
+        const processedKey = `${companyId}/${sku}/${filenamePart}_p.png`;
         let processedUrl = null;
         
         if (c.env.PRODUCT_IMAGES) {
@@ -4710,8 +4764,10 @@ app.post('/api/save-edited-image/:imageId', async (c) => {
         // Phase A: Build R2 key for FINAL image: {company_id}/{sku}/{filename}_f.png
         // _f.png = Final/Completed image (with edits applied)
         // _p.png = Processed/White-background only (preserved)
-        // Fixed company_id for Phase 1 (will be dynamic in Phase 2)
-        const companyId = 'test_company';
+        // Get company_id from cookie (Phase 1 with dynamic company_id)
+        const cookies = c.req.header('Cookie') || '';
+        const companyIdMatch = cookies.match(/company_id=([^;]+)/);
+        const companyId = companyIdMatch ? companyIdMatch[1] : FIXED_COMPANY_ID;
         const finalKey = `${companyId}/${sku}/${filenamePart}_f.png`;
         
         console.log('📂 Final image key:', finalKey);
@@ -4922,9 +4978,10 @@ app.get('/api/download-product-data/:imageId', async (c) => {
         let r2Object = null;
         let status = 'original';
         let key = '';
+        const companyId = getCompanyId(c);
         
-        // 1. 最優先: 編集済み画像をチェック（{company_id}/{sku}/{filename}_f.png）⭐ (Phase 1: Fixed company_id)
-        const finalKey = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}_f.png`;
+        // 1. 最優先: 編集済み画像をチェック（{company_id}/{sku}/{filename}_f.png）⭐ (Phase 1: Dynamic company_id)
+        const finalKey = `${companyId}/${sku}/${filenamePart}_f.png`;
         console.log('🔍 Step 1: Checking final edited image:', finalKey);
         
         try {
@@ -4938,9 +4995,9 @@ app.get('/api/download-product-data/:imageId', async (c) => {
             console.log('⚠️ No final edited image found');
         }
         
-        // 2. フォールバック: 白抜き画像をチェック（{company_id}/{sku}/{filename}_p.png） (Phase 1: Fixed company_id)
+        // 2. フォールバック: 白抜き画像をチェック（{company_id}/{sku}/{filename}_p.png） (Phase 1: Dynamic company_id)
         if (!r2Object) {
-            const processedKey = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}_p.png`;
+            const processedKey = `${companyId}/${sku}/${filenamePart}_p.png`;
             console.log('🔍 Step 2: Checking processed image:', processedKey);
             
             try {
@@ -4961,7 +5018,7 @@ app.get('/api/download-product-data/:imageId', async (c) => {
             const extensions = ['jpg', 'jpeg', 'png', 'webp'];
             
             for (const ext of extensions) {
-                const originalKey = `${FIXED_COMPANY_ID}/${sku}/${filenamePart}.${ext}`;
+                const originalKey = `${companyId}/${sku}/${filenamePart}.${ext}`;
                 console.log('🔍 Step 3: Checking original image:', originalKey);
                 
                 try {
@@ -5056,8 +5113,9 @@ app.get('/api/image-proxy/:sku/:filename', async (c) => {
             return c.json({ error: 'Filename too long' }, 400);
         }
         
-        // R2から画像を取得 (Phase 1: Fixed company_id)
-        const key = `${FIXED_COMPANY_ID}/${sku}/${filename}`;
+        // R2から画像を取得 (Phase 1: Dynamic company_id)
+        const companyId = getCompanyId(c);
+        const key = `${companyId}/${sku}/${filename}`;
         console.log('🔍 Fetching from R2:', key);
         
         const r2Object = await c.env.PRODUCT_IMAGES.get(key);
@@ -5162,16 +5220,17 @@ app.get('/debug/r2-folder', async (c) => {
             `);
         }
         
-        // SKUが指定されていない場合、SKUフォルダ一覧を表示 (Phase 1: Fixed company_id配下のみ)
+        // SKUが指定されていない場合、SKUフォルダ一覧を表示 (Phase 1: Dynamic company_id配下のみ)
         if (!sku) {
+            const companyId = getCompanyId(c);
             const listed = await c.env.PRODUCT_IMAGES.list({ 
-                prefix: `${FIXED_COMPANY_ID}/`,
+                prefix: `${companyId}/`,
                 delimiter: '/',
                 limit: 100
             });
             
             const folders = listed.delimitedPrefixes?.map(prefix => 
-                prefix.replace(`${FIXED_COMPANY_ID}/`, '').replace('/', '')
+                prefix.replace(`${companyId}/`, '').replace('/', '')
             ) || [];
             
             return c.html(`
@@ -5207,8 +5266,9 @@ app.get('/debug/r2-folder', async (c) => {
             `);
         }
         
-        // 特定のSKUフォルダの内容を表示 (Phase 1: Fixed company_id)
-        const prefix = `${FIXED_COMPANY_ID}/${sku}/`;
+        // 特定のSKUフォルダの内容を表示 (Phase 1: Dynamic company_id)
+        const companyId = getCompanyId(c);
+        const prefix = `${companyId}/${sku}/`;
         const listed = await c.env.PRODUCT_IMAGES.list({
             prefix: prefix,
             limit: 100
