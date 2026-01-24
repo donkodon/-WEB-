@@ -2349,7 +2349,7 @@ app.get('/settings', (c) => {
                  </div>
                  
                  <div class="flex justify-between items-center mt-6 pt-4 border-t border-gray-100">
-                     <a href="#" class="text-sm text-blue-600 hover:underline flex items-center">
+                     <a href="/api/download-csv-template" download="product_master_template.csv" class="text-sm text-blue-600 hover:underline flex items-center">
                          <i class="fas fa-download mr-1"></i> テンプレートCSVをダウンロード
                      </a>
                      <button id="btn-import" class="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700 shadow-md shadow-blue-200">
@@ -3110,6 +3110,21 @@ app.post('/api/import-csv', async (c) => {
             problemCount: problemRows.length,
             problemRows: problemRows.slice(0, 10), // First 10 problem rows (不明な製品)
             firstRowSample: count > 0 ? '解析済み' : 'データなし'
+        }
+    });
+});
+
+// --- API: Download CSV Template ---
+app.get('/api/download-csv-template', async (c) => {
+    const csvTemplate = `sku,barcode,name,brand,category,size,color,price,status
+SAMPLE-001,4901234567890,サンプル商品A,ブランドA,カテゴリA,M,ブルー,5000,Active
+SAMPLE-002,4901234567891,サンプル商品B,ブランドB,カテゴリB,L,レッド,8000,Active
+SAMPLE-003,4901234567892,サンプル商品C,ブランドC,カテゴリC,S,グリーン,3000,Active`;
+
+    return new Response(csvTemplate, {
+        headers: {
+            'Content-Type': 'text/csv; charset=utf-8',
+            'Content-Disposition': 'attachment; filename="product_master_template.csv"'
         }
     });
 });
