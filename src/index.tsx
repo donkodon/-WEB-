@@ -515,26 +515,37 @@ app.get('/dashboard', async (c) => {
         let displayUrl = null;
         let status = 'ready';
         
-        // image-upload-api経由でチェック
-        const finalUrl = `${IMAGE_UPLOAD_API_URL}/${finalKey}`;
-        const processedUrl = `${IMAGE_UPLOAD_API_URL}/${processedKey}`;
-        
-        // ⚠️ 簡易実装: 全て ready 状態として扱う
-        // TODO: 将来的に image-upload-api の /exists エンドポイントで確認
-        displayUrl = proxyUrl;
+        // Phase A: 優先順位に基づいて画像を選択
+        // 1️⃣ _f.png (編集済み最終画像) > 2️⃣ _p.png (白抜き画像) > 3️⃣ 元画像
+        displayUrl = proxyUrl;  // Default: 元画像（image-upload-api経由）
         status = 'ready';
         
-        // TODO: 将来的に image-upload-api の /exists エンドポイントで確認
-        // if (r2FileSet.has(finalKey)) {
-        //   displayUrl = finalUrl;
-        //   status = 'final';
-        // } else if (r2FileSet.has(processedKey)) {
-        //   displayUrl = processedUrl;
-        //   status = 'processed';
-        // } else {
-        //   displayUrl = proxyUrl;
-        //   status = 'ready';
-        // }
+        // WEB側のR2バケット（PRODUCT_IMAGES）で白抜き/編集済み画像をチェック
+        if (c.env.PRODUCT_IMAGES) {
+          try {
+            // Check for final edited image (_f.png) - WEB側のR2から配信
+            const finalObject = await c.env.PRODUCT_IMAGES.get(finalKey);
+            if (finalObject) {
+              // WEB側のR2から直接配信（/api/image-proxy経由）
+              displayUrl = `/api/image-proxy/${sku}/${filenameWithoutExt}_f.png?v=${Date.now()}`;
+              status = 'final';
+              console.log(`✅ Found FINAL image: ${finalKey}`);
+            } else {
+              // Check for processed image (_p.png) - WEB側のR2から配信
+              const processedObject = await c.env.PRODUCT_IMAGES.get(processedKey);
+              if (processedObject) {
+                // WEB側のR2から直接配信（/api/image-proxy経由）
+                displayUrl = `/api/image-proxy/${sku}/${filenameWithoutExt}_p.png?v=${Date.now()}`;
+                status = 'processed';
+                console.log(`✅ Found PROCESSED image: ${processedKey}`);
+              } else {
+                console.log(`📸 Using ORIGINAL image: ${r2Key}`);
+              }
+            }
+          } catch (error) {
+            console.warn(`⚠️ Error checking R2 for processed images:`, error);
+          }
+        }
         
         // 画像情報を追加（Sequence順を保持）
         productData.images.push({
