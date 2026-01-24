@@ -2333,7 +2333,7 @@ app.get('/settings', (c) => {
                  </h3>
                  
                  <div id="drop-zone" class="border-2 border-dashed border-blue-100 bg-blue-50/50 rounded-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-blue-50 transition-colors h-64 relative">
-                     <input type="file" id="csv-input" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" accept=".csv,.tsv,text/csv,text/tab-separated-values" />
+                     <input type="file" id="csv-input" class="hidden" accept=".csv,.tsv,text/csv,text/tab-separated-values" />
                      <div class="bg-white w-16 h-16 rounded-full shadow-sm flex items-center justify-center mb-4 text-blue-500 text-2xl pointer-events-none">
                          <i class="fas fa-cloud-upload-alt"></i>
                      </div>
@@ -2436,6 +2436,12 @@ app.get('/settings', (c) => {
                             // Show success message
                             alert('ファイル選択完了: ' + fileName + ' (' + Math.round(fileSize/1024) + ' KB)');
                         };
+                        
+                        // Click on drop zone to open file picker
+                        dropZone.addEventListener('click', (e) => {
+                            console.log('🖱️ Drop zone clicked');
+                            fileInput.click();
+                        });
                         
                         // File input change event
                         fileInput.addEventListener('change', (e) => {
