@@ -14,6 +14,7 @@ type Bindings = {
   IMAGE_UPLOAD_API_URL?: string
   PRODUCT_IMAGES?: R2Bucket
   AI: any // Cloudflare AI Workers binding
+  REPLICATE_API_KEY?: string // Replicate API key for auto-measurement
 }
 
 // ==========================================
@@ -1145,6 +1146,128 @@ app.get('/dashboard', async (c) => {
         })();
       `}} />
       
+      {/* Auto-Measurement Script */}
+      <script dangerouslySetInnerHTML={{__html: `
+        (function() {
+            console.log('📌 Auto-measurement script loaded');
+            
+            function initAutoMeasure() {
+                const autoMeasureBtn = document.getElementById('btn-auto-measure');
+                
+                if (!autoMeasureBtn) {
+                    console.error('❌ Auto-measure button not found!');
+                    return;
+                }
+                
+                if (autoMeasureBtn.dataset.initialized === 'true') {
+                    console.log('✅ Auto-measure already initialized, skipping');
+                    return;
+                }
+                autoMeasureBtn.dataset.initialized = 'true';
+                
+                console.log('✅ Adding click event listener to auto-measure button');
+                
+                autoMeasureBtn.addEventListener('click', async function(e) {
+                    e.preventDefault();
+                    console.log('🖱️ AUTO-MEASURE BUTTON CLICKED!');
+                    
+                    const checkedImages = document.querySelectorAll('input[name="image-select"]:checked');
+                    
+                    console.log('🔍 Found checked images:', checkedImages.length);
+                    
+                    if (checkedImages.length === 0) {
+                        alert('採寸する画像を選択してください（各画像の左上のチェックボックスを選択）');
+                        return;
+                    }
+                    
+                    const confirmation = confirm(
+                        checkedImages.length + '枚の画像を自動採寸しますか？\\n\\n' +
+                        '※ Replicate API の料金が発生します。\\n' +
+                        '※ 1枚あたり約8秒かかります（合計: 約' + Math.ceil(checkedImages.length * 8) + '秒）'
+                    );
+                    if (!confirmation) return;
+                    
+                    autoMeasureBtn.disabled = true;
+                    autoMeasureBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>採寸中...';
+                    
+                    let successCount = 0;
+                    let failCount = 0;
+                    
+                    for (const checkbox of checkedImages) {
+                        const imageId = checkbox.dataset.imageId;
+                        const imageUrl = checkbox.dataset.imageUrl;
+                        const sku = checkbox.dataset.sku;
+                        
+                        if (!imageId || !imageUrl || !sku) {
+                            console.warn('⚠️ Missing data, skipping');
+                            failCount++;
+                            continue;
+                        }
+                        
+                        try {
+                            console.log('📏 Starting auto-measurement for:', sku);
+                            const res = await fetch('/api/auto-measure', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    imageId: imageId,
+                                    imageUrl: imageUrl,
+                                    sku: sku
+                                })
+                            });
+                            
+                            if (res.ok) {
+                                const data = await res.json();
+                                console.log('✅ Measurement success:', data);
+                                successCount++;
+                                
+                                // 成功バッジを追加
+                                const imageContainer = checkbox.closest('[data-image-id]') || checkbox.closest('.relative.group');
+                                if (imageContainer) {
+                                    const badgeContainer = imageContainer.querySelector('.w-full.h-full.bg-white');
+                                    if (badgeContainer) {
+                                        const measureBadge = document.createElement('div');
+                                        measureBadge.className = 'absolute top-2 right-2 bg-purple-500 text-white px-2 py-1 rounded-full text-[10px] font-bold opacity-100 shadow-lg z-10';
+                                        measureBadge.innerHTML = '<i class="fas fa-ruler-combined mr-1"></i>採寸完了';
+                                        badgeContainer.appendChild(measureBadge);
+                                    }
+                                }
+                            } else {
+                                const error = await res.json();
+                                console.error('❌ Measurement failed:', error);
+                                failCount++;
+                            }
+                        } catch (error) {
+                            console.error('❌ Error:', error);
+                            failCount++;
+                        }
+                    }
+                    
+                    autoMeasureBtn.disabled = false;
+                    autoMeasureBtn.innerHTML = '<i class="fas fa-ruler-combined mr-2"></i>選択画像を自動採寸';
+                    
+                    alert(
+                        '自動採寸完了\\n\\n' +
+                        '✅ 成功: ' + successCount + '枚\\n' +
+                        '❌ 失敗: ' + failCount + '枚'
+                    );
+                    
+                    if (successCount > 0) {
+                        window.location.reload();
+                    }
+                });
+            }
+            
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initAutoMeasure);
+            } else {
+                initAutoMeasure();
+            }
+        })();
+      `}} />
+      
       {/* Mobile App Sync Script */}
       <script dangerouslySetInnerHTML={{__html: `
         (function() {
@@ -1298,6 +1421,8 @@ app.get('/dashboard', async (c) => {
                                    name="image-select" 
                                    data-image-id={img.id}
                                    data-product-id={product.id}
+                                   data-sku={product.sku}
+                                   data-image-url={img.display_url}
                                    class="w-4 h-4 bg-white border-gray-300 rounded cursor-pointer image-checkbox" 
                                    onclick="event.stopPropagation();"
                                    onchange={`updateSkuCheckbox(${product.id})`}
@@ -1590,6 +1715,169 @@ app.get('/dashboard', async (c) => {
     `)
   }
 })
+
+// ==========================================
+// API: Auto-Measurement with Replicate
+// ==========================================
+app.post('/api/auto-measure', async (c) => {
+  const { imageId, imageUrl, sku } = await c.req.json();
+  const companyId = getCompanyId(c);
+  
+  console.log(`🔬 Auto-measure request: imageId=${imageId}, sku=${sku}`);
+  
+  // 1. Get category from product_master
+  const productResult = await c.env.DB.prepare(`
+    SELECT category, name 
+    FROM product_master 
+    WHERE sku = ? AND company_id = ?
+  `).bind(sku, companyId).first();
+  
+  if (!productResult) {
+    return c.json({ success: false, error: 'Product not found' }, 404);
+  }
+  
+  const category = productResult.category || '不明';
+  const garmentClass = 'long sleeve top'; // TODO: Map category to garment_class
+  
+  // 2. Check if REPLICATE_API_KEY is configured
+  if (!c.env.REPLICATE_API_KEY) {
+    console.error('❌ REPLICATE_API_KEY is not configured');
+    return c.json({ 
+      success: false, 
+      error: 'REPLICATE_API_KEY is not configured. Please set it in Cloudflare Pages environment variables.' 
+    }, 500);
+  }
+  
+  console.log(`📤 Sending to Replicate API: ${imageUrl}, garment_class=${garmentClass}`);
+  
+  try {
+    // 3. Create Replicate prediction
+    const createResponse = await fetch('https://api.replicate.com/v1/predictions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Token ${c.env.REPLICATE_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        version: '6f4a150f6355b07eff5151b7ef49f2bf0b297bd329ee5f17a46e283f0685f926',
+        input: {
+          image: imageUrl,
+          garment_class: garmentClass
+        }
+      })
+    });
+    
+    if (!createResponse.ok) {
+      const errorText = await createResponse.text();
+      console.error('❌ Replicate API error:', errorText);
+      return c.json({ success: false, error: 'Failed to create prediction', details: errorText }, 500);
+    }
+    
+    const prediction = await createResponse.json();
+    const predictionId = prediction.id;
+    
+    console.log(`⏳ Prediction created: ${predictionId}`);
+    
+    // 4. Poll for result (max 60 seconds)
+    let result = prediction;
+    let attempts = 0;
+    const maxAttempts = 30; // 30 × 2s = 60s
+    
+    while (result.status !== 'succeeded' && result.status !== 'failed' && attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+      
+      const statusResponse = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
+        headers: {
+          'Authorization': `Token ${c.env.REPLICATE_API_KEY}`
+        }
+      });
+      
+      result = await statusResponse.json();
+      attempts++;
+      
+      console.log(`⏳ Polling (${attempts}/${maxAttempts}): status=${result.status}`);
+    }
+    
+    // 5. Check result
+    if (result.status !== 'succeeded') {
+      console.error('❌ Prediction failed or timed out:', result);
+      return c.json({ 
+        success: false, 
+        error: 'Measurement failed or timed out',
+        details: result 
+      }, 500);
+    }
+    
+    console.log('✅ Measurement succeeded');
+    
+    // 6. Save to database
+    const output = result.output;
+    
+    // Generate item_code
+    const itemResult = await c.env.DB.prepare(`
+      SELECT item_code 
+      FROM product_items 
+      WHERE sku = ? 
+      ORDER BY created_at DESC 
+      LIMIT 1
+    `).bind(sku).first();
+    
+    let itemCode;
+    if (itemResult) {
+      const baseCode = itemResult.item_code.split('-')[0];
+      const nextNumber = parseInt(itemResult.item_code.split('-').pop() || '0') + 1;
+      itemCode = `${baseCode}-${String(nextNumber).padStart(3, '0')}`;
+    } else {
+      itemCode = `${sku}-001`;
+    }
+    
+    // Save to product_items
+    await c.env.DB.prepare(`
+      INSERT INTO product_items (
+        sku, 
+        item_code, 
+        image_urls,
+        ai_landmarks, 
+        reference_object, 
+        measurements, 
+        annotated_image_url,
+        measurement_status,
+        measurement_category,
+        measured_at,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      sku,
+      itemCode,
+      JSON.stringify([imageUrl]),
+      JSON.stringify(output.landmarks),
+      JSON.stringify({ pixelPerCm: output.pixel_per_cm }),
+      JSON.stringify(output.measurements),
+      output.image,
+      'auto',
+      garmentClass,
+      new Date().toISOString(),
+      new Date().toISOString()
+    ).run();
+    
+    console.log(`💾 Saved measurement data: item_code=${itemCode}`);
+    
+    return c.json({
+      success: true,
+      itemCode: itemCode,
+      measurements: output.measurements,
+      annotatedImage: output.image,
+      pixelPerCm: output.pixel_per_cm
+    });
+    
+  } catch (error: any) {
+    console.error('❌ Auto-measure error:', error);
+    return c.json({ 
+      success: false, 
+      error: error.message 
+    }, 500);
+  }
+});
 
 // --- API: Image Upload Endpoint ---
 app.post('/api/upload-image', async (c) => {
