@@ -607,10 +607,7 @@ app.get('/dashboard', async (c) => {
                 <i class="fas fa-magic mr-2"></i>
                 商品データDL
             </button>
-            <button id="btn-sync-mobile" class="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center hover:bg-blue-700 transition-colors text-sm font-medium">
-                <i class="fas fa-sync-alt mr-2"></i>
-                スマホから同期
-            </button>
+
         </div>
       </div>
       
