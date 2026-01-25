@@ -27,12 +27,19 @@
     "binding": "AI"
   },
   
-  // D1 Database - Production database for product master data
+  // D1 Database - Multi-tenant architecture with dedicated databases per company
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "measure-master-db",
-      "database_id": "7fad5dc0-abce-4816-b667-193490cf9650"
+      "database_id": "7fad5dc0-abce-4816-b667-193490cf9650",
+      "preview_database_id": "DB"
+    },
+    {
+      "binding": "DB_test_company",
+      "database_name": "measure-master-test-company",
+      "database_id": "0688cac8-ce37-46e7-954a-39e1d6368518",
+      "preview_database_id": "DB_test_company"
     }
   ]
 }

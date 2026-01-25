@@ -5,7 +5,7 @@ import { Layout } from './components'
 import { Buffer } from 'node:buffer'
 
 type Bindings = {
-  DB: D1Database
+  DB: D1Database  // Default database (shared/admin)
   FAL_API_KEY?: string
   BRIA_API_KEY?: string
   BG_REMOVAL_API_URL?: string
@@ -14,18 +14,39 @@ type Bindings = {
   IMAGE_UPLOAD_API_URL?: string
   PRODUCT_IMAGES?: R2Bucket
   AI: any // Cloudflare AI Workers binding
+  // Dynamic database bindings for multi-tenant architecture
+  [key: string]: D1Database | R2Bucket | string | any
 }
 
 // ==========================================
-// Phase 1: Fixed company_id (will be dynamic in Phase 2 with Firebase Auth)
+// Phase 2: Multi-tenant architecture with dedicated databases per company
 // ==========================================
 const FIXED_COMPANY_ID = 'test_company';
 
-// Helper function to get company_id from cookie (Phase 1 dynamic company_id)
+// Company database mapping configuration
+// Maps company_id to D1 database binding name
+const COMPANY_DB_MAPPING: Record<string, string> = {
+  'test_company': 'DB_test_company',  // Dedicated database for test_company
+  // Future companies will have dedicated database bindings:
+  // 'company_b': 'DB_company_b',
+  // 'company_c': 'DB_company_c',
+};
+
+// Helper function to get company_id from cookie
 function getCompanyId(c: any): string {
   const cookies = c.req.header('Cookie') || '';
   const companyIdMatch = cookies.match(/company_id=([^;]+)/);
   return companyIdMatch ? companyIdMatch[1] : FIXED_COMPANY_ID;
+}
+
+// Helper function to get company-specific database
+function getCompanyDatabase(c: any): D1Database {
+  const companyId = getCompanyId(c);
+  const dbBinding = COMPANY_DB_MAPPING[companyId] || 'DB';
+  
+  console.log(`🗄️ Using database binding: ${dbBinding} for company: ${companyId}`);
+  
+  return c.env[dbBinding] as D1Database;
 }
 
 // ==========================================
@@ -134,7 +155,7 @@ app.get('/init', async (c) => {
   // Split by semicolon and run each
   const statements = sql.split(';').filter(s => s.trim().length > 0);
   for (const stmt of statements) {
-    await c.env.DB.prepare(stmt).run();
+    await getCompanyDatabase(c).prepare(stmt).run();
   }
   
   return c.text('Database initialized and seeded!');
@@ -167,7 +188,7 @@ app.get('/fix-schema', async (c) => {
     const results = [];
     for (const sql of alterations) {
         try {
-            await c.env.DB.prepare(sql).run();
+            await getCompanyDatabase(c).prepare(sql).run();
             results.push(`Success: ${sql}`);
         } catch (e: any) {
             results.push(`Skipped (or error): ${sql} -> ${e.message}`);
@@ -322,7 +343,7 @@ app.get('/dashboard', async (c) => {
     console.log(`📊 Dashboard access: company_id=${companyId}`);
     
     // Check if D1 database is available
-    if (!c.env.DB) {
+    if (!getCompanyDatabase(c)) {
       return c.html(`
         <!DOCTYPE html>
         <html>
@@ -368,7 +389,7 @@ app.get('/dashboard', async (c) => {
     // 1. product_master テーブルから全てのSKUを取得
     console.log('🔄 Fetching SKUs from product_master table...');
     
-    const productMasterResult = await c.env.DB.prepare(`
+    const productMasterResult = await getCompanyDatabase(c).prepare(`
       SELECT 
         sku,
         name,
@@ -408,7 +429,7 @@ app.get('/dashboard', async (c) => {
     // 3. product_items から image_urls を取得（Sequence順を保持）
     console.log('🔄 Fetching image_urls from product_items table...');
     
-    const productItemsResult = await c.env.DB.prepare(`
+    const productItemsResult = await getCompanyDatabase(c).prepare(`
       SELECT sku, image_urls, updated_at 
       FROM product_items
       WHERE image_urls IS NOT NULL AND image_urls != '[]'
@@ -1632,7 +1653,7 @@ app.get('/edit/:id', async (c) => {
       // 1. Get updated_at from D1 for cache busting
       let updatedAt = new Date().toISOString();
       try {
-        const dbResult = await c.env.DB.prepare(`
+        const dbResult = await getCompanyDatabase(c).prepare(`
           SELECT updated_at FROM product_items WHERE sku = ? LIMIT 1
         `).bind(sku).first();
         if (dbResult && dbResult.updated_at) {
@@ -2701,13 +2722,13 @@ app.post('/api/import-csv', async (c) => {
     console.log('📋 CSV Index Mapping:', JSON.stringify(idx, null, 2));
     console.log('📋 Headers:', JSON.stringify(headers, null, 2));
     
-    // Prepared statement for insertion (with company_id)
-    const stmt = c.env.DB.prepare(`
+    // Prepared statement for insertion (dedicated DB - no company_id column needed)
+    const stmt = getCompanyDatabase(c).prepare(`
         INSERT OR REPLACE INTO product_master (
             sku, name, brand, brand_kana, size, color, price_cost, price_sale, 
             stock_quantity, barcode, status, category, category_sub, season, 
-            rank, buyer, store_name, price_ref, price_list, location, company_id, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            rank, buyer, store_name, price_ref, price_list, location, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const batch = [];
@@ -2757,7 +2778,7 @@ app.post('/api/import-csv', async (c) => {
             return parseInt(val.replace(/,/g, '').replace(/[¥￥]/g, '')) || 0;
         };
 
-        // Use safe getter for all values (including company_id)
+        // Use safe getter for all values (dedicated DB - no company_id needed)
         batch.push(stmt.bind(
             sku,
             name,
@@ -2779,7 +2800,6 @@ app.post('/api/import-csv', async (c) => {
             cleanInt(getRowValue(row, idx.ref_price) || '0'),
             cleanInt(getRowValue(row, idx.list_price) || '0'),
             getRowValue(row, idx.location),
-            companyId,  // Add company_id from cookie
             new Date().toISOString()
         ));
         
@@ -2788,7 +2808,7 @@ app.post('/api/import-csv', async (c) => {
         // Execute batch every 50 rows
         if (batch.length >= 50) {
             console.log(`💾 Executing batch: ${batch.length} rows`);
-            await c.env.DB.batch(batch);
+            await getCompanyDatabase(c).batch(batch);
             console.log(`✅ Batch executed successfully`);
             batch.length = 0;
         }
@@ -2796,7 +2816,7 @@ app.post('/api/import-csv', async (c) => {
     
     if (batch.length > 0) {
         console.log(`💾 Executing final batch: ${batch.length} rows`);
-        await c.env.DB.batch(batch);
+        await getCompanyDatabase(c).batch(batch);
         console.log(`✅ Final batch executed successfully`);
     }
     
@@ -2846,20 +2866,20 @@ app.post('/api/products/bulk-import', async (c) => {
             return c.json({ success: false, error: 'Invalid request: products array required' }, 400);
         }
 
-        // Get company_id from cookie (Phase 1: Dynamic company_id)
+        // Get company_id from cookie (Phase 2: Dedicated DB per company)
         const companyId = getCompanyId(c);
-        console.log(`📦 CSV Import: company_id=${companyId}, products=${products.length}`);
+        console.log(`📦 Bulk Import: company_id=${companyId}, products=${products.length}`);
 
         let inserted = 0;
         let updated = 0;
         const batch = [];
 
-        const stmt = c.env.DB.prepare(`
+        const stmt = getCompanyDatabase(c).prepare(`
             INSERT OR REPLACE INTO product_master (
                 sku, barcode, name, brand, category, size, color, 
-                price_sale, status, company_id, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(
-                (SELECT created_at FROM product_master WHERE sku = ? AND company_id = ?), 
+                price_sale, status, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(
+                (SELECT created_at FROM product_master WHERE sku = ?), 
                 ?
             ))
         `);
@@ -2867,10 +2887,10 @@ app.post('/api/products/bulk-import', async (c) => {
         for (const product of products) {
             if (!product.sku) continue;
 
-            // Check if product exists for this company
-            const existing = await c.env.DB.prepare(
-                'SELECT sku FROM product_master WHERE sku = ? AND company_id = ?'
-            ).bind(product.sku, companyId).first();
+            // Check if product exists (no company_id needed - dedicated DB)
+            const existing = await getCompanyDatabase(c).prepare(
+                'SELECT sku FROM product_master WHERE sku = ?'
+            ).bind(product.sku).first();
 
             if (existing) {
                 updated++;
@@ -2889,22 +2909,20 @@ app.post('/api/products/bulk-import', async (c) => {
                 product.color || null,
                 product.price || 0,
                 'Active',
-                companyId,    // Add company_id
-                product.sku,  // For COALESCE check
-                companyId,    // For COALESCE check
+                product.sku,  // For COALESCE check (no company_id needed)
                 now           // Default created_at for new records
             ));
 
             // Execute batch every 50 rows
             if (batch.length >= 50) {
-                await c.env.DB.batch(batch);
+                await getCompanyDatabase(c).batch(batch);
                 batch.length = 0;
             }
         }
 
         // Execute remaining batch
         if (batch.length > 0) {
-            await c.env.DB.batch(batch);
+            await getCompanyDatabase(c).batch(batch);
         }
         
         // Also sync to mobile app API
@@ -2951,7 +2969,7 @@ app.post('/api/products/bulk-import', async (c) => {
 // 他のアプリからデータを引っ張るための「窓口」です
 app.get('/api/products/list', async (c) => {
     // データベースから全商品を取得
-    const result = await c.env.DB.prepare(`
+    const result = await getCompanyDatabase(c).prepare(`
         SELECT 
             id, sku, name, brand, size, color, 
             price_sale, stock_quantity, status, 
@@ -2979,7 +2997,7 @@ app.get('/api/products/search', async (c) => {
             return c.json({ success: false, error: 'SKU parameter required' }, 400);
         }
 
-        const product = await c.env.DB.prepare(`
+        const product = await getCompanyDatabase(c).prepare(`
             SELECT 
                 sku, barcode, name, brand, category, size, color, 
                 price_sale as price, status, created_at, created_at as updated_at
@@ -3101,10 +3119,10 @@ app.post('/api/sync-from-mobile', async (c) => {
         const companyId = getCompanyId(c);
         console.log(`📦 Sync from mobile: company_id=${companyId}`);
         
-        // Get all products from local database for this company
-        const localProducts = await c.env.DB.prepare(`
-            SELECT sku FROM product_master WHERE company_id = ?
-        `).bind(companyId).all();
+        // Get all products from local database (dedicated DB - no company_id filter needed)
+        const localProducts = await getCompanyDatabase(c).prepare(`
+            SELECT sku FROM product_master
+        `).all();
         
         const localSkus = new Set(localProducts.results.map((p: any) => p.sku));
         let syncedCount = 0;
@@ -3125,7 +3143,7 @@ app.post('/api/sync-from-mobile', async (c) => {
                     try {
                         if (localSkus.has(sku)) {
                             // Update existing product for this company
-                            await c.env.DB.prepare(`
+                            await getCompanyDatabase(c).prepare(`
                                 UPDATE product_master SET
                                     name = ?,
                                     brand = ?,
@@ -3134,7 +3152,7 @@ app.post('/api/sync-from-mobile', async (c) => {
                                     price_sale = ?,
                                     barcode = ?,
                                     category = ?
-                                WHERE sku = ? AND company_id = ?
+                                WHERE sku = ?
                             `).bind(
                                 product.name || '',
                                 product.brand || null,
@@ -3143,18 +3161,17 @@ app.post('/api/sync-from-mobile', async (c) => {
                                 product.price || 0,
                                 product.barcode || null,
                                 product.category || null,
-                                sku,
-                                companyId
+                                sku
                             ).run();
                             
                             syncedCount++;
                             console.log(`✅ Updated product: ${sku} for company_id: ${companyId}`);
                         } else {
-                            // Insert new product for this company
-                            await c.env.DB.prepare(`
+                            // Insert new product (dedicated DB - no company_id column)
+                            await getCompanyDatabase(c).prepare(`
                                 INSERT INTO product_master (
-                                    sku, name, brand, size, color, price_sale, barcode, category, status, company_id, created_at
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                                    sku, name, brand, size, color, price_sale, barcode, category, status, created_at
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                             `).bind(
                                 sku,
                                 product.name || `商品 ${sku}`,
@@ -3164,8 +3181,7 @@ app.post('/api/sync-from-mobile', async (c) => {
                                 product.price || 0,
                                 product.barcode || null,
                                 product.category || null,
-                                'Active',
-                                companyId
+                                'Active'
                             ).run();
                             
                             insertedCount++;
@@ -3212,10 +3228,10 @@ app.post('/api/sync-to-mobile', async (c) => {
         const companyId = getCompanyId(c);
         console.log(`📦 Sync to mobile: company_id=${companyId}`);
         
-        // Get all products from local database for this company
-        const localProducts = await c.env.DB.prepare(`
-            SELECT * FROM product_master WHERE company_id = ?
-        `).bind(companyId).all();
+        // Get all products from local database (dedicated DB - no company_id filter)
+        const localProducts = await getCompanyDatabase(c).prepare(`
+            SELECT * FROM product_master
+        `).all();
         
         let syncedCount = 0;
         let errorCount = 0;
@@ -4049,13 +4065,13 @@ app.post('/api/sync-from-bubble', async (c) => {
                 const imageUrl = `${R2_PUBLIC_URL}/${filename}`;
                 
                 // Check if product exists
-                const product = await c.env.DB.prepare(`
+                const product = await getCompanyDatabase(c).prepare(`
                     SELECT id FROM product_master WHERE sku = ?
                 `).bind(sku).first();
                 
                 if (!product) {
                     // Create product if not exists
-                    await c.env.DB.prepare(`
+                    await getCompanyDatabase(c).prepare(`
                         INSERT OR IGNORE INTO product_master (sku, name, category)
                         VALUES (?, ?, ?)
                     `).bind(sku, `商品 ${sku}`, 'Imported').run();
@@ -4089,7 +4105,7 @@ app.post('/api/sync-from-bubble', async (c) => {
         console.log('🔄 Syncing from R2 public URL...');
         
         // Get all existing products
-        const products = await c.env.DB.prepare(`
+        const products = await getCompanyDatabase(c).prepare(`
             SELECT sku FROM products
         `).all();
         
@@ -4134,12 +4150,12 @@ app.post('/api/register-image', async (c) => {
         }
         
         // Check if product exists, create if not
-        const product = await c.env.DB.prepare(`
+        const product = await getCompanyDatabase(c).prepare(`
             SELECT id FROM product_master WHERE sku = ?
         `).bind(sku).first();
         
         if (!product) {
-            await c.env.DB.prepare(`
+            await getCompanyDatabase(c).prepare(`
                 INSERT INTO product_master (sku, name, category)
                 VALUES (?, ?, ?)
             `).bind(sku, `商品 ${sku}`, 'Imported').run();
@@ -4206,7 +4222,7 @@ app.post('/api/export-selected-csv', async (c) => {
             ORDER BY p.sku, i.id
         `;
         
-        const result = await c.env.DB.prepare(query).bind(...imageIds).all();
+        const result = await getCompanyDatabase(c).prepare(query).bind(...imageIds).all();
         
         if (!result.results || result.results.length === 0) {
             return c.text('No data found', 404);
@@ -4547,7 +4563,7 @@ app.post('/api/save-edited-image/:imageId', async (c) => {
         console.log('✅ Saved final image to R2:', finalKey);
         
         // Update D1 updated_at timestamp for cache busting
-        await c.env.DB.prepare(`
+        await getCompanyDatabase(c).prepare(`
             UPDATE product_items 
             SET updated_at = CURRENT_TIMESTAMP 
             WHERE sku = ?
@@ -4624,7 +4640,7 @@ app.post('/api/export-product-items', async (c) => {
             ORDER BY sku, item_code
         `;
         
-        const result = await c.env.DB.prepare(query).bind(...skus).all();
+        const result = await getCompanyDatabase(c).prepare(query).bind(...skus).all();
         
         console.log('✅ Query result:', result.results?.length, 'items');
         
@@ -5244,7 +5260,7 @@ app.post('/api/reorder-images', async (c) => {
         }
         
         // 1. 現在の image_urls を取得
-        const result = await c.env.DB.prepare(`
+        const result = await getCompanyDatabase(c).prepare(`
             SELECT image_urls FROM product_items WHERE sku = ?
         `).bind(sku).first();
         
@@ -5292,7 +5308,7 @@ app.post('/api/reorder-images', async (c) => {
         }
         
         // 4. D1 を更新
-        await c.env.DB.prepare(`
+        await getCompanyDatabase(c).prepare(`
             UPDATE product_items 
             SET image_urls = ?, updated_at = CURRENT_TIMESTAMP 
             WHERE sku = ?
@@ -5479,6 +5495,191 @@ app.get('/api/admin/r2-stats', async (c) => {
     return c.json({
       success: false,
       error: 'Failed to get R2 stats',
+      details: error.message
+    }, 500);
+  }
+});
+
+// ==========================================
+// Admin API: Data Migration (Company DB Separation)
+// ==========================================
+
+// Migrate company data from shared DB to dedicated DB
+app.post('/api/admin/migrate-company-data', async (c) => {
+  try {
+    const { companyId, dryRun = false } = await c.req.json();
+    
+    if (!companyId) {
+      return c.json({ success: false, error: 'company_id is required' }, 400);
+    }
+    
+    console.log(`🚀 Starting data migration for company: ${companyId} (dryRun: ${dryRun})`);
+    
+    // Source DB (shared database with company_id column)
+    const sourceDB = c.env.DB as D1Database;
+    
+    // Target DB (dedicated database for this company)
+    const targetDBBinding = COMPANY_DB_MAPPING[companyId];
+    if (!targetDBBinding) {
+      return c.json({ 
+        success: false, 
+        error: `No database binding found for company: ${companyId}. Please add to COMPANY_DB_MAPPING and wrangler.jsonc` 
+      }, 400);
+    }
+    
+    const targetDB = c.env[targetDBBinding] as D1Database;
+    if (!targetDB) {
+      return c.json({ 
+        success: false, 
+        error: `Database binding ${targetDBBinding} not found in environment` 
+      }, 500);
+    }
+    
+    // Step 1: Export data from source DB
+    console.log(`📤 Exporting data from source DB for company_id: ${companyId}`);
+    const sourceData = await sourceDB.prepare(`
+      SELECT 
+        sku, name, brand, brand_kana, size, color, category, category_sub, 
+        price_cost, season, rank, release_date, buyer, store_name, 
+        price_ref, price_sale, price_list, location, stock_quantity, 
+        barcode, status, created_at, updated_at
+      FROM product_master 
+      WHERE company_id = ?
+    `).bind(companyId).all();
+    
+    const recordCount = sourceData.results.length;
+    console.log(`✅ Exported ${recordCount} records for ${companyId}`);
+    
+    if (dryRun) {
+      return c.json({
+        success: true,
+        message: 'Dry run completed (no data written)',
+        companyId,
+        recordCount,
+        sourceDB: 'measure-master-db',
+        targetDB: targetDBBinding,
+        sampleData: sourceData.results.slice(0, 3)
+      });
+    }
+    
+    // Step 2: Insert data into target DB (without company_id column)
+    console.log(`📥 Inserting ${recordCount} records into target DB: ${targetDBBinding}`);
+    
+    const insertStmt = targetDB.prepare(`
+      INSERT OR REPLACE INTO product_master (
+        sku, name, brand, brand_kana, size, color, category, category_sub,
+        price_cost, season, rank, release_date, buyer, store_name,
+        price_ref, price_sale, price_list, location, stock_quantity,
+        barcode, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    
+    const batch = [];
+    let processedCount = 0;
+    
+    for (const row of sourceData.results) {
+      batch.push(insertStmt.bind(
+        row.sku,
+        row.name,
+        row.brand,
+        row.brand_kana,
+        row.size,
+        row.color,
+        row.category,
+        row.category_sub,
+        row.price_cost,
+        row.season,
+        row.rank,
+        row.release_date,
+        row.buyer,
+        row.store_name,
+        row.price_ref,
+        row.price_sale,
+        row.price_list,
+        row.location,
+        row.stock_quantity,
+        row.barcode,
+        row.status,
+        row.created_at,
+        row.updated_at
+      ));
+      
+      processedCount++;
+      
+      // Execute batch every 50 rows
+      if (batch.length >= 50) {
+        await targetDB.batch(batch);
+        console.log(`💾 Batch inserted: ${batch.length} rows (total: ${processedCount}/${recordCount})`);
+        batch.length = 0;
+      }
+    }
+    
+    // Execute remaining batch
+    if (batch.length > 0) {
+      await targetDB.batch(batch);
+      console.log(`💾 Final batch inserted: ${batch.length} rows`);
+    }
+    
+    console.log(`✅ Migration completed: ${processedCount} records migrated`);
+    
+    return c.json({
+      success: true,
+      message: 'Data migration completed successfully',
+      companyId,
+      recordCount,
+      processedCount,
+      sourceDB: 'measure-master-db',
+      targetDB: targetDBBinding
+    });
+    
+  } catch (error: any) {
+    console.error('❌ Migration error:', error);
+    return c.json({
+      success: false,
+      error: 'Migration failed',
+      details: error.message
+    }, 500);
+  }
+});
+
+// Verify company database data
+app.get('/api/admin/verify-company-db/:companyId', async (c) => {
+  try {
+    const companyId = c.req.param('companyId');
+    
+    const targetDBBinding = COMPANY_DB_MAPPING[companyId];
+    if (!targetDBBinding) {
+      return c.json({ 
+        success: false, 
+        error: `No database binding found for company: ${companyId}` 
+      }, 400);
+    }
+    
+    const targetDB = c.env[targetDBBinding] as D1Database;
+    
+    // Get record count
+    const countResult = await targetDB.prepare(
+      'SELECT COUNT(*) as count FROM product_master'
+    ).first();
+    
+    // Get sample data
+    const sampleData = await targetDB.prepare(
+      'SELECT sku, name, brand, size, color, price_sale FROM product_master LIMIT 5'
+    ).all();
+    
+    return c.json({
+      success: true,
+      companyId,
+      dbBinding: targetDBBinding,
+      recordCount: countResult?.count || 0,
+      sampleData: sampleData.results
+    });
+    
+  } catch (error: any) {
+    console.error('❌ Verification error:', error);
+    return c.json({
+      success: false,
+      error: 'Verification failed',
       details: error.message
     }, 500);
   }
