@@ -558,6 +558,7 @@ app.get('/dashboard', async (c) => {
           id: imageId,
           original_url: proxyUrl,
           processed_url: displayUrl,  // Phase A: 優先順位に基づいたURL
+          display_url: displayUrl,     // For auto-measurement
           status: status,              // Phase A: 'final', 'processed', or 'ready'
           created_at: new Date().toISOString(),
           filename: filename,
@@ -1430,7 +1431,7 @@ app.get('/dashboard', async (c) => {
                                    data-image-id={img.id}
                                    data-product-id={product.id}
                                    data-sku={product.sku}
-                                   data-image-url={img.display_url}
+                                   data-image-url={img.original_url}
                                    class="w-4 h-4 bg-white border-gray-300 rounded cursor-pointer image-checkbox" 
                                    onclick="event.stopPropagation();"
                                    onchange={`updateSkuCheckbox(${product.id})`}
