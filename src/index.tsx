@@ -1194,12 +1194,20 @@ app.get('/dashboard', async (c) => {
                     let failCount = 0;
                     
                     for (const checkbox of checkedImages) {
+                        console.log('🔎 Checkbox element:', checkbox);
+                        console.log('🔎 Dataset:', checkbox.dataset);
+                        
                         const imageId = checkbox.dataset.imageId;
                         const imageUrl = checkbox.dataset.imageUrl;
                         const sku = checkbox.dataset.sku;
                         
+                        console.log('📊 Extracted data:', { imageId, imageUrl, sku });
+                        
                         if (!imageId || !imageUrl || !sku) {
                             console.warn('⚠️ Missing data, skipping');
+                            console.warn('  - imageId:', imageId);
+                            console.warn('  - imageUrl:', imageUrl);
+                            console.warn('  - sku:', sku);
                             failCount++;
                             continue;
                         }
