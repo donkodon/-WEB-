@@ -591,6 +591,10 @@ app.get('/dashboard', async (c) => {
       <div class="mb-6 flex justify-between items-end">
         <p class="text-gray-500 text-sm">撮影済み画像の管理・編集・ダウンロードが可能です。</p>
         <div class="flex space-x-3">
+            <button id="btn-auto-measure" class="px-4 py-2 text-sm font-medium text-purple-600 bg-white border border-purple-200 rounded-lg hover:bg-purple-50 focus:z-10 focus:ring-2 focus:ring-purple-500 focus:text-purple-700 flex items-center shadow-sm">
+                <i class="fas fa-ruler-combined mr-2"></i>
+                選択画像を自動採寸
+            </button>
             <button id="btn-batch-remove-bg" class="px-4 py-2 text-sm font-medium text-blue-600 bg-white border border-blue-200 rounded-lg hover:bg-blue-50 focus:z-10 focus:ring-2 focus:ring-blue-500 focus:text-blue-700 flex items-center shadow-sm">
                 <i class="fas fa-magic mr-2"></i>
                 選択画像を白抜き
