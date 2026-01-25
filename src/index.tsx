@@ -1778,10 +1778,10 @@ app.post('/api/auto-measure', async (c) => {
     
     console.log(`⏳ Prediction created: ${predictionId}`);
     
-    // 4. Poll for result (max 60 seconds)
+    // 4. Poll for result (max 180 seconds)
     let result = prediction;
     let attempts = 0;
-    const maxAttempts = 30; // 30 × 2s = 60s
+    const maxAttempts = 90; // 90 × 2s = 180s
     
     while (result.status !== 'succeeded' && result.status !== 'failed' && attempts < maxAttempts) {
       await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
