@@ -589,7 +589,7 @@ app.get('/dashboard', async (c) => {
   return c.render(
     <Layout active="dashboard" title="商品画像一覧（SKU別）">
       <div class="mb-6 flex justify-between items-end">
-        <p class="text-gray-500 text-sm">撮影済み画像の管理・編集・ダウンロードが可能です。<span class="ml-2 text-blue-600 font-medium"><i class="fas fa-sync-alt mr-1"></i>Bubble画像は自動同期済み</span></p>
+        <p class="text-gray-500 text-sm">撮影済み画像の管理・編集・ダウンロードが可能です。</p>
         <div class="flex space-x-3">
             <button id="btn-batch-remove-bg" class="px-4 py-2 text-sm font-medium text-blue-600 bg-white border border-blue-200 rounded-lg hover:bg-blue-50 focus:z-10 focus:ring-2 focus:ring-blue-500 focus:text-blue-700 flex items-center shadow-sm">
                 <i class="fas fa-magic mr-2"></i>
