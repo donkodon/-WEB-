@@ -6,6 +6,7 @@
 
 - ✅ **Bubbleアプリとの連携** - スマホアプリで撮影した画像を自動同期
 - ✅ 商品画像のアップロード・管理
+- ✅ **AI自動採寸機能** - Replicate APIによる自動採寸（ランドマーク検出 + cm計算）
 - ✅ AI背景白抜き処理（2つのモデルから選択可能）
   - **rembg (u2netp)**: セルフホスト版（高速・標準精度）
   - **BRIA RMBG 2.0**: API版（高精度・商用対応）
@@ -96,21 +97,27 @@ npm install
 
 ```bash
 # .dev.vars ファイルを編集
-BRIA_API_KEY=your-fal-api-key-here  # Fal.ai APIキー
-BG_REMOVAL_API_URL=http://127.0.0.1:8000  # セルフホストrembgサーバー
+BRIA_API_KEY=your-fal-api-key-here           # Fal.ai APIキー
+REPLICATE_API_KEY=your-replicate-api-key     # Replicate APIキー（自動採寸用）
+BG_REMOVAL_API_URL=http://127.0.0.1:8000     # セルフホストrembgサーバー
 ```
 
 #### 本番環境（Cloudflare Pages）
 
 ```bash
 # BRIA APIキーをシークレットとして設定
-npx wrangler secret put BRIA_API_KEY
+npx wrangler pages secret put BRIA_API_KEY --project-name smart-measure
+
+# Replicate APIキーをシークレットとして設定
+npx wrangler pages secret put REPLICATE_API_KEY --project-name smart-measure
 
 # 環境変数（wrangler.jsonc に既に設定済み）
 # BG_REMOVAL_API_URL は不要（本番ではBRIA APIのみ使用）
 ```
 
-### 3. BRIA RMBG 2.0 APIキーの取得方法
+### 3. APIキーの取得方法
+
+#### BRIA RMBG 2.0 APIキー（背景白抜き用）
 
 **Fal.ai経由でBRIA RMBG 2.0を使用（推奨）：**
 
@@ -120,6 +127,17 @@ npx wrangler secret put BRIA_API_KEY
 4. 生成されたキーを`.dev.vars`にコピー
 
 **料金：** 約$0.0026/画像（従量課金）
+
+#### Replicate APIキー（自動採寸用）
+
+**Replicate API（自動採寸機能）：**
+
+1. https://replicate.com/ にアクセス
+2. アカウント作成（GitHubまたはGoogle認証）
+3. Account Settings → API Tokens で新しいトークンを作成
+4. 生成されたトークンを`.dev.vars`にコピー
+
+**料金：** 約$0.001〜$0.01/画像（モデルによる、従量課金）
 
 ### 4. データベース初期化
 
@@ -134,6 +152,56 @@ curl http://localhost:3000/init
 npm run build
 pm2 start ecosystem.config.cjs
 ```
+
+## 自動採寸機能の使い方
+
+### 使い方
+
+1. **ダッシュボードで画像を選択**
+   - 各画像の左上のチェックボックスをクリック
+   - 複数枚まとめて選択可能
+
+2. **「選択画像を自動採寸」ボタンをクリック**
+   - 紫色のボタンをクリック
+   - 確認ダイアログで「OK」
+
+3. **自動採寸が実行される**
+   - Replicate APIが各画像を処理（約8秒/枚）
+   - ランドマーク検出 + 基準物（B5用紙）認識 + cm計算
+
+4. **結果が保存される**
+   - `product_items` テーブルに保存
+   - ランドマーク座標、pixelPerCm、採寸値（cm）を記録
+   - 画像に「採寸完了」バッジが表示
+
+### 採寸データの内容
+
+```json
+{
+  "landmarks": {
+    "neck_left_forward": {"x": 707, "y": 266, "conf": 0.84},
+    "shoulder_left_top": {"x": 451, "y": 369, "conf": 0.90},
+    ...
+  },
+  "reference": {
+    "pixelPerCm": 11.67
+  },
+  "measurements": {
+    "shoulder_width": 43.13,
+    "body_length": 68.54,
+    "sleeve_length": 60.08,
+    "body_width": 46.64
+  }
+}
+```
+
+### 今後の機能（予定）
+
+- ✅ ランドマークの手動調整機能
+- ✅ リアルタイムcm再計算
+- ✅ 採寸値のエクスポート（CSV/JSON）
+
+---
 
 ## 背景削除機能の使い方
 
