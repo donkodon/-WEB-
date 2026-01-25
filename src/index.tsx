@@ -2495,6 +2495,10 @@ app.get('/settings', (c) => {
 app.post('/api/import-csv', async (c) => {
     console.log('📥 CSV Import API called');
     
+    // Get company_id from cookie (Phase 1: Dynamic company_id)
+    const companyId = getCompanyId(c);
+    console.log(`📦 CSV Import: company_id=${companyId}`);
+    
     const body = await c.req.parseBody();
     const file = body['csv'];
     
@@ -2697,13 +2701,13 @@ app.post('/api/import-csv', async (c) => {
     console.log('📋 CSV Index Mapping:', JSON.stringify(idx, null, 2));
     console.log('📋 Headers:', JSON.stringify(headers, null, 2));
     
-    // Prepared statement for insertion
+    // Prepared statement for insertion (with company_id)
     const stmt = c.env.DB.prepare(`
         INSERT OR REPLACE INTO product_master (
             sku, name, brand, brand_kana, size, color, price_cost, price_sale, 
             stock_quantity, barcode, status, category, category_sub, season, 
-            rank, buyer, store_name, price_ref, price_list, location, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            rank, buyer, store_name, price_ref, price_list, location, company_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const batch = [];
@@ -2753,7 +2757,7 @@ app.post('/api/import-csv', async (c) => {
             return parseInt(val.replace(/,/g, '').replace(/[¥￥]/g, '')) || 0;
         };
 
-        // Use safe getter for all values
+        // Use safe getter for all values (including company_id)
         batch.push(stmt.bind(
             sku,
             name,
@@ -2775,6 +2779,7 @@ app.post('/api/import-csv', async (c) => {
             cleanInt(getRowValue(row, idx.ref_price) || '0'),
             cleanInt(getRowValue(row, idx.list_price) || '0'),
             getRowValue(row, idx.location),
+            companyId,  // Add company_id from cookie
             new Date().toISOString()
         ));
         
