@@ -1434,7 +1434,7 @@ app.get('/dashboard', async (c) => {
                                    data-image-url={img.original_url}
                                    class="w-4 h-4 bg-white border-gray-300 rounded cursor-pointer image-checkbox" 
                                    onclick="event.stopPropagation();"
-                                   onchange={`updateSkuCheckbox(${product.id})`}
+                                   onchange={`updateSkuCheckbox('${product.id}')`}
                                />
                            </div>
                            
@@ -1729,10 +1729,11 @@ app.get('/dashboard', async (c) => {
 // API: Auto-Measurement with Replicate
 // ==========================================
 app.post('/api/auto-measure', async (c) => {
-  const { imageId, imageUrl, sku } = await c.req.json();
-  const companyId = getCompanyId(c);
-  
-  console.log(`🔬 Auto-measure request: imageId=${imageId}, sku=${sku}`);
+  try {
+    const { imageId, imageUrl, sku } = await c.req.json();
+    const companyId = getCompanyId(c);
+    
+    console.log(`🔬 Auto-measure request:`, { imageId, imageUrl, sku, companyId });
   
   // 1. Get category from product_master
   const productResult = await c.env.DB.prepare(`
@@ -1759,9 +1760,8 @@ app.post('/api/auto-measure', async (c) => {
   
   console.log(`📤 Sending to Replicate API: ${imageUrl}, garment_class=${garmentClass}`);
   
-  try {
-    // 3. Create Replicate prediction
-    const createResponse = await fetch('https://api.replicate.com/v1/predictions', {
+  // 3. Create Replicate prediction
+  const createResponse = await fetch('https://api.replicate.com/v1/predictions', {
       method: 'POST',
       headers: {
         'Authorization': `Token ${c.env.REPLICATE_API_KEY}`,
@@ -1881,9 +1881,11 @@ app.post('/api/auto-measure', async (c) => {
     
   } catch (error: any) {
     console.error('❌ Auto-measure error:', error);
+    console.error('❌ Error stack:', error.stack);
     return c.json({ 
       success: false, 
-      error: error.message 
+      error: error.message || 'Unknown error',
+      details: error.toString()
     }, 500);
   }
 });
