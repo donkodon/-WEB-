@@ -1,0 +1,67 @@
+-- Test measurement data for Phase 1
+-- Based on Replicate API output sample
+
+INSERT INTO product_items (
+  sku,
+  item_code,
+  image_urls,
+  ai_landmarks,
+  reference_object,
+  measurements,
+  annotated_image_url,
+  measurement_status,
+  measurement_category,
+  measured_at,
+  created_at
+) VALUES (
+  '1025L280002',
+  '1025L280002-001',
+  '["https://replicate.delivery/pbxt/OYFR7MRg4QY4am9njc8ZfPNH5PfMeXfOpmIX10WujQngCBV8/1025L280002_ed1c50c8-b5d4-4732-bad6-4fee820d6902.jpg"]',
+  '{
+    "1": {"x": 960, "y": 363, "conf": 0.8308},
+    "2": {"x": 849, "y": 376, "conf": 0.8851},
+    "3": {"x": 876, "y": 515, "conf": 0.6989},
+    "4": {"x": 988, "y": 543, "conf": 0.8821},
+    "5": {"x": 1029, "y": 474, "conf": 0.8570},
+    "6": {"x": 1057, "y": 349, "conf": 0.7826},
+    "7": {"x": 613, "y": 515, "conf": 0.8986},
+    "8": {"x": 515, "y": 724, "conf": 0.6395},
+    "9": {"x": 418, "y": 932, "conf": 0.5580},
+    "10": {"x": 335, "y": 1126, "conf": 0.6716},
+    "11": {"x": 224, "y": 1349, "conf": 0.9005},
+    "12": {"x": 349, "y": 1418, "conf": 0.9256},
+    "13": {"x": 474, "y": 1251, "conf": 0.7639},
+    "14": {"x": 571, "y": 1099, "conf": 0.6523},
+    "15": {"x": 599, "y": 918, "conf": 0.5875},
+    "16": {"x": 613, "y": 751, "conf": 0.6507},
+    "17": {"x": 613, "y": 821, "conf": 0.6754},
+    "18": {"x": 599, "y": 1099, "conf": 0.5900},
+    "19": {"x": 599, "y": 1349, "conf": 0.9221},
+    "20": {"x": 960, "y": 1432, "conf": 0.5763},
+    "21": {"x": 1376, "y": 1363, "conf": 0.9453},
+    "22": {"x": 1363, "y": 1085, "conf": 0.8628},
+    "23": {"x": 1349, "y": 849, "conf": 0.7980},
+    "24": {"x": 1349, "y": 779, "conf": 0.8237},
+    "25": {"x": 1390, "y": 918, "conf": 0.7060},
+    "26": {"x": 1460, "y": 1029, "conf": 0.6667},
+    "27": {"x": 1599, "y": 1168, "conf": 0.6911},
+    "28": {"x": 1779, "y": 1321, "conf": 0.8673},
+    "29": {"x": 1876, "y": 1224, "conf": 0.9142},
+    "30": {"x": 1738, "y": 1029, "conf": 0.7014},
+    "31": {"x": 1613, "y": 835, "conf": 0.6379},
+    "32": {"x": 1474, "y": 654, "conf": 0.7605},
+    "33": {"x": 1293, "y": 474, "conf": 0.8672}
+  }',
+  '{"pixelPerCm": 15.127230224609375}',
+  '{
+    "body_width": 48.68917873179458,
+    "body_length": 70.66726585947788,
+    "sleeve_length": 62.796795120202646,
+    "shoulder_width": 45.03368415597076
+  }',
+  'https://replicate.delivery/xezq/WF9XjK6TNqqrLpBsGHkHfxaPmh5hd3a250EqUmPGY9qq1uCLA/out.png',
+  'auto',
+  'long sleeve top',
+  datetime('now'),
+  datetime('now')
+);

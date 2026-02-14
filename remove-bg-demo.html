@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>画像背景除去ツール</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen p-8">
+    <div class="max-w-4xl mx-auto">
+        <div class="bg-white rounded-2xl shadow-2xl p-8">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">
+                <i class="fas fa-magic text-indigo-600 mr-3"></i>
+                画像背景除去ツール
+            </h1>
+            <p class="text-gray-600 mb-8">画像をアップロードして、背景を自動的に削除します（完全無料）</p>
+
+            <!-- アップロードエリア -->
+            <div class="mb-8">
+                <label for="imageInput" class="block text-sm font-medium text-gray-700 mb-2">
+                    画像を選択
+                </label>
+                <div class="flex items-center justify-center w-full">
+                    <label for="imageInput" class="flex flex-col items-center justify-center w-full h-64 border-2 border-indigo-300 border-dashed rounded-lg cursor-pointer bg-indigo-50 hover:bg-indigo-100 transition duration-200">
+                        <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                            <i class="fas fa-cloud-upload-alt text-6xl text-indigo-400 mb-4"></i>
+                            <p class="mb-2 text-sm text-gray-700"><span class="font-semibold">クリックして画像を選択</span></p>
+                            <p class="text-xs text-gray-500">PNG, JPG, JPEG, WEBP (最大 10MB)</p>
+                        </div>
+                        <input id="imageInput" type="file" class="hidden" accept="image/*" onchange="handleImageUpload(event)">
+                    </label>
+                </div>
+            </div>
+
+            <!-- 処理中表示 -->
+            <div id="processingArea" class="hidden mb-8 text-center">
+                <div class="inline-flex items-center px-6 py-3 bg-blue-100 rounded-full">
+                    <i class="fas fa-spinner fa-spin text-blue-600 mr-3 text-xl"></i>
+                    <span class="text-blue-800 font-medium">背景を削除中...</span>
+                </div>
+            </div>
+
+            <!-- 画像プレビューエリア -->
+            <div id="previewArea" class="hidden">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                    <!-- 元画像 -->
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
+                            <i class="fas fa-image text-gray-500 mr-2"></i>
+                            元の画像
+                        </h3>
+                        <div class="bg-gray-100 rounded-lg overflow-hidden shadow-lg">
+                            <img id="originalImage" class="w-full h-auto" alt="Original">
+                        </div>
+                    </div>
+
+                    <!-- 処理後画像 -->
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
+                            <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                            背景削除後
+                        </h3>
+                        <div class="bg-gray-100 rounded-lg overflow-hidden shadow-lg" style="background-image: linear-gradient(45deg, #e5e7eb 25%, transparent 25%), linear-gradient(-45deg, #e5e7eb 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e5e7eb 75%), linear-gradient(-45deg, transparent 75%, #e5e7eb 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0px;">
+                            <img id="processedImage" class="w-full h-auto" alt="Processed">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ダウンロードボタン -->
+                <div class="flex justify-center">
+                    <button id="downloadBtn" onclick="downloadImage()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-8 py-3 rounded-lg shadow-lg transition duration-200 transform hover:scale-105">
+                        <i class="fas fa-download mr-2"></i>
+                        処理済み画像をダウンロード
+                    </button>
+                </div>
+            </div>
+
+            <!-- エラー表示 -->
+            <div id="errorArea" class="hidden">
+                <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+                    <div class="flex items-center">
+                        <i class="fas fa-exclamation-triangle text-red-500 mr-3"></i>
+                        <p id="errorMessage" class="text-red-700"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 技術情報 -->
+        <div class="mt-8 text-center text-sm text-gray-600">
+            <p>
+                <i class="fas fa-info-circle mr-1"></i>
+                使用技術: <a href="https://huggingface.co/spaces/jinkedon/withoutbg-api" target="_blank" class="text-indigo-600 hover:underline">Hugging Face Spaces (birefnet-general)</a>
+            </p>
+            <p class="mt-2">完全無料 | プライバシー保護 | 高速処理</p>
+        </div>
+    </div>
+
+    <script>
+        let originalImageFile = null;
+        let processedImageDataUrl = null;
+
+        // Hugging Face Spaces API
+        const REMOVE_BG_API = 'https://jinkedon-withoutbg-api.hf.space/api/remove-bg';
+
+        async function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // ファイルサイズチェック (10MB)
+            if (file.size > 10 * 1024 * 1024) {
+                showError('ファイルサイズが大きすぎます（最大10MB）');
+                return;
+            }
+
+            originalImageFile = file;
+
+            // 元画像を表示
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('originalImage').src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+
+            // エラーエリアを非表示
+            document.getElementById('errorArea').classList.add('hidden');
+
+            // 処理中表示
+            document.getElementById('processingArea').classList.remove('hidden');
+            document.getElementById('previewArea').classList.add('hidden');
+
+            try {
+                // 画像をBase64に変換
+                const base64 = await fileToBase64(file);
+                const base64Data = base64.split(',')[1]; // "data:image/png;base64," 部分を削除
+
+                console.log('🚀 Sending request to Hugging Face API...');
+
+                // Hugging Face APIに送信
+                const response = await fetch(REMOVE_BG_API, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        image_base64: base64Data
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API Error: ${response.status} ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                console.log('✅ API Response:', result);
+
+                if (!result.success || !result.image_data) {
+                    throw new Error(result.error || 'Background removal failed');
+                }
+
+                // 処理済み画像を表示
+                processedImageDataUrl = result.image_data;
+                document.getElementById('processedImage').src = processedImageDataUrl;
+
+                // プレビューエリアを表示
+                document.getElementById('processingArea').classList.add('hidden');
+                document.getElementById('previewArea').classList.remove('hidden');
+
+            } catch (error) {
+                console.error('❌ Error:', error);
+                document.getElementById('processingArea').classList.add('hidden');
+                showError('背景削除に失敗しました: ' + error.message);
+            }
+        }
+
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function downloadImage() {
+            if (!processedImageDataUrl) {
+                alert('処理済み画像がありません');
+                return;
+            }
+
+            const link = document.createElement('a');
+            link.href = processedImageDataUrl;
+            link.download = 'background_removed.png';
+            link.click();
+        }
+
+        function showError(message) {
+            document.getElementById('errorMessage').textContent = message;
+            document.getElementById('errorArea').classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>

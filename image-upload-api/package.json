@@ -1,0 +1,13 @@
+{
+  "name": "image-upload-api",
+  "version": "4.0.0",
+  "description": "Image Upload API with company_id support",
+  "main": "worker.js",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "devDependencies": {
+    "wrangler": "^3.78.0"
+  }
+}

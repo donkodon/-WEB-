@@ -1,0 +1,53 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "smart-measure",
+  "compatibility_date": "2025-12-18",
+  "pages_build_output_dir": "./dist",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  
+  // ============================================
+  // Cloudflare Pages Configuration
+  // ============================================
+  // This is the ONLY wrangler config file.
+  // DO NOT create wrangler.deploy.jsonc or wrangler.toml
+  
+  // Environment variables (non-sensitive)
+  // Note: Set via Cloudflare Pages dashboard or .dev.vars (local only)
+  
+  // Secrets (sensitive - use: wrangler secret put SECRET_NAME or Cloudflare Pages dashboard)
+  // BRIA_API_KEY - Fal.ai API key for BRIA RMBG 2.0 (not used anymore)
+  // ADMIN_API_KEY - Required for admin/debug endpoints (MUST be set in production)
+  //   Set via: npx wrangler pages secret put ADMIN_API_KEY --project-name smart-measure
+  //   Or in Cloudflare Pages dashboard: Settings > Environment Variables > Production
+  
+  // R2 Buckets - Shared with Bubble app
+  // Note: BubbleアプリとR2バケットを共有
+  // Public URL: https://pub-300562464768499b8fcaee903d0f9861.r2.dev
+  "r2_buckets": [
+    {
+      "binding": "PRODUCT_IMAGES",
+      "bucket_name": "product-images-saisunsatsuei"
+    }
+  ],
+  
+  // Cloudflare AI Workers for background removal (Free)
+  "ai": {
+    "binding": "AI"
+  },
+  
+  // D1 Database - Production database
+  // Database: measure-master-db
+  // Created: 2025-12-31
+  // ID verified: 2026-02-12 (npx wrangler d1 list)
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "measure-master-db",
+      "database_id": "7fad5dc0-abce-4816-b667-193490cf9650"
+    }
+  ]
+  
+  // Note: smart-measure-db (6663c877-92cd-4d56-a126-84a0ed492c23) is obsolete
+}
