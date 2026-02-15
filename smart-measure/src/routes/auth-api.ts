@@ -13,7 +13,7 @@ const authApi = new Hono<AppEnv>()
 
 /**
  * GET /api/auth/me
- * Get current user information
+ * Get current user information and set company_id cookie
  */
 authApi.get('/api/auth/me', requireFirebaseAuth, async (c) => {
   const user = c.get('user')
@@ -27,6 +27,9 @@ authApi.get('/api/auth/me', requireFirebaseAuth, async (c) => {
   }
   
   logger.debug('👤 User info request:', user)
+  
+  // Set company_id cookie (expires in 30 days)
+  c.header('Set-Cookie', `company_id=${user.companyId}; Path=/; Max-Age=${30 * 24 * 60 * 60}; SameSite=Lax; Secure`)
   
   return c.json({
     success: true,
