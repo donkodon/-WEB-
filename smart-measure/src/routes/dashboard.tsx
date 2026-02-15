@@ -89,19 +89,19 @@ dashboard.get('/dashboard', async (c) => {
       </div>
       
       {/* Dashboard Core Scripts (SKU Checkboxes, CSV Export, Image Download) */}
-      <script src="/static/dashboard.js"></script>
+      <script src="/static/dashboard/dashboard.js"></script>
       
       {/* Pagination Script (loads products via API on DOMContentLoaded) */}
-      <script src="/static/dashboard-pagination.js"></script>
+      <script src="/static/dashboard/pagination.js"></script>
       
       {/* Background Removal Scripts */}
-      <script src="/static/dashboard-bg-removal.js"></script>
+      <script src="/static/dashboard/bg-removal.js"></script>
       
       {/* Auto-Measurement Scripts */}
-      <script src="/static/dashboard-auto-measure.js"></script>
+      <script src="/static/dashboard/auto-measure.js"></script>
       
       {/* Mobile App Sync Scripts */}
-      <script src="/static/dashboard-mobile-sync.js"></script>
+      <script src="/static/dashboard/mobile-sync.js"></script>
 
       {/* Filter Bar */}
       <div class="bg-white p-4 rounded-xl border border-gray-200 mb-6 flex flex-wrap items-center justify-between gap-4">
@@ -121,7 +121,7 @@ dashboard.get('/dashboard', async (c) => {
             </div>
           </div>
         </div>
-        <script src="/static/dashboard-filter-init.js"></script>
+        <script src="/static/dashboard/filter-init.js"></script>
         <div class="flex items-center space-x-2">
             <span class="text-gray-500 text-sm">表示切替:</span>
             <button class="p-2 bg-gray-100 rounded text-gray-700"><i class="fas fa-th-large"></i></button>
@@ -154,22 +154,22 @@ dashboard.get('/dashboard', async (c) => {
       </div>
       
       {/* Single Image Background Removal */}
-      <script src="/static/dashboard-single-bg-removal.js"></script>
+      <script src="/static/dashboard/single-bg-removal.js"></script>
       
       {/* Upload Script */}
-      <script src="/static/dashboard-upload.js"></script>
+      <script src="/static/dashboard/upload.js"></script>
       
       {/* Sortable.js for Drag & Drop */}
       <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
       
       {/* Resize Helper for image processing */}
-      <script src="/static/resize-helper.js"></script>
+      <script src="/static/shared/resize-helper.js"></script>
       
       {/* Initialize Sortable for each image grid */}
-      <script src="/static/dashboard-sortable.js"></script>
+      <script src="/static/dashboard/sortable.js"></script>
       
       {/* CSS for Sortable animations */}
-      <link rel="stylesheet" href="/static/dashboard-sortable.css" />
+      <link rel="stylesheet" href="/static/css/dashboard-sortable.css" />
       
       {/* Pagination Controls - updated dynamically by JS */}
       <div class="mt-8 flex justify-between items-center">

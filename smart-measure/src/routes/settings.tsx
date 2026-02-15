@@ -131,7 +131,7 @@ settings.get('/settings', (c) => {
         </div>
 
         {/* Load usage data */}
-        <script src="/static/billing-usage-settings.js"></script>
+        <script src="/static/billing/usage-settings.js"></script>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
             {/* CSV Import */}
@@ -168,7 +168,7 @@ settings.get('/settings', (c) => {
                      </button>
                  </div>
                  {/* CSV Import Script - External File */}
-                 <script src="/static/csv-import.js"></script>
+                 <script src="/static/shared/csv-import.js"></script>
             </div>
 
             {/* Data Export */}

@@ -111,15 +111,15 @@ landmarks.get('/landmarks/:sku', async (c) => {
       </div>
       
       {/* Load JavaScript Libraries */}
-      <script src="/static/measurement-calculator.js"></script>
-      <script src="/static/interactive-landmark-editor.js"></script>
+      <script src="/static/shared/measurement-calculator.js"></script>
+      <script src="/static/editor/landmarks/interactive-editor.js"></script>
       
       {/* CSS for animations */}
-      <link rel="stylesheet" href="/static/landmarks-animations.css" />
+      <link rel="stylesheet" href="/static/css/landmarks-animations.css" />
       
       {/* Initialize Interactive Editor */}
       <div id="landmarks-app" data-sku={sku}></div>
-      <script src="/static/landmarks-init.js"></script>
+      <script src="/static/editor/landmarks/init.js"></script>
     </Layout>
   );
 });

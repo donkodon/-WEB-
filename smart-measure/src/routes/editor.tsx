@@ -489,7 +489,7 @@ editor.get('/edit/:id', async (c) => {
 
         {/* Load mask editor script if measurement image with mask */}
         {isMeasurement && hasMask && (
-            <script src="/static/mask-editor.js"></script>
+            <script src="/static/editor/mask/editor.js"></script>
         )}
         
         {/* Editor Data Container */}
@@ -526,9 +526,9 @@ editor.get('/edit/:id', async (c) => {
 
         
         </div>
-        <script src="/static/editor-tab-switching.js"></script>
+        <script src="/static/editor/tab-switching.js"></script>
         {/* --- IMAGE PROCESSING LOGIC --- */}
-        <script src="/static/editor-image-processing.js"></script>
+        <script src="/static/editor/image-processing.js"></script>
     </Layout>
   )
 })

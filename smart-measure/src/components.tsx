@@ -83,7 +83,7 @@ export const Layout = (props: { children: any; active?: string; title?: string }
       </main>
       
       {/* Firebase Authentication Guard - Must be loaded on all protected pages */}
-      <script type="module" src="/static/auth-guard.js"></script>
+      <script type="module" src="/static/auth/auth-guard.js"></script>
     </div>
   );
 };

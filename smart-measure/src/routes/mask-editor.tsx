@@ -151,8 +151,8 @@ maskEditor.get('/mask-editor/:sku', async (c) => {
                  data-sku={sku}
                  style="display: none;">
             </div>
-            <script src="/static/mask-editor.js"></script>
-            <script src="/static/mask-editor-init.js"></script>
+            <script src="/static/editor/mask/editor.js"></script>
+            <script src="/static/editor/mask/init.js"></script>
         </Layout>
     );
 });

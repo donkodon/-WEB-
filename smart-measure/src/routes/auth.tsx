@@ -234,7 +234,7 @@ auth.get('/firebase-login', async (c) => {
     </div>
   </div>
 
-  <script type="module" src="/static/login.js"></script>
+  <script type="module" src="/static/auth/login.js"></script>
 </body>
 </html>
       `)
