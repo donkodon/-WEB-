@@ -15,10 +15,27 @@ const PER_PAGE = 12;
 
 /**
  * Initialize: Load first page via API on DOMContentLoaded
+ * Wait for authentication to complete before loading data
  */
 document.addEventListener('DOMContentLoaded', () => {
-    // Load first page from API immediately
-    loadPage(1, true);
+    // Wait for authentication to complete (check every 100ms)
+    const waitForAuth = setInterval(() => {
+        const token = localStorage.getItem('firebase_token');
+        if (token) {
+            clearInterval(waitForAuth);
+            console.log('✅ Auth ready, loading dashboard data...');
+            loadPage(1, true);
+        }
+    }, 100);
+    
+    // Timeout after 10 seconds
+    setTimeout(() => {
+        clearInterval(waitForAuth);
+        if (!localStorage.getItem('firebase_token')) {
+            console.error('❌ Auth timeout - redirecting to login');
+            window.location.href = '/firebase-login';
+        }
+    }, 10000);
 });
 
 /**
