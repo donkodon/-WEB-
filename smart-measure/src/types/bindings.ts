@@ -19,6 +19,10 @@ export type Bindings = {
   DEFAULT_GARMENT_CLASS?: string // Default garment class for measurement API
   LOG_LEVEL?: string // Logging level (debug, info, warn, error)
   ENABLE_CONSOLE_LOGS?: string // Enable console logs (true/false)
+  // Firebase Authentication
+  FIREBASE_PROJECT_ID?: string // Firebase project ID for token verification
+  FIREBASE_CLIENT_EMAIL?: string // Firebase service account email
+  FIREBASE_PRIVATE_KEY?: string // Firebase service account private key (set via wrangler secret)
 }
 
 // Re-export Hono types for convenience

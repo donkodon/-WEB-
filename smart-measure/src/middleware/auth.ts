@@ -162,16 +162,24 @@ export async function preventGetMethod(c: Context<AppEnv>, next: Next) {
  */
 export async function requireFirebaseAuth(c: Context<AppEnv>, next: Next) {
   const authHeader = c.req.header('Authorization')
-  const projectId = c.env.FIREBASE_PROJECT_ID
+  
+  // Get FIREBASE_PROJECT_ID from env bindings (set via Cloudflare Pages dashboard or .dev.vars)
+  const projectId = c.env.FIREBASE_PROJECT_ID || 'saisunsatsuei-950cf'
 
   if (!projectId) {
-    logger.error('❌ FIREBASE_PROJECT_ID not configured')
+    logger.error('❌ FIREBASE_PROJECT_ID not configured in environment')
     return c.json({
       success: false,
       error: 'Firebase authentication not configured',
       errorCode: 'CONFIG_ERROR'
     }, 500)
   }
+
+  logger.debug('🔐 Firebase auth check:', {
+    hasAuthHeader: !!authHeader,
+    projectId: projectId,
+    path: c.req.path
+  })
 
   // Verify Firebase token
   const firebaseUser = await getUserFromAuthHeader(authHeader, projectId)

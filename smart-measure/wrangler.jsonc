@@ -45,7 +45,8 @@
     {
       "binding": "DB",
       "database_name": "measure-master-db",
-      "database_id": "7fad5dc0-abce-4816-b667-193490cf9650"
+      "database_id": "7fad5dc0-abce-4816-b667-193490cf9650",
+      "preview_database_id": "7fad5dc0-abce-4816-b667-193490cf9650"
     }
   ]
   

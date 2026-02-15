@@ -14,8 +14,9 @@ module.exports = {
     {
       name: 'smart-measure',
       script: 'npx',
-      // LOCAL MODE: Uses local Cloudflare D1 database (development)
-      args: 'wrangler pages dev dist --d1=measure-master-db --port 3000 --ip 0.0.0.0 --local',
+      // LOCAL MODE: Uses local SQLite D1 database (local development data)
+      // Use --local flag to avoid remote D1 connection issues
+      args: 'wrangler pages dev dist --d1=measure-master-db --local --port 3000 --ip 0.0.0.0',
       cwd: '/home/user/webapp/smart-measure',
       env: {
         NODE_ENV: 'production'

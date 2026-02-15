@@ -43,3 +43,4 @@ wrangler.deploy.jsonc
 wrangler.toml
 ecosystem-*.config.cjs
 !ecosystem.config.cjs
+*.tar.gz

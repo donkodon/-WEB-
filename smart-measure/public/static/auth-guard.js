@@ -160,10 +160,25 @@ window.authenticatedFetch = async function(url, options = {}) {
   }
   
   try {
+    console.log('🔐 Sending authenticated request to:', url)
+    console.log('🔑 Token (first 20 chars):', token.substring(0, 20) + '...')
+    
     const response = await fetch(url, {
       ...options,
       headers
     })
+    
+    console.log('📡 Response status:', response.status)
+    
+    // Log error responses
+    if (!response.ok) {
+      const errorBody = await response.clone().text()
+      console.error('❌ API Error Response:', {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorBody
+      })
+    }
     
     // Handle 401 Unauthorized
     if (response.status === 401) {

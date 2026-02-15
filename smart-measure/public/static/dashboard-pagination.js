@@ -64,6 +64,14 @@ async function loadPage(page, isInitial) {
         
         const data = await response.json();
         
+        console.log('📦 API Response:', {
+            success: data.success,
+            total: data.pagination?.total,
+            totalPages: data.pagination?.totalPages,
+            productsCount: data.products?.length,
+            products: data.products
+        });
+        
         if (!data.success) {
             throw new Error(data.error || 'Failed to load products');
         }
@@ -74,6 +82,7 @@ async function loadPage(page, isInitial) {
         totalProducts = data.pagination.total;
         
         // Render products
+        console.log('🎨 Rendering', data.products.length, 'products');
         renderProducts(data.products);
         
         // Update pagination UI
