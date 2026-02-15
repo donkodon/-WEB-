@@ -38,7 +38,8 @@ async function loadPage(page, isInitial) {
     }
     
     try {
-        const response = await fetch(`/api/dashboard/products?page=${page}&perPage=${PER_PAGE}`);
+        // Use authenticatedFetch (includes Authorization header with Firebase token)
+        const response = await window.authenticatedFetch(`/api/dashboard/products?page=${page}&perPage=${PER_PAGE}`);
         
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);

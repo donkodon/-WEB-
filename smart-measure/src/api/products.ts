@@ -5,20 +5,22 @@ import { getCompanyId, FIXED_COMPANY_ID } from '../helpers/auth'
 import { createSafeErrorResponse, ErrorCode, logError } from '../helpers/error-handler'
 import { logger } from '../helpers/logger'
 import { fetchDashboardData } from '../helpers/dashboard-data'
+import { requireFirebaseAuth } from '../middleware/auth'
 
 const products = new Hono<AppEnv>()
 
 // --- API: Dashboard Products with Pagination ---
-products.get('/api/dashboard/products', async (c) => {
+products.get('/api/dashboard/products', requireFirebaseAuth, async (c) => {
     // Get pagination parameters at function scope
     let page = 1
     let perPage = 12
     
     try {
-        // Get company_id from cookie
-        const cookies = c.req.header('Cookie') || ''
-        const companyIdMatch = cookies.match(/company_id=([^;]+)/)
-        const companyId = companyIdMatch ? companyIdMatch[1] : FIXED_COMPANY_ID
+        // Get company_id from authenticated user (not from cookie!)
+        const user = c.get('user')
+        const companyId = user?.companyId || FIXED_COMPANY_ID
+        
+        logger.debug(`📊 API Dashboard request: user=${user?.email}, company_id=${companyId}`)
         
         // Parse pagination parameters
         page = parseInt(c.req.query('page') || '1', 10)
