@@ -66,6 +66,29 @@ async function handleLoginSuccess(userCredential) {
     
     console.log('✅ Login successful:', userCredential.user.email)
     
+    // Get user info (including company_id) from backend
+    try {
+      const response = await fetch('/api/auth/me', {
+        headers: {
+          'Authorization': `Bearer ${idToken}`
+        }
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success && data.user) {
+          // Set company_id cookie
+          document.cookie = `company_id=${data.user.companyId}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`
+          console.log('✅ Company ID set:', data.user.companyId)
+        }
+      } else {
+        console.warn('⚠️ Failed to get user info, using default company_id')
+      }
+    } catch (apiError) {
+      console.error('❌ API error:', apiError)
+      // Continue to dashboard even if API fails
+    }
+    
     // Redirect to dashboard
     window.location.href = '/dashboard'
     
