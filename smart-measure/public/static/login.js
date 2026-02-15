@@ -66,6 +66,26 @@ async function handleLoginSuccess(userCredential) {
     
     console.log('✅ Login successful:', userCredential.user.email)
     
+    // Verify user and update pending UID if needed
+    try {
+      const verifyResponse = await fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${idToken}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (verifyResponse.ok) {
+        console.log('✅ User verified in database')
+      } else {
+        console.warn('⚠️ User verification failed, but continuing')
+      }
+    } catch (verifyError) {
+      console.error('❌ Verification error:', verifyError)
+      // Continue even if verification fails
+    }
+    
     // Get user info (including company_id) from backend
     try {
       const response = await fetch('/api/auth/me', {

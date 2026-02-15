@@ -190,10 +190,35 @@ export async function requireFirebaseAuth(c: Context<AppEnv>, next: Next) {
     }, 401)
   }
 
-  // Load user info from database
-  const dbUser = await c.env.DB.prepare(`
+  // Load user info from database (try by firebase_uid first)
+  let dbUser = await c.env.DB.prepare(`
     SELECT * FROM users WHERE firebase_uid = ? AND is_active = 1
   `).bind(firebaseUser.uid).first()
+
+  // If not found by UID, try by email (for PENDING users)
+  if (!dbUser) {
+    dbUser = await c.env.DB.prepare(`
+      SELECT * FROM users WHERE email = ? AND is_active = 1
+    `).bind(firebaseUser.email).first()
+    
+    // If found by email and is PENDING, update the UID
+    if (dbUser && (dbUser.firebase_uid as string)?.startsWith('PENDING')) {
+      logger.info('🔄 Updating PENDING user with Firebase UID:', {
+        email: firebaseUser.email,
+        oldUid: dbUser.firebase_uid,
+        newUid: firebaseUser.uid
+      })
+      
+      await c.env.DB.prepare(`
+        UPDATE users SET firebase_uid = ?, last_login_at = CURRENT_TIMESTAMP WHERE email = ?
+      `).bind(firebaseUser.uid, firebaseUser.email).run()
+      
+      // Reload user data
+      dbUser = await c.env.DB.prepare(`
+        SELECT * FROM users WHERE firebase_uid = ? AND is_active = 1
+      `).bind(firebaseUser.uid).first()
+    }
+  }
 
   if (!dbUser) {
     logger.warn('🚫 User not found in database:', {
@@ -208,10 +233,12 @@ export async function requireFirebaseAuth(c: Context<AppEnv>, next: Next) {
     }, 403)
   }
 
-  // Update last login time
-  await c.env.DB.prepare(`
-    UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE firebase_uid = ?
-  `).bind(firebaseUser.uid).run()
+  // Update last login time (if not already updated above)
+  if (!(dbUser.firebase_uid as string)?.startsWith('PENDING')) {
+    await c.env.DB.prepare(`
+      UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE firebase_uid = ?
+    `).bind(firebaseUser.uid).run()
+  }
 
   // Set user context
   c.set('user', {

@@ -59,21 +59,22 @@ authApi.post('/api/auth/verify', requireFirebaseAuth, async (c) => {
     }, 401)
   }
   
-  // Check if user is pending (first login)
+  // Check if user is pending (first login) - look up by email
   const dbUser = await c.env.DB.prepare(`
-    SELECT firebase_uid, email FROM users WHERE firebase_uid = ?
-  `).bind(user.uid).first()
+    SELECT firebase_uid, email FROM users WHERE email = ?
+  `).bind(user.email).first()
   
-  if (dbUser && dbUser.firebase_uid === 'PENDING_ADMIN') {
-    // Update pending admin with actual Firebase UID
+  if (dbUser && (dbUser.firebase_uid as string).startsWith('PENDING_')) {
+    // Update pending user with actual Firebase UID
     await c.env.DB.prepare(`
       UPDATE users SET firebase_uid = ?, last_login_at = CURRENT_TIMESTAMP
       WHERE email = ?
     `).bind(user.uid, user.email).run()
     
-    logger.info('✅ Admin user UID updated:', {
+    logger.info('✅ User UID updated from pending to actual:', {
       email: user.email,
-      uid: user.uid
+      oldUid: dbUser.firebase_uid,
+      newUid: user.uid
     })
   }
   
