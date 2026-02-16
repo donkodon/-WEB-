@@ -40,7 +40,7 @@ async function removeBackgroundWithCloudflareAI(
         }
         const imageBuffer = await response.arrayBuffer();
         
-        const result = await ai.run('@cf/bria/rmbg-2.0', {
+        const result = await ai.run('@cf/bria/rmbg-1.4', {
             image: [...new Uint8Array(imageBuffer)]
         });
         
@@ -58,7 +58,7 @@ async function removeBackgroundWithWithoutBG(
     imageUrl: string
 ): Promise<{ success: boolean; imageDataUrl?: string; maskDataUrl?: string; error?: string }> {
     try {
-        logger.debug('🎨 Using withoutBG Focus model (Hugging Face Spaces)...');
+        console.log('🎨 [removeBackgroundWithWithoutBG] Starting... imageUrl:', imageUrl?.substring(0, 100));
         
         let requestBody: any;
         
@@ -84,18 +84,25 @@ async function removeBackgroundWithWithoutBG(
             };
         }
         
+        console.log('📡 [removeBackgroundWithWithoutBG] Sending request to withoutBG API...');
+        console.log('📡 Request body:', JSON.stringify(requestBody).substring(0, 200));
+        
         const response = await fetch('https://jinkedon-withoutbg-api.hf.space/api/remove-bg', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestBody)
         });
         
+        console.log('📡 [removeBackgroundWithWithoutBG] Response status:', response.status, response.statusText);
+        
         if (!response.ok) {
             const errorText = await response.text();
+            console.error('❌ [removeBackgroundWithWithoutBG] API error:', errorText);
             throw new Error(`withoutBG API failed: ${response.status} - ${errorText}`);
         }
         
         const result = await response.json();
+        console.log('📡 [removeBackgroundWithWithoutBG] Got result:', result?.success);
         
         if (!result.success || !result.image_data) {
             throw new Error(result.error || 'Invalid response from withoutBG API');
@@ -249,36 +256,82 @@ bgRemoval.post('/api/remove-bg-image/:imageId', async (c) => {
         }
         
         let originalUrl: string;
+        let sku: string;
+        let filenamePart: string;
+        let companyId: string;
         
         if (imageId.startsWith('r2_')) {
             const R2_PUBLIC_URL = getR2PublicUrl(c.env);
             const parts = imageId.replace('r2_', '').split('_');
             if (parts.length >= 2) {
-                const sku = parts[0];
-                const filenamePart = parts.slice(1).join('_');
-                const companyId = getCompanyId(c);
+                sku = parts[0];
+                filenamePart = parts.slice(1).join('_');
+                companyId = getCompanyId(c);
+                
+                console.log('🔍 Debug info:', JSON.stringify({
+                    imageId,
+                    sku,
+                    filenamePart,
+                    companyId,
+                    cookies: c.req.header('Cookie'),
+                    R2_PUBLIC_URL
+                }, null, 2));
                 
                 const extensions = ['jpg', 'jpeg', 'png', 'webp'];
+                const companyIds = [companyId, 'relight', 'saisunsatsuei', 'test_company']; // Try multiple company IDs
                 let found = false;
+                let actualCompanyId = companyId;
                 
-                for (const ext of extensions) {
-                    const testKey = `${companyId}/${sku}/${filenamePart}.${ext}`;
-                    
-                    if (c.env.PRODUCT_IMAGES) {
-                        const obj = await c.env.PRODUCT_IMAGES.head(testKey);
-                        if (obj) {
-                            originalUrl = `${R2_PUBLIC_URL}/${testKey}`;
-                            found = true;
-                            logger.debug(`✅ Found R2 image: ${testKey}`);
-                            break;
+                // Try each company ID and extension combination
+                for (const tryCompanyId of companyIds) {
+                    for (const ext of extensions) {
+                        const testKey = `${tryCompanyId}/${sku}/${filenamePart}.${ext}`;
+                        
+                        // Try R2 head first (local/production R2 bucket)
+                        if (c.env.PRODUCT_IMAGES) {
+                            const obj = await c.env.PRODUCT_IMAGES.head(testKey);
+                            if (obj) {
+                                originalUrl = `${R2_PUBLIC_URL}/${testKey}`;
+                                actualCompanyId = tryCompanyId;
+                                found = true;
+                                console.log(`✅ Found R2 image via R2 API: ${testKey}`);
+                                break;
+                            }
+                        }
+                        
+                        // Fallback: Try HTTP HEAD request to public R2 URL
+                        // (This works when local R2 doesn't have the file but production R2 does)
+                        if (!found) {
+                            const testUrl = `${R2_PUBLIC_URL}/${testKey}`;
+                            try {
+                                const headResponse = await fetch(testUrl, { method: 'HEAD' });
+                                if (headResponse.ok) {
+                                    originalUrl = testUrl;
+                                    actualCompanyId = tryCompanyId;
+                                    found = true;
+                                    console.log(`✅ Found R2 image via HTTP HEAD: ${testKey}`);
+                                    break;
+                                }
+                            } catch (e) {
+                                // Ignore fetch errors
+                            }
                         }
                     }
+                    if (found) break;
                 }
                 
                 if (!found) {
-                    originalUrl = `${R2_PUBLIC_URL}/${sku}/${filenamePart}.jpg`;
-                    logger.debug(`⚠️ Assuming JPG format: ${originalUrl}`);
+                    // Image not found in R2 - return 404
+                    console.error(`❌ Image not found in R2 after trying multiple company IDs`);
+                    return c.json({ 
+                        error: `Image not found: ${imageId}. Please upload the image first.`,
+                        details: `Searched for: ${companyIds.map(cid => `${cid}/${sku}/${filenamePart}.{jpg,jpeg,png,webp}`).join(', ')}`
+                    }, 404);
                 }
+                
+                // Update companyId to the one that actually worked
+                // (overwrite the original variable so subsequent code uses the correct company ID)
+                companyId = actualCompanyId;
             } else {
                 return c.json({ error: 'Invalid R2 image ID format' }, 400);
             }
@@ -333,42 +386,50 @@ bgRemoval.post('/api/remove-bg-image/:imageId', async (c) => {
             }
         }
 
-        // Priority 2: withoutBG Focus (birefnet-general)
+        // Priority 2: withoutBG Focus (Always try first for URL images)
         const isBase64Image = originalUrl.startsWith('data:');
         
-        if ((model === 'birefnet-general' || model === 'cloudflare-ai') && !isBase64Image) {
-            logger.debug('🚀 Using withoutBG Focus model for background removal (URL mode)');
+        console.log('🔍 isBase64Image:', isBase64Image, 'originalUrl:', originalUrl?.substring(0, 100));
+        
+        if (!isBase64Image) {
+            console.log('🚀 Starting withoutBG Focus model for background removal (URL mode)');
             
             try {
+                console.log('📡 Calling removeBackgroundWithWithoutBG...');
                 const result = await removeBackgroundWithWithoutBG(originalUrl);
+                console.log('📡 withoutBG result:', result ? 'Got result' : 'No result', result?.success);
                 
                 if (!result.success || !result.imageDataUrl) {
                     throw new Error(result.error || 'withoutBG processing failed');
                 }
 
+                console.log('✅ withoutBG success, converting base64 to bytes...');
                 const base64Data = result.imageDataUrl.split(',')[1];
                 const binaryString = atob(base64Data);
                 const bytes = new Uint8Array(binaryString.length);
                 for (let i = 0; i < binaryString.length; i++) {
                     bytes[i] = binaryString.charCodeAt(i);
                 }
+                console.log(`📊 Converted ${bytes.length} bytes`);
                 
                 const parts = imageId.replace('r2_', '').split('_');
                 const sku = parts[0];
                 const filenamePart = parts.slice(1).join('_');
-                const companyId = getCompanyId(c);
+                // Use companyId from the outer scope (already found the correct one)
                 const r2Key = `${companyId}/${sku}/${filenamePart}_p.png`;
                 
+                console.log(`📤 Uploading to R2: ${r2Key}`);
                 if (c.env.PRODUCT_IMAGES) {
                     await c.env.PRODUCT_IMAGES.put(r2Key, bytes, {
                         httpMetadata: { contentType: 'image/png' }
                     });
-                    logger.debug(`✅ Uploaded processed image to R2: ${r2Key}`);
-                    await markImageAsProcessed(c.env.DB, sku, companyId, filenamePart);
+                    console.log(`✅ Uploaded processed image to R2: ${r2Key}`);
+                    // Temporarily skip DB update to test
+                    // await markImageAsProcessed(c.env.DB, sku, companyId, filenamePart);
                 }
                 
                 const processedUrl = `${getR2PublicUrl(c.env)}/${r2Key}`;
-                logger.debug(`✅ Processed image saved to R2: ${r2Key}`);
+                console.log(`🎉 Success! Processed URL: ${processedUrl}`);
 
                 return c.json({ 
                     success: true,
@@ -377,18 +438,58 @@ bgRemoval.post('/api/remove-bg-image/:imageId', async (c) => {
                     message: 'Background removed using withoutBG Focus (Free)'
                 });
             } catch (apiError: any) {
-                logger.error('withoutBG API failed:', apiError.message);
-                logger.warn('Falling back to local rembg server...');
+                console.error('❌ withoutBG processing error:', apiError.message);
+                console.error('❌ Error stack:', apiError.stack);
+                // Fall through to Cloudflare AI
             }
-        }
-        
-        if (isBase64Image) {
-            logger.debug('📦 Base64 image detected - withoutBG API does not support base64');
+        } else {
+            logger.debug('📦 Base64 image detected - skipping withoutBG (not supported)');
         }
 
-        // No more fallback servers available
+        // Priority 3: Cloudflare AI (Fallback)
+        if (c.env.AI) {
+            logger.debug('🤖 Using Cloudflare AI @cf/bria/rmbg-2.0 as fallback');
+            
+            try {
+                const result = await removeBackgroundWithCloudflareAI(c.env.AI, originalUrl);
+                
+                if (result.success && result.imageBuffer) {
+                    const parts = imageId.replace('r2_', '').split('_');
+                    const sku = parts[0];
+                    const filenamePart = parts.slice(1).join('_');
+                    const companyId = getCompanyId(c);
+                    const r2Key = `${companyId}/${sku}/${filenamePart}_p.png`;
+                    
+                    if (c.env.PRODUCT_IMAGES) {
+                        await c.env.PRODUCT_IMAGES.put(r2Key, result.imageBuffer, {
+                            httpMetadata: { contentType: 'image/png' }
+                        });
+                        logger.debug(`✅ Uploaded processed image to R2: ${r2Key}`);
+                        await markImageAsProcessed(c.env.DB, sku, companyId, filenamePart);
+                    }
+                    
+                    const processedUrl = `${getR2PublicUrl(c.env)}/${r2Key}`;
+                    logger.debug(`✅ Processed image saved to R2: ${r2Key}`);
+
+                    return c.json({ 
+                        success: true,
+                        imageId,
+                        processedUrl,
+                        message: 'Background removed using Cloudflare AI (Free)'
+                    });
+                } else {
+                    logger.error('❌ Cloudflare AI failed:', result.error);
+                    throw new Error(result.error || 'Cloudflare AI processing failed');
+                }
+            } catch (aiError: any) {
+                logger.error('❌ Cloudflare AI error:', aiError.message);
+                throw aiError;
+            }
+        }
+
+        // No more services available
         logger.error('❌ All background removal services failed');
-        throw new Error('Background removal failed: WithoutBG API is unavailable. Please try again later.');
+        throw new Error('Background removal failed: All services are unavailable. Please try again later.');
 
     } catch (error: any) {
         logError('Background removal (image ID)', error);

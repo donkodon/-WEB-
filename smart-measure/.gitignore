@@ -46,3 +46,4 @@ ecosystem-*.config.cjs
 *.tar.gz
 home_user_full_backup.tar.gz
 *.tar.gz
+*.tar.gz

@@ -1,19 +1,12 @@
 import { Hono } from 'hono'
 import { getR2PublicUrl } from '../helpers/r2-url'
 import type { AppEnv, CloudflareAI } from '../types/bindings'
-import { getR2PublicUrl } from '../helpers/r2-url'
 import { getCompanyId } from '../helpers/auth'
-import { getR2PublicUrl } from '../helpers/r2-url'
 import { ImageUrlHelper } from '../helpers/image-url'
-import { getR2PublicUrl } from '../helpers/r2-url'
 import { Buffer } from 'node:buffer'
-import { getR2PublicUrl } from '../helpers/r2-url'
 import { createSafeErrorResponse, ErrorCode, logError } from '../helpers/error-handler'
-import { getR2PublicUrl } from '../helpers/r2-url'
 import { markImageAsProcessed, markImageAsFinal } from '../helpers/image-status'
-import { getR2PublicUrl } from '../helpers/r2-url'
 import { logger } from '../helpers/logger'
-import { getR2PublicUrl } from '../helpers/r2-url'
 
 const bgRemoval = new Hono<AppEnv>()
 
@@ -324,6 +317,119 @@ bgRemoval.post('/api/remove-bg-image/:imageId', async (c) => {
         }
 
         // ==========================================
+        // Priority 0: Use withoutBG Focus (Free, Hugging Face Spaces) - Always try first for URL images
+        // ==========================================
+        const isBase64Image = originalUrl.startsWith('data:');
+        
+        if (!isBase64Image) {
+            logger.debug('🚀 Using withoutBG Focus model for background removal (URL mode)');
+            
+            try {
+                const result = await removeBackgroundWithWithoutBG(originalUrl);
+                
+                if (!result.success || !result.imageDataUrl) {
+                    throw new Error(result.error || 'withoutBG processing failed');
+                }
+
+                // Convert data URL to binary buffer for R2 upload
+                const base64Data = result.imageDataUrl.split(',')[1];
+                const binaryString = atob(base64Data);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                
+                // Upload to R2 bucket
+                const parts = imageId.replace('r2_', '').split('_');
+                const sku = parts[0];
+                const filenamePart = parts.slice(1).join('_');
+                const companyId = getCompanyId(c);
+                const r2Key = `${companyId}/${sku}/${filenamePart}_p.png`;
+                
+                if (c.env.PRODUCT_IMAGES) {
+                    await c.env.PRODUCT_IMAGES.put(r2Key, bytes, {
+                        httpMetadata: {
+                            contentType: 'image/png'
+                        }
+                    });
+                    logger.debug(`✅ Uploaded processed image to R2: ${r2Key}`);
+                    
+                    // Update image status in DB
+                    await markImageAsProcessed(c.env.DB, sku, companyId, filenamePart);
+                }
+                
+                // Get R2 public URL
+                const R2_PUBLIC_URL = getR2PublicUrl(c.env);
+                const processedUrl = `${R2_PUBLIC_URL}/${r2Key}`;
+                
+                logger.debug(`✅ Processed image saved to R2 and status updated: ${r2Key}`);
+
+                return c.json({ 
+                    success: true,
+                    imageId,
+                    processedUrl: processedUrl,
+                    message: 'Background removed using withoutBG Focus (Free)'
+                });
+            } catch (apiError: any) {
+                logger.error('❌ withoutBG API failed:', apiError.message);
+                // Fall through to try Cloudflare AI as fallback
+            }
+        } else {
+            logger.debug('📦 Base64 image detected - skipping withoutBG (not supported)');
+        }
+
+        // ==========================================
+        // Priority 1: Use Cloudflare AI (Fallback for base64 or if withoutBG fails)
+        // ==========================================
+        if (c.env.AI) {
+            logger.debug('🤖 Using Cloudflare AI @cf/bria/rmbg-2.0 for background removal');
+            
+            try {
+                const result = await removeBackgroundWithCloudflareAI(c.env.AI, originalUrl);
+                
+                if (result.success && result.imageBuffer) {
+                    // Upload to R2 bucket
+                    const parts = imageId.replace('r2_', '').split('_');
+                    const sku = parts[0];
+                    const filenamePart = parts.slice(1).join('_');
+                    const companyId = getCompanyId(c);
+                    const r2Key = `${companyId}/${sku}/${filenamePart}_p.png`;
+                    
+                    if (c.env.PRODUCT_IMAGES) {
+                        await c.env.PRODUCT_IMAGES.put(r2Key, result.imageBuffer, {
+                            httpMetadata: {
+                                contentType: 'image/png'
+                            }
+                        });
+                        logger.debug(`✅ Uploaded processed image to R2: ${r2Key}`);
+                        
+                        // Update image status in DB
+                        await markImageAsProcessed(c.env.DB, sku, companyId, filenamePart);
+                    }
+                    
+                    // Get R2 public URL
+                    const R2_PUBLIC_URL = getR2PublicUrl(c.env);
+                    const processedUrl = `${R2_PUBLIC_URL}/${r2Key}`;
+                    
+                    logger.debug(`✅ Processed image saved to R2 and status updated: ${r2Key}`);
+
+                    return c.json({ 
+                        success: true,
+                        imageId,
+                        processedUrl: processedUrl,
+                        message: 'Background removed using Cloudflare AI (Free)'
+                    });
+                } else {
+                    logger.error('❌ Cloudflare AI failed:', result.error);
+                    throw new Error(result.error || 'Cloudflare AI processing failed');
+                }
+            } catch (aiError: any) {
+                logger.error('❌ Cloudflare AI error:', aiError.message);
+                throw aiError;
+            }
+        }
+
+        // ==========================================
         // Priority 1: Use Fal.ai BRIA API if configured (Cloud-based, no OOM issues)
         // ==========================================
         const briaApiKey = c.env.BRIA_API_KEY || c.env.FAL_API_KEY;
@@ -382,116 +488,19 @@ bgRemoval.post('/api/remove-bg-image/:imageId', async (c) => {
             }
         }
 
-        // ==========================================
-        // Priority 2: withoutBG Focus (birefnet-general) - Free Hugging Face Spaces
-        // ==========================================
-        const isBase64Image = originalUrl.startsWith('data:');
-        
-        if ((model === 'birefnet-general' || model === 'cloudflare-ai') && !isBase64Image) {
-            logger.debug('🚀 Using withoutBG Focus model for background removal (URL mode)');
-            
-            try {
-                const result = await removeBackgroundWithWithoutBG(originalUrl);
-                
-                if (!result.success || !result.imageDataUrl) {
-                    throw new Error(result.error || 'withoutBG processing failed');
-                }
-
-                // Convert data URL to binary buffer for R2 upload
-                const base64Data = result.imageDataUrl.split(',')[1];
-                const binaryString = atob(base64Data);
-                const bytes = new Uint8Array(binaryString.length);
-                for (let i = 0; i < binaryString.length; i++) {
-                    bytes[i] = binaryString.charCodeAt(i);
-                }
-                
-                // Upload to R2 bucket
-                // 新形式: {company_id}/{SKU}/{filename}_p.png（processedフォルダ廃止）
-                // 例: r2_1025L280001_1025L280001_1 → test_company/1025L280001/1025L280001_1_p.png
-                const parts = imageId.replace('r2_', '').split('_');
-                const sku = parts[0];
-                const filenamePart = parts.slice(1).join('_');
-                const companyId = getCompanyId(c);
-                const r2Key = `${companyId}/${sku}/${filenamePart}_p.png`;
-                
-                if (c.env.PRODUCT_IMAGES) {
-                    await c.env.PRODUCT_IMAGES.put(r2Key, bytes, {
-                        httpMetadata: {
-                            contentType: 'image/png'
-                        }
-                    });
-                    logger.debug(`✅ Uploaded processed image to R2: ${r2Key}`);
-                    
-                    // Update image status in DB to eliminate N+1 problem
-                    await markImageAsProcessed(c.env.DB, sku, companyId, filenamePart);
-                }
-                
-                // Get R2 public URL
-                const R2_PUBLIC_URL = getR2PublicUrl(c.env);
-                const processedUrl = `${R2_PUBLIC_URL}/${r2Key}`;
-                
-                logger.debug(`✅ Processed image saved to R2 and status updated in DB: ${r2Key}`);
-
-                return c.json({ 
-                    success: true,
-                    imageId,
-                    processedUrl: processedUrl,
-                    message: 'Background removed using withoutBG Focus (Free)'
-                });
-            } catch (apiError: any) {
-                logger.error(' withoutBG API failed:', apiError.message);
-                // Don't fail immediately for URL images - try fallback to local rembg
-                logger.warn(' Falling back to local rembg server...');
-            }
-        }
-        
-        // Log if skipping withoutBG due to base64
-        if (isBase64Image) {
-            logger.debug('📦 Base64 image detected - using local rembg server (withoutBG API does not support base64)');
-        }
-
-        // No more fallback servers available
+        // No more background removal services available
         logger.error('❌ All background removal services failed');
-        throw new Error('Background removal failed: WithoutBG API is unavailable. Please try again later.');
-        
-        // Upload to R2 bucket
-        // 新形式: {company_id}/{SKU}/{filename}_p.png（processedフォルダ廃止）
-        // 例: r2_1025L280001_1025L280001_1 → test_company/1025L280001/1025L280001_1_p.png
-        const parts = imageId.replace('r2_', '').split('_');
-        const sku = parts[0];
-        const filenamePart = parts.slice(1).join('_');
-        const companyId = getCompanyId(c);
-        const r2Key = `${companyId}/${sku}/${filenamePart}_p.png`;
-        
-        if (c.env.PRODUCT_IMAGES) {
-            await c.env.PRODUCT_IMAGES.put(r2Key, imageBuffer, {
-                httpMetadata: {
-                    contentType: 'image/png'
-                }
-            });
-            logger.debug(`✅ Uploaded processed image to R2: ${r2Key}`);
-            
-            // Update DB status to eliminate N+1 R2 queries
-            await markImageAsProcessed(c.env.DB, sku, companyId, filenamePart);
-        }
-        
-        // Get R2 public URL
-        const R2_PUBLIC_URL = getR2PublicUrl(c.env);
-        const processedUrl = `${R2_PUBLIC_URL}/${r2Key}`;
-
-        logger.debug(`✅ Processed image saved to R2 and DB status updated: ${r2Key}`);
-
-        return c.json({ 
-            success: true,
-            imageId,
-            dbImageId: dbImageId,
-            processedUrl: processedUrl,
-            message: 'Background removed and saved to R2'
-        });
+        throw new Error('Background removal failed: All services are unavailable. Please try again later.');
 
     } catch (error: any) {
         logError('Background removal (image ID)', error, { imageId, model });
-        return c.json(createSafeErrorResponse(error, ErrorCode.EXTERNAL_API_ERROR), 500);
+        // Temporary debug: return actual error message
+        return c.json({ 
+            success: false, 
+            error: error.message || String(error),
+            stack: error.stack,
+            errorCode: 'EXTERNAL_API_ERROR' 
+        }, 500);
     }
 });
 
