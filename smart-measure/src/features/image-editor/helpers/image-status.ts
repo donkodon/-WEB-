@@ -125,13 +125,10 @@ export function getImageDisplayUrl(
   companyId: string,
   updatedAt?: string
 ): { url: string; status: ImageStatus } {
-  // Note: For processed/final images, use proxy route. For originals, use env URL.
-  // Since this is a pure function without env context, use the default URL for originals.
-  const IMAGE_UPLOAD_API_URL = 'https://image-upload-api.jinkedon2.workers.dev';
-  
   // Use updatedAt timestamp for cache busting (more stable than Date.now())
   const cacheParam = updatedAt ? `?v=${new Date(updatedAt).getTime()}` : `?v=${Date.now()}`;
   
+  // All images use image-proxy API for consistent company_id resolution and security
   // Priority: _f.png > _p.png > original
   if (finalImages.includes(filenameWithoutExt)) {
     return {
@@ -147,9 +144,9 @@ export function getImageDisplayUrl(
     };
   }
   
-  // Original image from image-upload-api
+  // Original image via image-proxy API (ensures proper company_id resolution)
   return {
-    url: `${IMAGE_UPLOAD_API_URL}/${companyId}/${sku}/${filenameWithoutExt}.jpg`,
+    url: `/api/image-proxy/${sku}/${filenameWithoutExt}.jpg${cacheParam}`,
     status: 'original'
   };
 }
