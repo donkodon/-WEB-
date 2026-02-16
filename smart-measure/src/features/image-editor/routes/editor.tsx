@@ -5,8 +5,12 @@ import { Layout } from '../../../components'
 import { getCompanyId } from '../../auth/helpers/auth'
 import { getImageDisplayUrl } from '../helpers/image-status'
 import { logger } from '../../../shared/helpers/logger'
+import { requireFirebaseAuth } from '../../../middleware/auth'
 
 const editor = new Hono<AppEnv>()
+
+// Apply authentication to editor routes (to get authenticated user's companyId)
+editor.use('/edit/*', requireFirebaseAuth)
 
 editor.post('/api/upload-image', async (c) => {
     const body = await c.req.parseBody();
@@ -34,19 +38,16 @@ editor.post('/api/upload-image', async (c) => {
 editor.get('/edit/:id', async (c) => {
   const id = c.req.param('id')
   
-  // Get company_id from authenticated user (fallback to cookie for SSR)
+  // Get company_id from authenticated user (authentication is required by middleware)
   const user = c.get('user') as { companyId?: string } | undefined;
-  let companyId = user?.companyId;
+  const companyId = user?.companyId;
   
   if (!companyId) {
-    // Fallback: read from cookie (backwards compatibility for SSR pages)
-    const cookieHeader = c.req.header('Cookie');
-    if (cookieHeader) {
-      const match = cookieHeader.match(/company_id=([^;]+)/);
-      if (match) companyId = match[1];
-    }
-    if (!companyId) companyId = 'test_company';
+    logger.error('❌ No company_id found for authenticated user');
+    return c.json({ success: false, error: 'Company ID not found' }, 400);
   }
+  
+  logger.debug(`✅ Editor accessed by user with companyId: ${companyId}`);
   
   // Parse R2 image ID: r2_{SKU}_{filename_without_ext} or measurement_{SKU}
   let imageResult: any = null;
