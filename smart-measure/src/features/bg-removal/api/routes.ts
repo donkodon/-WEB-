@@ -93,10 +93,16 @@ bgRemoval.post('/api/remove-bg-image/:imageId', async (c) => {
     
     const { sku, filenamePart } = parsed
     
-    // Get company_id from authenticated user (no cookies)
+    // Get company_id from authenticated user (authentication required)
     const user = c.get('user') as { companyId?: string } | undefined
     const userCompanyId = user?.companyId
-    const isAuthenticated = !!userCompanyId
+    
+    if (!userCompanyId) {
+      return c.json({ 
+        error: 'Authentication required. Please log in.',
+        errorCode: 'AUTH_REQUIRED'
+      }, 401)
+    }
     
     const r2PublicUrl = getR2PublicUrl(c.env)
     
@@ -105,28 +111,23 @@ bgRemoval.post('/api/remove-bg-image/:imageId', async (c) => {
       sku,
       filenamePart,
       userCompanyId,
-      isAuthenticated,
       r2PublicUrl
     }, null, 2))
     
-    // Resolve R2 image URL
+    // Resolve R2 image URL (only in user's company)
     const resolved = await resolveR2ImageUrl(
       c.env.PRODUCT_IMAGES,
       r2PublicUrl,
-      userCompanyId || 'test_company',  // Fallback for unauthenticated
+      userCompanyId,
       sku,
       filenamePart,
-      c.env.DB,
-      isAuthenticated
+      c.env.DB
     )
     
     if (!resolved) {
-      const companyIds = userCompanyId 
-        ? [userCompanyId]  // Authenticated: only user's company
-        : ['relight', 'saisunsatsuei', 'test_company']  // Unauthenticated: fallbacks
       return c.json({ 
         error: `Image not found: ${imageId}. Please upload the image first.`,
-        details: `Searched for: ${getSearchedPaths(companyIds, sku, filenamePart)}`
+        details: `Searched in company: ${userCompanyId}, SKU: ${sku}`
       }, 404)
     }
     

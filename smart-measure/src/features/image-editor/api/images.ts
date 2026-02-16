@@ -458,69 +458,44 @@ images.get('/api/image-proxy/:sku/:filename', async (c) => {
             return c.json({ error: 'Filename too long' }, 400);
         }
         
-        // R2から画像を取得
-        // Strategy: ONLY use authenticated user's company_id, or DB query (no cookies)
+        // R2から画像を取得（認証必須）
         let r2Object: R2ObjectBody | null = null;
         let foundKey = '';
         
-        // Priority 1: Get company_id from authenticated user context
+        // Get company_id from authenticated user
         const user = c.get('user') as { companyId?: string } | undefined;
         const userCompanyId = user?.companyId;
         
-        let companyIdFromDb: string | null = null;
-        
-        if (userCompanyId) {
-            // ✅ Authenticated request: Use user's company_id only
-            logger.debug('👤 Authenticated user - company_id:', userCompanyId);
-            
-            // Query DB to verify SKU belongs to this company (security check)
-            try {
-                const dbResult = await c.env.DB.prepare(`
-                    SELECT company_id FROM product_items 
-                    WHERE sku = ? AND company_id = ?
-                    LIMIT 1
-                `).bind(sku, userCompanyId).first();
-                
-                if (!dbResult) {
-                    logger.warn('❌ SKU not found in user company:', { sku, userCompanyId });
-                    return c.json({ error: 'Image not found in your company' }, 404);
-                }
-                
-                companyIdFromDb = dbResult.company_id as string;
-                logger.debug('✅ SKU verified for user company:', companyIdFromDb);
-            } catch (error) {
-                logger.error('❌ DB query failed:', error);
-                return c.json({ error: 'Database error' }, 500);
-            }
-        } else {
-            // ⚠️ Unauthenticated request: Query DB by SKU only
-            logger.debug('🔓 Unauthenticated request - querying DB by SKU:', sku);
-            
-            try {
-                const dbResult = await c.env.DB.prepare(`
-                    SELECT company_id FROM product_items 
-                    WHERE sku = ? 
-                    ORDER BY updated_at DESC 
-                    LIMIT 1
-                `).bind(sku).first();
-                
-                if (dbResult && dbResult.company_id) {
-                    companyIdFromDb = dbResult.company_id as string;
-                    logger.debug('📊 Found company_id from DB:', companyIdFromDb);
-                } else {
-                    logger.warn('❌ SKU not found in DB:', sku);
-                    return c.json({ error: 'Image not found' }, 404);
-                }
-            } catch (error) {
-                logger.error('❌ DB query failed:', error);
-                return c.json({ error: 'Database error' }, 500);
-            }
+        if (!userCompanyId) {
+            logger.warn('❌ Authentication required');
+            return c.json({ error: 'Authentication required. Please log in.' }, 401);
         }
         
-        // Build search list: authenticated user's company_id first, then DB result, then common fallbacks
-        const companyIds = userCompanyId
-            ? [userCompanyId]  // Authenticated: only user's company
-            : [companyIdFromDb!, 'relight', 'saisunsatsuei', 'test_company'];  // Unauthenticated: try common fallbacks
+        logger.debug('👤 Authenticated user - company_id:', userCompanyId);
+        
+        // Query DB to verify SKU belongs to this company (security check)
+        let companyIdFromDb: string | null = null;
+        try {
+            const dbResult = await c.env.DB.prepare(`
+                SELECT company_id FROM product_items 
+                WHERE sku = ? AND company_id = ?
+                LIMIT 1
+            `).bind(sku, userCompanyId).first();
+            
+            if (!dbResult) {
+                logger.warn('❌ SKU not found in user company:', { sku, userCompanyId });
+                return c.json({ error: 'Image not found in your company' }, 404);
+            }
+            
+            companyIdFromDb = dbResult.company_id as string;
+            logger.debug('✅ SKU verified for user company:', companyIdFromDb);
+        } catch (error) {
+            logger.error('❌ DB query failed:', error);
+            return c.json({ error: 'Database error' }, 500);
+        }
+        
+        // Only search in user's company
+        const companyIds = [userCompanyId];
         
         // Try each company_id
         for (const tryCompanyId of companyIds) {

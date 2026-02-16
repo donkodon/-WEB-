@@ -7,7 +7,6 @@ import type { ImageResolverResult } from '../types'
 import { logger } from '../../../shared/helpers/logger'
 
 const EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp']
-const COMPANY_IDS = ['relight', 'saisunsatsuei', 'test_company'] // Fallback company IDs
 
 /**
  * Parse R2 image ID
@@ -31,8 +30,7 @@ export function parseImageId(imageId: string): { sku: string; filenamePart: stri
 
 /**
  * Resolve R2 image URL
- * Tries multiple company IDs and file extensions
- * Prioritizes authenticated user's company_id from database
+ * Authentication required - only searches in user's company
  */
 export async function resolveR2ImageUrl(
   bucket: R2Bucket | undefined,
@@ -40,55 +38,36 @@ export async function resolveR2ImageUrl(
   companyId: string,
   sku: string,
   filenamePart: string,
-  db?: D1Database,
-  isAuthenticated: boolean = false
+  db?: D1Database
 ): Promise<ImageResolverResult | null> {
   let companyIdFromDb: string | null = null;
   
+  // Verify SKU belongs to user's company (authentication required)
   if (db) {
     try {
-      if (isAuthenticated && companyId) {
-        // ✅ Authenticated request: verify SKU belongs to user's company
-        const dbResult = await db.prepare(`
-          SELECT company_id FROM product_items 
-          WHERE sku = ? AND company_id = ?
-          LIMIT 1
-        `).bind(sku, companyId).first();
-        
-        if (!dbResult) {
-          console.error('❌ SKU not found in user company:', { sku, companyId });
-          return null;
-        }
-        
-        companyIdFromDb = dbResult.company_id as string;
-        console.log('✅ Authenticated - SKU verified for company:', companyIdFromDb);
-      } else {
-        // ⚠️ Unauthenticated request: query DB by SKU only
-        const dbResult = await db.prepare(`
-          SELECT company_id FROM product_items 
-          WHERE sku = ? 
-          ORDER BY updated_at DESC 
-          LIMIT 1
-        `).bind(sku).first();
-        
-        if (dbResult && dbResult.company_id) {
-          companyIdFromDb = dbResult.company_id as string;
-          console.log('📊 Unauthenticated - Found company_id from DB:', companyIdFromDb);
-        }
+      const dbResult = await db.prepare(`
+        SELECT company_id FROM product_items 
+        WHERE sku = ? AND company_id = ?
+        LIMIT 1
+      `).bind(sku, companyId).first();
+      
+      if (!dbResult) {
+        console.error('❌ SKU not found in user company:', { sku, companyId });
+        return null;
       }
+      
+      companyIdFromDb = dbResult.company_id as string;
+      console.log('✅ SKU verified for user company:', companyIdFromDb);
     } catch (error) {
-      console.warn('⚠️ DB query for company_id failed:', error);
+      console.error('❌ DB query failed:', error);
+      return null;
     }
   }
   
-  // Build search list based on authentication status
-  const companyIds = isAuthenticated && companyIdFromDb
-    ? [companyIdFromDb]  // Authenticated: only user's company
-    : companyIdFromDb 
-      ? [companyIdFromDb, ...COMPANY_IDS]  // Unauthenticated with DB result
-      : [companyId, ...COMPANY_IDS];  // Fallback to defaults
+  // Only search in user's company
+  const companyIds = [companyId];
   
-  console.log('🔍 Resolving image:', { companyId, sku, filenamePart, companyIdFromDb, isAuthenticated })
+  console.log('🔍 Resolving image:', { companyId, sku, filenamePart })
   
   // Try each company ID and extension combination
   for (const tryCompanyId of companyIds) {
