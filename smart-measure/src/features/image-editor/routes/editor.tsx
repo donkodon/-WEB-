@@ -141,6 +141,7 @@ editor.get('/edit/:id', async (c) => {
       
       // Set original URL using image proxy (supports both original and processed images)
       const originalUrl = `/api/image-proxy/${sku}/${filenamePart}.jpg?v=${cacheVersion}`;
+      logger.debug(`🔍 Editor URLs - Original: ${originalUrl}, Processed: ${baseImageUrl}`);
       
       imageResult = {
         id: id,
