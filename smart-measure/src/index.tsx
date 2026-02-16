@@ -16,7 +16,7 @@ import maskApi from './features/mask/api/mask'
 // --- API modules ---
 import measurement from './features/measurement/api/measurement'
 import images from './features/image-editor/api/images'
-import bgRemoval from './features/bg-removal/api/bg-removal'
+import bgRemoval from './features/bg-removal/api/routes'
 import csv from './features/data-sync/api/csv'
 import sync from './features/data-sync/api/sync'
 import products from './features/dashboard/api/products'
