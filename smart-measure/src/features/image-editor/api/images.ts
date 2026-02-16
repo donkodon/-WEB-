@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import type { R2ObjectBody } from '@cloudflare/workers-types'
 import { getR2PublicUrl } from '../helpers/r2-url'
 import type { AppEnv } from '../../../types/bindings'
 import { getCompanyId } from '../../auth/helpers/auth'
@@ -457,14 +458,28 @@ images.get('/api/image-proxy/:sku/:filename', async (c) => {
         }
         
         // R2から画像を取得 (Phase 1: Dynamic company_id)
+        // Try multiple company IDs (same logic as background removal)
         const companyId = getCompanyId(c);
-        const key = `${companyId}/${sku}/${filename}`;
-        logger.debug('🔍 Fetching from R2:', key);
+        const companyIds = [companyId, 'relight', 'saisunsatsuei', 'test_company'];
         
-        const r2Object = await c.env.PRODUCT_IMAGES.get(key);
+        let r2Object: R2ObjectBody | null = null;
+        let foundKey = '';
+        
+        for (const tryCompanyId of companyIds) {
+            const key = `${tryCompanyId}/${sku}/${filename}`;
+            logger.debug('🔍 Trying R2 key:', key);
+            
+            r2Object = await c.env.PRODUCT_IMAGES.get(key);
+            
+            if (r2Object) {
+                foundKey = key;
+                logger.debug('✅ Image found at:', key);
+                break;
+            }
+        }
         
         if (!r2Object) {
-            logger.debug('❌ Image not found:', key);
+            logger.debug('❌ Image not found in any company folder:', companyIds);
             return c.notFound();
         }
         
