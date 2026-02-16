@@ -49,14 +49,15 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Toggle between original and processed
     window.toggleOriginal = function() {
+        const button = document.getElementById('btn-toggle-original');
         if (showingOriginal) {
             img.src = processedSrc;
             showingOriginal = false;
-            document.getElementById('btn-toggle-original').textContent = '元画像を表示';
+            button.innerHTML = '<i class="fas fa-image mr-2"></i> 元画像を確認';
         } else {
             img.src = originalSrc;
             showingOriginal = true;
-            document.getElementById('btn-toggle-original').textContent = '処理後画像を表示';
+            button.innerHTML = '<i class="fas fa-image mr-2"></i> 処理後画像を表示';
         }
     };
     
@@ -132,6 +133,29 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             button.disabled = false;
             button.innerHTML = '<i class="fas fa-save mr-2"></i>保存';
+        }
+    };
+    
+    // Enable mask mode
+    window.enableMaskMode = function() {
+        const maskPanel = document.getElementById('mask-panel');
+        const maskIndicator = document.getElementById('mask-mode-indicator');
+        
+        if (maskPanel && maskIndicator) {
+            const isHidden = maskPanel.classList.contains('hidden');
+            
+            if (isHidden) {
+                maskPanel.classList.remove('hidden');
+                maskIndicator.classList.remove('hidden');
+                window.logger.debug('✅ Mask mode enabled');
+                alert('マスクモードが有効になりました。\n青い部分が商品として保持されます。\n消しゴムで背景を指定してください。');
+            } else {
+                maskPanel.classList.add('hidden');
+                maskIndicator.classList.add('hidden');
+                window.logger.debug('❌ Mask mode disabled');
+            }
+        } else {
+            window.logger.error('❌ Mask panel or indicator not found');
         }
     };
     
