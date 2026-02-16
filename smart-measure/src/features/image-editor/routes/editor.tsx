@@ -1,15 +1,10 @@
 import { Hono } from 'hono'
 import { getImageUploadApiUrl } from '../helpers/image-url'
-import type { AppEnv } from '../types/bindings'
-import { getImageUploadApiUrl } from '../helpers/image-url'
-import { Layout } from '../components'
-import { getImageUploadApiUrl } from '../helpers/image-url'
-import { getCompanyId } from '../helpers/auth'
-import { getImageUploadApiUrl } from '../helpers/image-url'
+import type { AppEnv } from '../../../types/bindings'
+import { Layout } from '../../../components'
+import { getCompanyId } from '../../auth/helpers/auth'
 import { getImageDisplayUrl } from '../helpers/image-status'
-import { getImageUploadApiUrl } from '../helpers/image-url'
-import { logger } from '../helpers/logger'
-import { getImageUploadApiUrl } from '../helpers/image-url'
+import { logger } from '../../../shared/helpers/logger'
 
 const editor = new Hono<AppEnv>()
 

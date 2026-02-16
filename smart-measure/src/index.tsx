@@ -1,26 +1,27 @@
 import { Hono } from 'hono'
 import { renderer } from './renderer'
 import type { AppEnv } from './types/bindings'
-import { secureCors } from './middleware/cors'
+import { secureCors } from './shared/middleware/cors'
 
 // --- Route modules ---
-import auth from './routes/auth'
-import authApi from './routes/auth-api'
-import dashboard from './routes/dashboard'
-import editor from './routes/editor'
-import settings from './routes/settings'
-import landmarks from './routes/landmarks'
-import maskEditor from './routes/mask-editor'
+import auth from './features/auth/routes/auth'
+import authApi from './features/auth/api/auth-api'
+import dashboard from './features/dashboard/routes/dashboard'
+import editor from './features/image-editor/routes/editor'
+import settings from './features/dashboard/routes/settings'
+import landmarks from './features/measurement/routes/landmarks'
+import maskEditor from './features/mask/routes/mask-editor'
+import maskApi from './features/mask/api/mask'
 
 // --- API modules ---
-import measurement from './api/measurement'
-import images from './api/images'
-import bgRemoval from './api/bg-removal'
-import csv from './api/csv'
-import sync from './api/sync'
-import products from './api/products'
-import admin from './api/admin'
-import billing from './api/billing'
+import measurement from './features/measurement/api/measurement'
+import images from './features/image-editor/api/images'
+import bgRemoval from './features/bg-removal/api/bg-removal'
+import csv from './features/data-sync/api/csv'
+import sync from './features/data-sync/api/sync'
+import products from './features/dashboard/api/products'
+import admin from './features/dashboard/api/admin'
+import billing from './features/billing/api/billing'
 
 const app = new Hono<AppEnv>()
 
@@ -40,6 +41,7 @@ app.route('/', maskEditor)
 // --- API Routes ---
 app.route('/', authApi)  // Firebase authentication API
 app.route('/', billing)  // Usage-based billing API
+app.route('/', maskApi)  // Mask editing API (update, save, regenerate)
 app.route('/', measurement)
 app.route('/', images)
 app.route('/', bgRemoval)

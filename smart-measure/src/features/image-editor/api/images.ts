@@ -1,17 +1,11 @@
 import { Hono } from 'hono'
 import { getR2PublicUrl } from '../helpers/r2-url'
-import type { AppEnv } from '../types/bindings'
-import { getR2PublicUrl } from '../helpers/r2-url'
-import { getCompanyId } from '../helpers/auth'
-import { getR2PublicUrl } from '../helpers/r2-url'
+import type { AppEnv } from '../../../types/bindings'
+import { getCompanyId } from '../../auth/helpers/auth'
 import { ImageUrlHelper } from '../helpers/image-url'
-import { getR2PublicUrl } from '../helpers/r2-url'
-import { createSafeErrorResponse, ErrorCode, logError } from '../helpers/error-handler'
-import { getR2PublicUrl } from '../helpers/r2-url'
+import { createSafeErrorResponse, ErrorCode, logError } from '../../../shared/helpers/error-handler'
 import { markImageAsFinal } from '../helpers/image-status'
-import { getR2PublicUrl } from '../helpers/r2-url'
-import { logger } from '../helpers/logger'
-import { getR2PublicUrl } from '../helpers/r2-url'
+import { logger } from '../../../shared/helpers/logger'
 
 const images = new Hono<AppEnv>()
 

@@ -5,9 +5,9 @@
  */
 
 import { Hono } from 'hono'
-import type { AppEnv } from '../types/bindings'
+import type { AppEnv } from '../../../types/bindings'
 import { requireFirebaseAuth } from '../middleware/auth'
-import { logger } from '../helpers/logger'
+import { logger } from '../../../shared/helpers/logger'
 
 const authApi = new Hono<AppEnv>()
 

@@ -3,7 +3,7 @@
  */
 
 import { Context, Next } from 'hono';
-import { Bindings } from '../types/bindings';
+import { Bindings } from '../../../types/bindings';
 import { logUsage, getCurrentBillingMonth } from '../lib/billing-calculator';
 
 /**

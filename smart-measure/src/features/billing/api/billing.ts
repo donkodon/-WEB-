@@ -3,10 +3,10 @@
  */
 
 import { Hono } from 'hono';
-import type { AppEnv } from '../types/bindings';
-import { requireFirebaseAuth } from '../middleware/auth';
+import type { AppEnv } from '../../../types/bindings';
+import { requireFirebaseAuth } from '../../auth/middleware/auth';
 import { trackBulkSKUDownload, getCurrentUsageSummary } from '../middleware/billing';
-import { logError, createSafeErrorResponse, ErrorCode } from '../helpers/error-handler';
+import { logError, createSafeErrorResponse, ErrorCode } from '../../../shared/helpers/error-handler';
 
 const billing = new Hono<AppEnv>();
 
