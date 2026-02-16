@@ -115,6 +115,7 @@ editor.get('/edit/:id', async (c) => {
           try {
             processedImages = JSON.parse(dbResult.processed_images as string || '[]');
             finalImages = JSON.parse(dbResult.final_images as string || '[]');
+            logger.debug(`🔍 DB status - SKU: ${sku}, processed: ${JSON.stringify(processedImages)}, final: ${JSON.stringify(finalImages)}`);
           } catch (e) {
             logger.error('Failed to parse image status:', e);
           }
@@ -125,6 +126,8 @@ editor.get('/edit/:id', async (c) => {
       
       const cacheVersion = new Date(updatedAt).getTime();
       // Note: companyId is already defined at line 36
+      
+      logger.debug(`🔍 Calling getImageDisplayUrl with filenamePart: ${filenamePart}`);
       
       // Use helper function to get display URL based on DB status (no R2 API calls)
       const imageStatus = getImageDisplayUrl(
@@ -153,6 +156,8 @@ editor.get('/edit/:id', async (c) => {
         product_name: `商品 ${sku}`,
         status: status
       };
+      
+      logger.debug(`📦 imageResult - status: ${status}, original: ${originalUrl}, processed: ${baseImageUrl}`);
     }
   }
   
