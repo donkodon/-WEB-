@@ -12,7 +12,7 @@ import { logger } from '../../../shared/helpers/logger'
 const authApi = new Hono<AppEnv>()
 
 // Apply Firebase authentication to all auth API endpoints
-authApi.use('*', requireFirebaseAuth())
+authApi.use('*', requireFirebaseAuth)
 
 /**
  * GET /api/auth/me

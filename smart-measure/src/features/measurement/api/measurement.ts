@@ -9,7 +9,7 @@ import { logger } from '../../../shared/helpers/logger'
 const measurement = new Hono<AppEnv>()
 
 // Apply Firebase authentication to all measurement endpoints
-measurement.use('*', requireFirebaseAuth())
+measurement.use('*', requireFirebaseAuth)
 
 measurement.post('/api/auto-measure', async (c) => {
   try {
