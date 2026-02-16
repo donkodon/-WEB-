@@ -215,7 +215,8 @@ export async function fetchDashboardData(options: DashboardDataOptions): Promise
         filenameWithoutExt,
         processedImages,
         finalImages,
-        companyId
+        companyId,
+        updatedAt
       )
       
       const displayUrl = imageStatus.url
