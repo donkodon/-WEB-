@@ -33,7 +33,20 @@ editor.post('/api/upload-image', async (c) => {
 // --- Editor (Screenshot 3) ---
 editor.get('/edit/:id', async (c) => {
   const id = c.req.param('id')
-  const companyId = getCompanyId(c);
+  
+  // Get company_id from authenticated user (fallback to cookie for SSR)
+  const user = c.get('user') as { companyId?: string } | undefined;
+  let companyId = user?.companyId;
+  
+  if (!companyId) {
+    // Fallback: read from cookie (backwards compatibility for SSR pages)
+    const cookieHeader = c.req.header('Cookie');
+    if (cookieHeader) {
+      const match = cookieHeader.match(/company_id=([^;]+)/);
+      if (match) companyId = match[1];
+    }
+    if (!companyId) companyId = 'test_company';
+  }
   
   // Parse R2 image ID: r2_{SKU}_{filename_without_ext} or measurement_{SKU}
   let imageResult: any = null;
@@ -109,7 +122,7 @@ editor.get('/edit/:id', async (c) => {
       }
       
       const cacheVersion = new Date(updatedAt).getTime();
-      const companyId = getCompanyId(c);
+      // Note: companyId is already defined at line 36
       
       // Use helper function to get display URL based on DB status (no R2 API calls)
       const imageStatus = getImageDisplayUrl(
