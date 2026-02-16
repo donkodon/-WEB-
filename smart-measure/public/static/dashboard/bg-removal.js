@@ -81,7 +81,7 @@
                         
                         // Step 1: Remove background
                         window.logger.debug('🔄 Step 1: Removing background for SKU:', sku);
-                        const bgRes = await fetch('/api/remove-bg-measurement/' + sku, {
+                        const bgRes = await window.authenticatedFetch('/api/remove-bg-measurement/' + sku, {
                             method: 'POST'
                         });
                         
@@ -103,7 +103,7 @@
                             
                             // Step 3: Upload resized image
                             window.logger.debug('📤 Step 3: Uploading resized measurement image...');
-                            res = await fetch('/api/upload-processed-measurement/' + sku, {
+                            res = await window.authenticatedFetch('/api/upload-processed-measurement/' + sku, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ imageDataUrl: resizedDataUrl })
@@ -116,7 +116,7 @@
                         }
                     } else {
                         window.logger.debug('🎨 Starting background removal for image ID:', imageId);
-                        res = await fetch('/api/remove-bg-image/' + imageId, {
+                        res = await window.authenticatedFetch('/api/remove-bg-image/' + imageId, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json'
@@ -231,7 +231,7 @@ window.removeBgSingle = async function(imageId, button) {
     
     try {
         window.logger.debug('📡 Sending request to /api/remove-bg-image/' + imageId);
-        const res = await fetch('/api/remove-bg-image/' + imageId, {
+        const res = await window.authenticatedFetch('/api/remove-bg-image/' + imageId, {
             method: 'POST'
         });
         
@@ -319,7 +319,7 @@ window.removeBgMeasurement = async function(sku, button) {
     try {
         // Step 1: Remove background
         window.logger.debug('📡 Removing background for SKU:', sku);
-        const res = await fetch('/api/remove-bg-measurement/' + sku, {
+        const res = await window.authenticatedFetch('/api/remove-bg-measurement/' + sku, {
             method: 'POST'
         });
         
@@ -351,7 +351,7 @@ window.removeBgMeasurement = async function(sku, button) {
         window.logger.debug('📤 Uploading...');
         button.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>アップロード中';
         
-        const uploadRes = await fetch('/api/upload-processed-measurement/' + sku, {
+        const uploadRes = await window.authenticatedFetch('/api/upload-processed-measurement/' + sku, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 

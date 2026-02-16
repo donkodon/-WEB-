@@ -458,44 +458,68 @@ images.get('/api/image-proxy/:sku/:filename', async (c) => {
             return c.json({ error: 'Filename too long' }, 400);
         }
         
-        // R2から画像を取得（認証必須）
+        // R2から画像を取得（認証不要 - <img>タグから使用されるため）
+        // セキュリティ: DBでSKU存在確認を行う
         let r2Object: R2ObjectBody | null = null;
         let foundKey = '';
         
-        // Get company_id from authenticated user
+        // Get company_id from authenticated user if available
         const user = c.get('user') as { companyId?: string } | undefined;
         const userCompanyId = user?.companyId;
         
-        if (!userCompanyId) {
-            logger.warn('❌ Authentication required');
-            return c.json({ error: 'Authentication required. Please log in.' }, 401);
-        }
-        
-        logger.debug('👤 Authenticated user - company_id:', userCompanyId);
-        
-        // Query DB to verify SKU belongs to this company (security check)
         let companyIdFromDb: string | null = null;
-        try {
-            const dbResult = await c.env.DB.prepare(`
-                SELECT company_id FROM product_items 
-                WHERE sku = ? AND company_id = ?
-                LIMIT 1
-            `).bind(sku, userCompanyId).first();
+        
+        if (userCompanyId) {
+            // 認証済み: ユーザーの会社のみ検索
+            logger.debug('👤 Authenticated user - company_id:', userCompanyId);
             
-            if (!dbResult) {
-                logger.warn('❌ SKU not found in user company:', { sku, userCompanyId });
-                return c.json({ error: 'Image not found in your company' }, 404);
+            try {
+                const dbResult = await c.env.DB.prepare(`
+                    SELECT company_id FROM product_items 
+                    WHERE sku = ? AND company_id = ?
+                    LIMIT 1
+                `).bind(sku, userCompanyId).first();
+                
+                if (!dbResult) {
+                    logger.warn('❌ SKU not found in user company:', { sku, userCompanyId });
+                    return c.json({ error: 'Image not found in your company' }, 404);
+                }
+                
+                companyIdFromDb = dbResult.company_id as string;
+                logger.debug('✅ SKU verified for user company:', companyIdFromDb);
+            } catch (error) {
+                logger.error('❌ DB query failed:', error);
+                return c.json({ error: 'Database error' }, 500);
             }
+        } else {
+            // 未認証（<img>タグからのアクセス）: DBから会社IDを取得
+            logger.debug('🔓 Unauthenticated request - querying DB by SKU:', sku);
             
-            companyIdFromDb = dbResult.company_id as string;
-            logger.debug('✅ SKU verified for user company:', companyIdFromDb);
-        } catch (error) {
-            logger.error('❌ DB query failed:', error);
-            return c.json({ error: 'Database error' }, 500);
+            try {
+                const dbResult = await c.env.DB.prepare(`
+                    SELECT company_id FROM product_items 
+                    WHERE sku = ? 
+                    ORDER BY updated_at DESC 
+                    LIMIT 1
+                `).bind(sku).first();
+                
+                if (!dbResult || !dbResult.company_id) {
+                    logger.warn('❌ SKU not found in DB:', sku);
+                    return c.json({ error: 'Image not found' }, 404);
+                }
+                
+                companyIdFromDb = dbResult.company_id as string;
+                logger.debug('📊 Found company_id from DB:', companyIdFromDb);
+            } catch (error) {
+                logger.error('❌ DB query failed:', error);
+                return c.json({ error: 'Database error' }, 500);
+            }
         }
         
-        // Only search in user's company
-        const companyIds = [userCompanyId];
+        // Search in appropriate company folder(s)
+        const companyIds = userCompanyId 
+            ? [userCompanyId]  // 認証済み: ユーザーの会社のみ
+            : [companyIdFromDb!];  // 未認証: DBから取得した会社のみ
         
         // Try each company_id
         for (const tryCompanyId of companyIds) {
