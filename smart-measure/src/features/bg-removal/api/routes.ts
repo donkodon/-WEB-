@@ -29,8 +29,7 @@ import { base64ToBuffer } from '../helpers/r2-uploader'
 const bgRemoval = new Hono<AppEnv>()
 
 // Apply Firebase authentication to all background removal endpoints
-bgRemoval.use('/api/remove-bg*', requireFirebaseAuth())
-bgRemoval.use('/api/upload-processed*', requireFirebaseAuth())
+bgRemoval.use('*', requireFirebaseAuth())
 
 /**
  * POST /api/remove-bg - Basic background removal using Cloudflare AI
