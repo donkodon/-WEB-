@@ -32,7 +32,7 @@ export function parseImageId(imageId: string): { sku: string; filenamePart: stri
 /**
  * Resolve R2 image URL
  * Tries multiple company IDs and file extensions
- * First tries to get company_id from database by SKU
+ * Prioritizes authenticated user's company_id from database
  */
 export async function resolveR2ImageUrl(
   bucket: R2Bucket | undefined,
@@ -40,31 +40,55 @@ export async function resolveR2ImageUrl(
   companyId: string,
   sku: string,
   filenamePart: string,
-  db?: D1Database
+  db?: D1Database,
+  isAuthenticated: boolean = false
 ): Promise<ImageResolverResult | null> {
-  // Try to get company_id from database first
   let companyIdFromDb: string | null = null;
+  
   if (db) {
     try {
-      const dbResult = await db.prepare(`
-        SELECT company_id FROM product_items WHERE sku = ? LIMIT 1
-      `).bind(sku).first();
-      
-      if (dbResult && dbResult.company_id) {
+      if (isAuthenticated && companyId) {
+        // ✅ Authenticated request: verify SKU belongs to user's company
+        const dbResult = await db.prepare(`
+          SELECT company_id FROM product_items 
+          WHERE sku = ? AND company_id = ?
+          LIMIT 1
+        `).bind(sku, companyId).first();
+        
+        if (!dbResult) {
+          console.error('❌ SKU not found in user company:', { sku, companyId });
+          return null;
+        }
+        
         companyIdFromDb = dbResult.company_id as string;
-        console.log('📊 Found company_id from DB:', companyIdFromDb);
+        console.log('✅ Authenticated - SKU verified for company:', companyIdFromDb);
+      } else {
+        // ⚠️ Unauthenticated request: query DB by SKU only
+        const dbResult = await db.prepare(`
+          SELECT company_id FROM product_items 
+          WHERE sku = ? 
+          ORDER BY updated_at DESC 
+          LIMIT 1
+        `).bind(sku).first();
+        
+        if (dbResult && dbResult.company_id) {
+          companyIdFromDb = dbResult.company_id as string;
+          console.log('📊 Unauthenticated - Found company_id from DB:', companyIdFromDb);
+        }
       }
     } catch (error) {
-      console.warn('⚠️ DB query for company_id failed, using fallback list:', error);
+      console.warn('⚠️ DB query for company_id failed:', error);
     }
   }
   
-  // Build search list: DB company_id first, then provided companyId, then common fallbacks
-  const companyIds = companyIdFromDb 
-    ? [companyIdFromDb, companyId, ...COMPANY_IDS]
-    : [companyId, ...COMPANY_IDS]
+  // Build search list based on authentication status
+  const companyIds = isAuthenticated && companyIdFromDb
+    ? [companyIdFromDb]  // Authenticated: only user's company
+    : companyIdFromDb 
+      ? [companyIdFromDb, ...COMPANY_IDS]  // Unauthenticated with DB result
+      : [companyId, ...COMPANY_IDS];  // Fallback to defaults
   
-  console.log('🔍 Resolving image:', { companyId, sku, filenamePart, companyIdFromDb })
+  console.log('🔍 Resolving image:', { companyId, sku, filenamePart, companyIdFromDb, isAuthenticated })
   
   // Try each company ID and extension combination
   for (const tryCompanyId of companyIds) {

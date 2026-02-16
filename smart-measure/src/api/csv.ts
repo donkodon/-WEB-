@@ -1,12 +1,19 @@
 import { Hono } from 'hono'
 import type { AppEnv } from '../types/bindings'
 import type { CsvExportRow } from '../types/database'
-import { getCompanyId } from '../helpers/auth'
 import { ImageUrlHelper, getImageUploadApiUrl } from '../helpers/image-url'
 import { createSafeErrorResponse, ErrorCode, logError } from '../helpers/error-handler'
 import { logger } from '../helpers/logger'
 
 const csv = new Hono<AppEnv>()
+
+/**
+ * Get company_id from authenticated user (no cookies)
+ */
+function getAuthenticatedCompanyId(c: any): string | null {
+  const user = c.get('user') as { companyId?: string } | undefined
+  return user?.companyId || null
+}
 
 // Helper function to escape CSV values
 function escapeCSV(value: string): string {
@@ -24,8 +31,15 @@ function escapeCSV(value: string): string {
 csv.post('/api/import-csv', async (c) => {
     logger.debug('📥 CSV Import API called');
     
-    // Get company_id from cookie (Phase 1: Dynamic company_id)
-    const companyId = getCompanyId(c);
+    // Get company_id from authenticated user (no cookies)
+    const companyId = getAuthenticatedCompanyId(c);
+    
+    if (!companyId) {
+      return c.json({ 
+        success: false, 
+        error: 'Authentication required. Please log in.' 
+      }, 401);
+    }
     logger.debug(`📦 CSV Import: company_id=${companyId}`);
     
     const body = await c.req.parseBody();
@@ -741,7 +755,14 @@ csv.get('/api/download-product-data/:imageId', async (c) => {
         let r2Object = null;
         let status = 'original';
         let key = '';
-        const companyId = getCompanyId(c);
+        const companyId = getAuthenticatedCompanyId(c);
+        
+        if (!companyId) {
+          return c.json({ 
+            success: false, 
+            error: 'Authentication required. Please log in.' 
+          }, 401);
+        }
         
         // 1. 最優先: 編集済み画像をチェック（{company_id}/{sku}/{filename}_f.png）⭐ (Phase 1: Dynamic company_id)
         const finalKey = `${companyId}/${sku}/${filenamePart}_f.png`;

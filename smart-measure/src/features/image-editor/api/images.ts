@@ -7,6 +7,7 @@ import { ImageUrlHelper } from '../helpers/image-url'
 import { createSafeErrorResponse, ErrorCode, logError } from '../../../shared/helpers/error-handler'
 import { markImageAsFinal } from '../helpers/image-status'
 import { logger } from '../../../shared/helpers/logger'
+import { requireFirebaseAuth } from '../../auth/middleware/auth'
 
 const images = new Hono<AppEnv>()
 
@@ -458,29 +459,68 @@ images.get('/api/image-proxy/:sku/:filename', async (c) => {
         }
         
         // R2から画像を取得
-        // Strategy: First try to get company_id from database by SKU, then fallback to common IDs
+        // Strategy: ONLY use authenticated user's company_id, or DB query (no cookies)
         let r2Object: R2ObjectBody | null = null;
         let foundKey = '';
         
-        // Try to get company_id from database first
+        // Priority 1: Get company_id from authenticated user context
+        const user = c.get('user') as { companyId?: string } | undefined;
+        const userCompanyId = user?.companyId;
+        
         let companyIdFromDb: string | null = null;
-        try {
-            const dbResult = await c.env.DB.prepare(`
-                SELECT company_id FROM product_items WHERE sku = ? LIMIT 1
-            `).bind(sku).first();
+        
+        if (userCompanyId) {
+            // ✅ Authenticated request: Use user's company_id only
+            logger.debug('👤 Authenticated user - company_id:', userCompanyId);
             
-            if (dbResult && dbResult.company_id) {
+            // Query DB to verify SKU belongs to this company (security check)
+            try {
+                const dbResult = await c.env.DB.prepare(`
+                    SELECT company_id FROM product_items 
+                    WHERE sku = ? AND company_id = ?
+                    LIMIT 1
+                `).bind(sku, userCompanyId).first();
+                
+                if (!dbResult) {
+                    logger.warn('❌ SKU not found in user company:', { sku, userCompanyId });
+                    return c.json({ error: 'Image not found in your company' }, 404);
+                }
+                
                 companyIdFromDb = dbResult.company_id as string;
-                logger.debug('📊 Found company_id from DB:', companyIdFromDb);
+                logger.debug('✅ SKU verified for user company:', companyIdFromDb);
+            } catch (error) {
+                logger.error('❌ DB query failed:', error);
+                return c.json({ error: 'Database error' }, 500);
             }
-        } catch (error) {
-            logger.warn('⚠️ DB query for company_id failed, using fallback list:', error);
+        } else {
+            // ⚠️ Unauthenticated request: Query DB by SKU only
+            logger.debug('🔓 Unauthenticated request - querying DB by SKU:', sku);
+            
+            try {
+                const dbResult = await c.env.DB.prepare(`
+                    SELECT company_id FROM product_items 
+                    WHERE sku = ? 
+                    ORDER BY updated_at DESC 
+                    LIMIT 1
+                `).bind(sku).first();
+                
+                if (dbResult && dbResult.company_id) {
+                    companyIdFromDb = dbResult.company_id as string;
+                    logger.debug('📊 Found company_id from DB:', companyIdFromDb);
+                } else {
+                    logger.warn('❌ SKU not found in DB:', sku);
+                    return c.json({ error: 'Image not found' }, 404);
+                }
+            } catch (error) {
+                logger.error('❌ DB query failed:', error);
+                return c.json({ error: 'Database error' }, 500);
+            }
         }
         
-        // Build search list: DB company_id first, then common fallbacks
-        const companyIds = companyIdFromDb 
-            ? [companyIdFromDb, 'relight', 'saisunsatsuei', 'test_company']
-            : ['relight', 'saisunsatsuei', 'test_company', getCompanyId(c)];
+        // Build search list: authenticated user's company_id first, then DB result, then common fallbacks
+        const companyIds = userCompanyId
+            ? [userCompanyId]  // Authenticated: only user's company
+            : [companyIdFromDb!, 'relight', 'saisunsatsuei', 'test_company'];  // Unauthenticated: try common fallbacks
         
         // Try each company_id
         for (const tryCompanyId of companyIds) {

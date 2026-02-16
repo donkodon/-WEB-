@@ -92,14 +92,20 @@ bgRemoval.post('/api/remove-bg-image/:imageId', async (c) => {
     }
     
     const { sku, filenamePart } = parsed
-    const companyId = getCompanyId(c)
+    
+    // Get company_id from authenticated user (no cookies)
+    const user = c.get('user') as { companyId?: string } | undefined
+    const userCompanyId = user?.companyId
+    const isAuthenticated = !!userCompanyId
+    
     const r2PublicUrl = getR2PublicUrl(c.env)
     
     console.log('🔍 Debug info:', JSON.stringify({
       imageId,
       sku,
       filenamePart,
-      companyId,
+      userCompanyId,
+      isAuthenticated,
       r2PublicUrl
     }, null, 2))
     
@@ -107,14 +113,17 @@ bgRemoval.post('/api/remove-bg-image/:imageId', async (c) => {
     const resolved = await resolveR2ImageUrl(
       c.env.PRODUCT_IMAGES,
       r2PublicUrl,
-      companyId,
+      userCompanyId || 'test_company',  // Fallback for unauthenticated
       sku,
       filenamePart,
-      c.env.DB
+      c.env.DB,
+      isAuthenticated
     )
     
     if (!resolved) {
-      const companyIds = [companyId, 'relight', 'saisunsatsuei', 'test_company']
+      const companyIds = userCompanyId 
+        ? [userCompanyId]  // Authenticated: only user's company
+        : ['relight', 'saisunsatsuei', 'test_company']  // Unauthenticated: fallbacks
       return c.json({ 
         error: `Image not found: ${imageId}. Please upload the image first.`,
         details: `Searched for: ${getSearchedPaths(companyIds, sku, filenamePart)}`

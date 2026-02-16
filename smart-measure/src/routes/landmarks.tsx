@@ -1,13 +1,31 @@
 import { Hono } from 'hono'
 import type { AppEnv } from '../types/bindings'
 import { Layout } from '../components'
-import { getCompanyId } from '../helpers/auth'
 
 const landmarks = new Hono<AppEnv>()
 
+/**
+ * Get company_id from authenticated user (fallback to cookie for backwards compatibility)
+ */
+function getCompanyIdFromContext(c: any): string {
+  const user = c.get('user') as { companyId?: string } | undefined
+  if (user?.companyId) {
+    return user.companyId
+  }
+  
+  // Fallback: read from cookie (backwards compatibility for SSR pages)
+  const cookieHeader = c.req.header('Cookie')
+  if (cookieHeader) {
+    const match = cookieHeader.match(/company_id=([^;]+)/)
+    if (match) return match[1]
+  }
+  
+  return 'test_company'  // Last fallback
+}
+
 landmarks.get('/landmarks/:sku', async (c) => {
   const sku = c.req.param('sku');
-  const companyId = getCompanyId(c);
+  const companyId = getCompanyIdFromContext(c);
   
   return c.render(
     <Layout active="dashboard" title={`ランドマーク表示 - ${sku}`}>

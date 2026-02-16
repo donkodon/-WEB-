@@ -1,16 +1,30 @@
 import { Hono } from 'hono'
 import type { AppEnv } from '../types/bindings'
-import { getCompanyId } from '../helpers/auth'
 import { ImageUrlHelper } from '../helpers/image-url'
 import { createSafeErrorResponse, ErrorCode, logError } from '../helpers/error-handler'
 import { logger } from '../helpers/logger'
 
 const measurement = new Hono<AppEnv>()
 
+/**
+ * Get company_id from authenticated user (no cookies)
+ */
+function getAuthenticatedCompanyId(c: any): string | null {
+  const user = c.get('user') as { companyId?: string } | undefined
+  return user?.companyId || null
+}
+
 measurement.post('/api/auto-measure', async (c) => {
   try {
     const { imageId, imageUrl, sku } = await c.req.json();
-    const companyId = getCompanyId(c);
+    const companyId = getAuthenticatedCompanyId(c);
+    
+    if (!companyId) {
+      return c.json({ 
+        success: false, 
+        error: 'Authentication required. Please log in.' 
+      }, 401);
+    }
     
     logger.debug(`🔬 Auto-measure request:`, { imageId, imageUrl, sku, companyId });
   
@@ -241,7 +255,14 @@ measurement.post('/api/auto-measure', async (c) => {
 measurement.get('/api/measurements/:sku', async (c) => {
   try {
     const sku = c.req.param('sku');
-    const companyId = getCompanyId(c);
+    const companyId = getAuthenticatedCompanyId(c);
+    
+    if (!companyId) {
+      return c.json({ 
+        success: false, 
+        error: 'Authentication required. Please log in.' 
+      }, 401);
+    }
     
     logger.debug(`📊 Get measurement data: SKU=${sku}, company_id=${companyId}`);
     
@@ -327,7 +348,15 @@ measurement.get('/api/measurements/:sku', async (c) => {
 measurement.patch('/api/measurements/:sku', async (c) => {
   try {
     const sku = c.req.param('sku');
-    const companyId = getCompanyId(c);
+    const companyId = getAuthenticatedCompanyId(c);
+    
+    if (!companyId) {
+      return c.json({ 
+        success: false, 
+        error: 'Authentication required. Please log in.' 
+      }, 401);
+    }
+    
     const { manual_landmarks, measurements } = await c.req.json();
     
     logger.debug(`💾 Update manual landmarks: SKU=${sku}, company_id=${companyId}`);

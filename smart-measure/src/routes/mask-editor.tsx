@@ -1,13 +1,31 @@
 import { Hono } from 'hono'
 import type { AppEnv } from '../types/bindings'
 import { Layout } from '../components'
-import { getCompanyId } from '../helpers/auth'
 
 const maskEditor = new Hono<AppEnv>()
 
+/**
+ * Get company_id from authenticated user (fallback to cookie for backwards compatibility)
+ */
+function getCompanyIdFromContext(c: any): string {
+  const user = c.get('user') as { companyId?: string } | undefined
+  if (user?.companyId) {
+    return user.companyId
+  }
+  
+  // Fallback: read from cookie (backwards compatibility for SSR pages)
+  const cookieHeader = c.req.header('Cookie')
+  if (cookieHeader) {
+    const match = cookieHeader.match(/company_id=([^;]+)/)
+    if (match) return match[1]
+  }
+  
+  return 'test_company'  // Last fallback
+}
+
 maskEditor.get('/mask-editor/:sku', async (c) => {
     const sku = c.req.param('sku');
-    const companyId = getCompanyId(c);
+    const companyId = getCompanyIdFromContext(c);
     
     // Get measurement image and mask image URLs from database
     const result = await c.env.DB.prepare(`
