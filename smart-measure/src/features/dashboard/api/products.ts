@@ -9,8 +9,11 @@ import { requireFirebaseAuth } from '../../auth/middleware/auth'
 
 const products = new Hono<AppEnv>()
 
+// Apply Firebase authentication to all dashboard API endpoints
+products.use('*', requireFirebaseAuth())
+
 // --- API: Dashboard Products with Pagination ---
-products.get('/api/dashboard/products', requireFirebaseAuth, async (c) => {
+products.get('/api/dashboard/products', async (c) => {
     // Get pagination parameters at function scope
     let page = 1
     let perPage = 12

@@ -10,6 +10,9 @@ import { logError, createSafeErrorResponse, ErrorCode } from '../../../shared/he
 
 const billing = new Hono<AppEnv>();
 
+// Apply Firebase authentication to all billing endpoints
+billing.use('*', requireFirebaseAuth())
+
 /**
  * POST /api/billing/track-download
  * Track product data download with billing
@@ -32,7 +35,6 @@ const billing = new Hono<AppEnv>();
  */
 billing.post(
   '/api/billing/track-download',
-  requireFirebaseAuth,
   trackBulkSKUDownload,
   async (c) => {
     try {
@@ -77,7 +79,7 @@ billing.post(
  *   }
  * }
  */
-billing.get('/api/billing/usage', requireFirebaseAuth, async (c) => {
+billing.get('/api/billing/usage', async (c) => {
   try {
     const user = c.get('user') as { company_id: string; id: number };
     const usage = await getCurrentUsageSummary(c.env.DB, user.company_id);
@@ -108,7 +110,7 @@ billing.get('/api/billing/usage', requireFirebaseAuth, async (c) => {
  *   }
  * }
  */
-billing.get('/api/billing/usage/breakdown', requireFirebaseAuth, async (c) => {
+billing.get('/api/billing/usage/breakdown', async (c) => {
   try {
     const user = c.get('user') as { company_id: string; id: number };
     const billingMonth = new Date().toISOString().slice(0, 7); // YYYY-MM

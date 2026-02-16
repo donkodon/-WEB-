@@ -11,11 +11,14 @@ import { logger } from '../../../shared/helpers/logger'
 
 const authApi = new Hono<AppEnv>()
 
+// Apply Firebase authentication to all auth API endpoints
+authApi.use('*', requireFirebaseAuth())
+
 /**
  * GET /api/auth/me
  * Get current user information and set company_id cookie
  */
-authApi.get('/api/auth/me', requireFirebaseAuth, async (c) => {
+authApi.get('/api/auth/me', async (c) => {
   const user = c.get('user')
   
   if (!user) {
@@ -48,7 +51,7 @@ authApi.get('/api/auth/me', requireFirebaseAuth, async (c) => {
  * Verify Firebase token and sync user data
  * Called after first login to ensure user exists in database
  */
-authApi.post('/api/auth/verify', requireFirebaseAuth, async (c) => {
+authApi.post('/api/auth/verify', async (c) => {
   const user = c.get('user')
   
   if (!user) {
