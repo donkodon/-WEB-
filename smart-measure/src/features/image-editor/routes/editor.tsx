@@ -567,9 +567,9 @@ editor.get('/edit/:id', async (c) => {
 
         
         </div>
-        <script src="/static/editor/tab-switching.js"></script>
+        <script src="/static/editor/common/tab-switching.js"></script>
         {/* --- IMAGE PROCESSING LOGIC --- */}
-        <script src="/static/editor/image-processing.js"></script>
+        <script src="/static/editor/tools/image-processing.js"></script>
     </Layout>
   )
 })
