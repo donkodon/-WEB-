@@ -8,7 +8,7 @@ import type { BgRemovalResult } from '../types'
 import { removeBackgroundWithCloudflareAI } from './cloudflare-ai'
 import { removeBackgroundWithWithoutBG } from './withoutbg'
 import { callBriaApi, isBriaApiKeyValid } from './bria-api'
-import { uploadProcessedImageToR2, base64ToBuffer } from '../helpers/r2-uploader'
+import { uploadProcessedImageToR2, uploadAndUpdateDatabase, base64ToBuffer } from '../helpers/r2-uploader'
 import { logger } from '../../../shared/helpers/logger'
 import { getR2PublicUrl } from '../../image-editor/helpers/r2-url'
 
@@ -46,19 +46,23 @@ export async function removeProductImageBackground(
         const imageResponse = await fetch(briaResult.imageUrl)
         const imageBuffer = await imageResponse.arrayBuffer()
         
-        const r2Key = await uploadProcessedImageToR2(c.env.PRODUCT_IMAGES, {
-          companyId,
-          sku,
-          filenamePart,
-          imageBuffer
-        })
+        const { publicUrl } = await uploadAndUpdateDatabase(
+          c.env.PRODUCT_IMAGES,
+          c.env.DB,
+          getR2PublicUrl(c.env),
+          {
+            companyId,
+            sku,
+            filenamePart,
+            imageBuffer
+          }
+        )
         
-        const processedUrl = `${getR2PublicUrl(c.env)}/${r2Key}`
-        logger.debug(`✅ Processed with BRIA API: ${r2Key}`)
+        logger.debug(`✅ Processed with BRIA API: ${publicUrl}`)
         
         return {
           success: true,
-          processedUrl,
+          processedUrl: publicUrl,
           message: 'Background removed using Fal.ai BRIA RMBG 2.0 (Cloud)'
         }
       } else {
@@ -83,19 +87,23 @@ export async function removeProductImageBackground(
         
         const bytes = base64ToBuffer(result.imageDataUrl)
         
-        const r2Key = await uploadProcessedImageToR2(c.env.PRODUCT_IMAGES, {
-          companyId,
-          sku,
-          filenamePart,
-          imageBuffer: bytes
-        })
+        const { publicUrl } = await uploadAndUpdateDatabase(
+          c.env.PRODUCT_IMAGES,
+          c.env.DB,
+          getR2PublicUrl(c.env),
+          {
+            companyId,
+            sku,
+            filenamePart,
+            imageBuffer: bytes
+          }
+        )
         
-        const processedUrl = `${getR2PublicUrl(c.env)}/${r2Key}`
-        console.log(`🎉 Success! Processed URL: ${processedUrl}`)
+        console.log(`🎉 Success! Processed URL: ${publicUrl}`)
         
         return {
           success: true,
-          processedUrl,
+          processedUrl: publicUrl,
           message: 'Background removed using withoutBG Focus (Free)'
         }
       }
@@ -115,19 +123,23 @@ export async function removeProductImageBackground(
       const result = await removeBackgroundWithCloudflareAI(c.env.AI, originalUrl)
       
       if (result.success && result.imageBuffer) {
-        const r2Key = await uploadProcessedImageToR2(c.env.PRODUCT_IMAGES, {
-          companyId,
-          sku,
-          filenamePart,
-          imageBuffer: result.imageBuffer
-        })
+        const { publicUrl } = await uploadAndUpdateDatabase(
+          c.env.PRODUCT_IMAGES,
+          c.env.DB,
+          getR2PublicUrl(c.env),
+          {
+            companyId,
+            sku,
+            filenamePart,
+            imageBuffer: result.imageBuffer
+          }
+        )
         
-        const processedUrl = `${getR2PublicUrl(c.env)}/${r2Key}`
-        logger.debug(`✅ Processed with Cloudflare AI: ${r2Key}`)
+        logger.debug(`✅ Processed with Cloudflare AI: ${publicUrl}`)
         
         return {
           success: true,
-          processedUrl,
+          processedUrl: publicUrl,
           message: 'Background removed using Cloudflare AI (Free)'
         }
       } else {
