@@ -5,12 +5,11 @@ import { Layout } from '../../../components'
 import { getCompanyId } from '../../auth/helpers/auth'
 import { getImageDisplayUrl } from '../helpers/image-status'
 import { logger } from '../../../shared/helpers/logger'
-import { requireFirebaseAuth } from '../../../middleware/auth'
 
 const editor = new Hono<AppEnv>()
 
-// Apply authentication to editor routes (to get authenticated user's companyId)
-editor.use('/edit/*', requireFirebaseAuth)
+// Note: No authentication middleware here - SSR pages need to be accessible
+// We check for authenticated user first, then fall back to database lookup by SKU
 
 editor.post('/api/upload-image', async (c) => {
     const body = await c.req.parseBody();
@@ -38,16 +37,18 @@ editor.post('/api/upload-image', async (c) => {
 editor.get('/edit/:id', async (c) => {
   const id = c.req.param('id')
   
-  // Get company_id from authenticated user (authentication is required by middleware)
+  // Priority 1: Get company_id from authenticated user
   const user = c.get('user') as { companyId?: string } | undefined;
-  const companyId = user?.companyId;
+  let companyId = user?.companyId;
+  let isAuthenticated = !!companyId;
   
-  if (!companyId) {
-    logger.error('❌ No company_id found for authenticated user');
-    return c.json({ success: false, error: 'Company ID not found' }, 400);
+  if (companyId) {
+    logger.debug(`✅ Editor accessed by authenticated user with companyId: ${companyId}`);
+  } else {
+    // Priority 2: For unauthenticated access, get company_id from database by SKU
+    // This will be set later after parsing the imageId to extract SKU
+    logger.debug(`⚠️ Editor accessed without authentication - will lookup company_id from database`);
   }
-  
-  logger.debug(`✅ Editor accessed by user with companyId: ${companyId}`);
   
   // Parse R2 image ID: r2_{SKU}_{filename_without_ext} or measurement_{SKU}
   let imageResult: any = null;
@@ -92,7 +93,25 @@ editor.get('/edit/:id', async (c) => {
       logger.debug(`🔍 Editor parsing imageId: ${id}`);
       logger.debug(`🔍 Extracted SKU: ${sku}, filenamePart: ${filenamePart}`);
       
-      // Option 1: Use same logic as dashboard (r2FileSet + proxy URL + cache busting)
+      // If not authenticated, get company_id from database by SKU
+      if (!companyId) {
+        try {
+          const companyResult = await c.env.DB.prepare(`
+            SELECT company_id FROM product_items WHERE sku = ? LIMIT 1
+          `).bind(sku).first();
+          
+          if (companyResult) {
+            companyId = companyResult.company_id as string;
+            logger.debug(`✅ Retrieved company_id from DB: ${companyId} for SKU: ${sku}`);
+          } else {
+            logger.error(`❌ SKU ${sku} not found in database`);
+            return c.redirect('/dashboard');
+          }
+        } catch (e) {
+          logger.error(`❌ Failed to get company_id for SKU ${sku}:`, e);
+          return c.redirect('/dashboard');
+        }
+      }
       
       // ✅ Performance fix: Get image status from DB instead of R2.list()
       let updatedAt = new Date().toISOString();
