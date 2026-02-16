@@ -39,11 +39,12 @@ app.route('/', landmarks)
 app.route('/', maskEditor)
 
 // --- API Routes ---
+// NOTE: images router MUST be first to avoid auth middleware from other routers
+app.route('/', images)  // Image proxy (no auth required for <img> tags)
 app.route('/', authApi)  // Firebase authentication API
 app.route('/', billing)  // Usage-based billing API
 app.route('/', maskApi)  // Mask editing API (update, save, regenerate)
 app.route('/', measurement)
-app.route('/', images)
 app.route('/', bgRemoval)
 app.route('/', csv)
 app.route('/', sync)
