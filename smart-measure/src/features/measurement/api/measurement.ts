@@ -1,11 +1,15 @@
 import { Hono } from 'hono'
 import type { AppEnv } from '../../../types/bindings'
 import { getCompanyId } from '../../auth/helpers/auth'
+import { requireFirebaseAuth } from '../../auth/middleware/auth'
 import { ImageUrlHelper } from '../../image-editor/helpers/image-url'
 import { createSafeErrorResponse, ErrorCode, logError } from '../../../shared/helpers/error-handler'
 import { logger } from '../../../shared/helpers/logger'
 
 const measurement = new Hono<AppEnv>()
+
+// Apply Firebase authentication to all measurement endpoints
+measurement.use('/api/*', requireFirebaseAuth())
 
 measurement.post('/api/auto-measure', async (c) => {
   try {

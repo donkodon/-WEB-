@@ -2,11 +2,15 @@ import { Hono } from 'hono'
 import type { AppEnv } from '../../../types/bindings'
 import type { CsvExportRow } from '../../../types/database'
 import { getCompanyId } from '../../auth/helpers/auth'
+import { requireFirebaseAuth } from '../../auth/middleware/auth'
 import { ImageUrlHelper, getImageUploadApiUrl } from '../../image-editor/helpers/image-url'
 import { createSafeErrorResponse, ErrorCode, logError } from '../../../shared/helpers/error-handler'
 import { logger } from '../../../shared/helpers/logger'
 
 const csv = new Hono<AppEnv>()
+
+// Apply Firebase authentication to all CSV endpoints
+csv.use('/api/*', requireFirebaseAuth())
 
 // Helper function to escape CSV values
 function escapeCSV(value: string): string {

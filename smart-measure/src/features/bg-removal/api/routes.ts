@@ -11,6 +11,7 @@
 import { Hono } from 'hono'
 import type { AppEnv } from '../../../types/bindings'
 import { getCompanyId } from '../../auth/helpers/auth'
+import { requireFirebaseAuth } from '../../auth/middleware/auth'
 import { getR2PublicUrl } from '../../image-editor/helpers/r2-url'
 import { ImageUrlHelper } from '../../image-editor/helpers/image-url'
 import { createSafeErrorResponse, ErrorCode, logError } from '../../../shared/helpers/error-handler'
@@ -26,6 +27,10 @@ import { parseImageId, resolveR2ImageUrl, getSearchedPaths } from '../helpers/im
 import { base64ToBuffer } from '../helpers/r2-uploader'
 
 const bgRemoval = new Hono<AppEnv>()
+
+// Apply Firebase authentication to all background removal endpoints
+bgRemoval.use('/api/remove-bg*', requireFirebaseAuth())
+bgRemoval.use('/api/upload-processed*', requireFirebaseAuth())
 
 /**
  * POST /api/remove-bg - Basic background removal using Cloudflare AI
