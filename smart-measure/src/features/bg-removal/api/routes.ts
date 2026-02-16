@@ -109,7 +109,8 @@ bgRemoval.post('/api/remove-bg-image/:imageId', async (c) => {
       r2PublicUrl,
       companyId,
       sku,
-      filenamePart
+      filenamePart,
+      c.env.DB
     )
     
     if (!resolved) {

@@ -457,14 +457,32 @@ images.get('/api/image-proxy/:sku/:filename', async (c) => {
             return c.json({ error: 'Filename too long' }, 400);
         }
         
-        // R2から画像を取得 (Phase 1: Dynamic company_id)
-        // Try multiple company IDs (same logic as background removal)
-        const companyId = getCompanyId(c);
-        const companyIds = [companyId, 'relight', 'saisunsatsuei', 'test_company'];
-        
+        // R2から画像を取得
+        // Strategy: First try to get company_id from database by SKU, then fallback to common IDs
         let r2Object: R2ObjectBody | null = null;
         let foundKey = '';
         
+        // Try to get company_id from database first
+        let companyIdFromDb: string | null = null;
+        try {
+            const dbResult = await c.env.DB.prepare(`
+                SELECT company_id FROM product_items WHERE sku = ? LIMIT 1
+            `).bind(sku).first();
+            
+            if (dbResult && dbResult.company_id) {
+                companyIdFromDb = dbResult.company_id as string;
+                logger.debug('📊 Found company_id from DB:', companyIdFromDb);
+            }
+        } catch (error) {
+            logger.warn('⚠️ DB query for company_id failed, using fallback list:', error);
+        }
+        
+        // Build search list: DB company_id first, then common fallbacks
+        const companyIds = companyIdFromDb 
+            ? [companyIdFromDb, 'relight', 'saisunsatsuei', 'test_company']
+            : ['relight', 'saisunsatsuei', 'test_company', getCompanyId(c)];
+        
+        // Try each company_id
         for (const tryCompanyId of companyIds) {
             const key = `${tryCompanyId}/${sku}/${filename}`;
             logger.debug('🔍 Trying R2 key:', key);

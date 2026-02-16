@@ -32,17 +32,39 @@ export function parseImageId(imageId: string): { sku: string; filenamePart: stri
 /**
  * Resolve R2 image URL
  * Tries multiple company IDs and file extensions
+ * First tries to get company_id from database by SKU
  */
 export async function resolveR2ImageUrl(
   bucket: R2Bucket | undefined,
   r2PublicUrl: string,
   companyId: string,
   sku: string,
-  filenamePart: string
+  filenamePart: string,
+  db?: D1Database
 ): Promise<ImageResolverResult | null> {
-  const companyIds = [companyId, ...COMPANY_IDS]
+  // Try to get company_id from database first
+  let companyIdFromDb: string | null = null;
+  if (db) {
+    try {
+      const dbResult = await db.prepare(`
+        SELECT company_id FROM product_items WHERE sku = ? LIMIT 1
+      `).bind(sku).first();
+      
+      if (dbResult && dbResult.company_id) {
+        companyIdFromDb = dbResult.company_id as string;
+        console.log('📊 Found company_id from DB:', companyIdFromDb);
+      }
+    } catch (error) {
+      console.warn('⚠️ DB query for company_id failed, using fallback list:', error);
+    }
+  }
   
-  console.log('🔍 Resolving image:', { companyId, sku, filenamePart })
+  // Build search list: DB company_id first, then provided companyId, then common fallbacks
+  const companyIds = companyIdFromDb 
+    ? [companyIdFromDb, companyId, ...COMPANY_IDS]
+    : [companyId, ...COMPANY_IDS]
+  
+  console.log('🔍 Resolving image:', { companyId, sku, filenamePart, companyIdFromDb })
   
   // Try each company ID and extension combination
   for (const tryCompanyId of companyIds) {
