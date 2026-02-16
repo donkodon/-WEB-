@@ -223,9 +223,13 @@ export async function fetchDashboardData(options: DashboardDataOptions): Promise
       const status = imageStatus.status === 'final' ? 'final' : 
                     imageStatus.status === 'processed' ? 'processed' : 'ready'
       
+      // Use image proxy API for original_url to ensure proper company_id resolution
+      const fileExtension = filename.match(/\.[^/.]+$/)?.[0] || '.jpg'
+      const originalProxyUrl = `/api/image-proxy/${sku}/${filenameWithoutExt}${fileExtension}`
+      
       productData.images.push({
         id: imageId,
-        original_url: proxyUrl,
+        original_url: originalProxyUrl,
         processed_url: displayUrl,
         display_url: displayUrl,
         status: status,
