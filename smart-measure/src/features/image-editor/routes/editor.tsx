@@ -146,18 +146,22 @@ editor.get('/edit/:id', async (c) => {
       
       // Set original URL using image proxy (supports both original and processed images)
       const originalUrl = `/api/image-proxy/${sku}/${filenamePart}.jpg?v=${cacheVersion}`;
-      logger.debug(`🔍 Editor URLs - Original: ${originalUrl}, Processed: ${baseImageUrl}`);
+      
+      // Only set processed_url if status is 'processed' or 'final'
+      const processedUrl = (status === 'processed' || status === 'final') ? baseImageUrl : null;
+      
+      logger.debug(`🔍 Editor URLs - Original: ${originalUrl}, Processed: ${processedUrl}, Status: ${status}`);
       
       imageResult = {
         id: id,
         original_url: originalUrl,
-        processed_url: baseImageUrl,  // Use processed URL from getImageDisplayUrl
+        processed_url: processedUrl,  // null if not processed
         sku: sku,
         product_name: `商品 ${sku}`,
         status: status
       };
       
-      logger.debug(`📦 imageResult - status: ${status}, original: ${originalUrl}, processed: ${baseImageUrl}`);
+      logger.debug(`📦 imageResult - status: ${status}, original: ${originalUrl}, processed: ${processedUrl}`);
     }
   }
   
