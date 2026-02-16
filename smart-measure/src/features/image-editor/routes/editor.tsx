@@ -139,14 +139,13 @@ editor.get('/edit/:id', async (c) => {
       
       logger.debug(`🎯 Editor using image status from DB: ${status} (no R2 list() call)`);
       
-      // Set original URL (always from image-upload-api)
-      const IMAGE_UPLOAD_API_URL = getImageUploadApiUrl(c.env);
-      const originalUrl = `${IMAGE_UPLOAD_API_URL}/${companyId}/${sku}/${filenamePart}.jpg?v=${cacheVersion}`;
+      // Set original URL using image proxy (supports both original and processed images)
+      const originalUrl = `/api/image-proxy/${sku}/${filenamePart}.jpg?v=${cacheVersion}`;
       
       imageResult = {
         id: id,
         original_url: originalUrl,
-        processed_url: baseImageUrl || originalUrl,  // Fallback to original if no processed version
+        processed_url: baseImageUrl,  // Use processed URL from getImageDisplayUrl
         sku: sku,
         product_name: `商品 ${sku}`,
         status: status
