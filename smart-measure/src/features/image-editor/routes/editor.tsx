@@ -88,6 +88,8 @@ editor.get('/edit/:id', async (c) => {
     if (parts.length >= 2) {
       const sku = parts[0];
       const filenamePart = parts.slice(1).join('_');
+      logger.debug(`🔍 Editor parsing imageId: ${id}`);
+      logger.debug(`🔍 Extracted SKU: ${sku}, filenamePart: ${filenamePart}`);
       
       // Option 1: Use same logic as dashboard (r2FileSet + proxy URL + cache busting)
       
@@ -168,6 +170,8 @@ editor.get('/edit/:id', async (c) => {
   const productSku = imageResult.sku || 'Unknown';
   const productName = imageResult.product_name || '';
   const hasMask = !!maskImageUrl;
+  
+  logger.debug(`📤 Sending to browser - imageSrc: ${imageSrc}, originalSrc: ${originalSrc}`);
 
   return c.render(
     <Layout active="dashboard" title="画像処理プレビュー">
