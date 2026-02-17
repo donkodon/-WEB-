@@ -145,6 +145,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Called from tab switching
     window.showMaskOverlay = function() {
         console.log('🎭 showMaskOverlay called');
+        console.log('🎭 maskImageUrl:', maskImageUrl);
+        console.log('🎭 maskImageData:', maskImageData);
+        console.log('🎭 maskVisible:', maskVisible);
         
         if (!maskImageData) {
             console.warn('⚠️ No mask image data available');
@@ -153,25 +156,40 @@ document.addEventListener('DOMContentLoaded', () => {
             if (maskImageUrl && maskImageUrl !== '' && !maskImage) {
                 console.log('🎭 Attempting to load mask image...');
                 loadMaskImage();
+                // Wait for mask to load, then show it
+                setTimeout(() => {
+                    if (maskImageData) {
+                        console.log('🎭 Mask loaded, showing overlay...');
+                        maskVisible = true;
+                        applyMaskOverlay();
+                    }
+                }, 1000);
             }
             return;
         }
         
         if (!maskVisible) {
+            console.log('🎭 Setting maskVisible = true and calling applyMaskOverlay()');
             maskVisible = true;
             applyMaskOverlay();
             console.log('✅ Mask overlay shown');
+        } else {
+            console.log('ℹ️ Mask overlay already visible');
         }
     };
     
     window.hideMaskOverlay = function() {
         console.log('🎭 hideMaskOverlay called');
+        console.log('🎭 maskVisible:', maskVisible);
         
         if (maskVisible) {
+            console.log('🎭 Setting maskVisible = false and redrawing canvas');
             maskVisible = false;
             ctx.drawImage(img, 0, 0);
             applyCurrentAdjustments();
             console.log('✅ Mask overlay hidden');
+        } else {
+            console.log('ℹ️ Mask overlay already hidden');
         }
     };
     
