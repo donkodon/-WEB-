@@ -84,11 +84,15 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // ==================== LOAD MASK IMAGE ====================
     function loadMaskImage() {
+        console.log('🎭 loadMaskImage called');
+        console.log('🎭 Loading mask image from:', maskImageUrl);
         window.logger.debug('🎭 Loading mask image from:', maskImageUrl);
+        
         maskImage = new Image();
         maskImage.crossOrigin = "Anonymous";
         
         maskImage.onload = function() {
+            console.log('✅ Mask image loaded:', maskImage.width, 'x', maskImage.height);
             window.logger.debug('✅ Mask image loaded:', maskImage.width, 'x', maskImage.height);
             
             // Draw mask to temporary canvas to extract pixel data
@@ -97,18 +101,29 @@ document.addEventListener('DOMContentLoaded', () => {
             tempCanvas.height = canvas.height;
             const tempCtx = tempCanvas.getContext('2d');
             
+            console.log('🎭 Drawing mask to temp canvas, size:', canvas.width, 'x', canvas.height);
+            
             // Draw mask image (白=商品、黒=背景)
             tempCtx.drawImage(maskImage, 0, 0, canvas.width, canvas.height);
             
             // Store mask data for later use
             maskImageData = tempCtx.getImageData(0, 0, canvas.width, canvas.height);
+            console.log('✅ Mask data extracted, length:', maskImageData.data.length);
             window.logger.debug('✅ Mask data extracted and cached');
+            
+            // Check first few pixels
+            console.log('🎭 Sample mask pixels:', 
+                maskImageData.data[0], maskImageData.data[1], maskImageData.data[2],
+                maskImageData.data[4], maskImageData.data[5], maskImageData.data[6]
+            );
         };
         
         maskImage.onerror = function(err) {
+            console.error('❌ Failed to load mask image:', err);
             window.logger.error('❌ Failed to load mask image:', err);
         };
         
+        console.log('🎭 Setting maskImage.src...');
         maskImage.src = maskImageUrl;
     }
     
@@ -128,8 +143,20 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // ==================== TOGGLE MASK ====================
     window.toggleMask = function() {
+        console.log('🎭 toggleMask called');
+        console.log('🎭 maskImageUrl:', maskImageUrl);
+        console.log('🎭 maskImage:', maskImage);
+        console.log('🎭 maskImageData:', maskImageData);
+        
         if (!maskImageData) {
+            console.warn('⚠️ No mask image data available');
             window.logger.warn('⚠️ No mask image data available');
+            
+            // Try to load mask if URL exists but data is not loaded
+            if (maskImageUrl && maskImageUrl !== '' && !maskImage) {
+                console.log('🎭 Attempting to load mask image...');
+                loadMaskImage();
+            }
             return;
         }
         
@@ -158,7 +185,13 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // ==================== APPLY MASK OVERLAY ====================
     function applyMaskOverlay() {
-        if (!maskImageData) return;
+        console.log('🎭 applyMaskOverlay called');
+        console.log('🎭 maskImageData exists:', !!maskImageData);
+        
+        if (!maskImageData) {
+            console.error('❌ maskImageData is null, cannot apply overlay');
+            return;
+        }
         
         // Redraw base image
         ctx.drawImage(img, 0, 0);
@@ -166,21 +199,34 @@ document.addEventListener('DOMContentLoaded', () => {
         // Get current image data
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         
+        console.log('🎭 Canvas size:', canvas.width, 'x', canvas.height);
+        console.log('🎭 Mask data length:', maskImageData.data.length);
+        
         // Apply blue overlay where mask is white (product area)
+        let whitePixelCount = 0;
+        let blackPixelCount = 0;
+        
         for (let i = 0; i < maskImageData.data.length; i += 4) {
             const maskValue = maskImageData.data[i]; // Grayscale value (0-255)
             
             if (maskValue > 128) { // White area = product
+                whitePixelCount++;
                 // Blend with semi-transparent blue (50% opacity)
                 imageData.data[i] = imageData.data[i] * 0.5 + 0 * 0.5;         // R
                 imageData.data[i + 1] = imageData.data[i + 1] * 0.5 + 100 * 0.5; // G
                 imageData.data[i + 2] = imageData.data[i + 2] * 0.5 + 255 * 0.5; // B
                 // Alpha remains unchanged
+            } else {
+                blackPixelCount++;
             }
         }
         
+        console.log('🎭 White pixels (product):', whitePixelCount);
+        console.log('🎭 Black pixels (background):', blackPixelCount);
+        
         // Draw the overlaid image
         ctx.putImageData(imageData, 0, 0);
+        console.log('✅ Mask overlay applied');
     }
     
     // ==================== SLIDERS ====================
