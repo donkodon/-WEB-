@@ -361,12 +361,28 @@ document.addEventListener('DOMContentLoaded', () => {
         currentTool = 'brush';
         maskMode = false;
         window.logger.debug('✅ Brush tool selected');
+        
+        // Hide mask overlay when switching to regular tools
+        if (maskVisible) {
+            console.log('🎭 Hiding mask overlay (switched to brush tool)');
+            maskVisible = false;
+            ctx.drawImage(img, 0, 0);
+            applyCurrentAdjustments();
+        }
     });
     
     if (btnEraser) btnEraser.addEventListener('click', () => {
         currentTool = 'eraser';
         maskMode = false;
         window.logger.debug('✅ Eraser tool selected');
+        
+        // Hide mask overlay when switching to regular tools
+        if (maskVisible) {
+            console.log('🎭 Hiding mask overlay (switched to eraser tool)');
+            maskVisible = false;
+            ctx.drawImage(img, 0, 0);
+            applyCurrentAdjustments();
+        }
     });
     
     // ==================== DRAWING ====================
@@ -485,6 +501,13 @@ document.addEventListener('DOMContentLoaded', () => {
             maskBrushBtn.classList.remove('border-gray-200');
             maskEraserBtn.classList.remove('border-2', 'border-blue-400', 'text-blue-600');
             maskEraserBtn.classList.add('border-gray-200');
+            
+            // Show mask overlay when mask brush is selected
+            if (!maskVisible && maskImageData) {
+                console.log('🎭 Automatically showing mask overlay for mask-brush tool');
+                maskVisible = true;
+                applyMaskOverlay();
+            }
         });
     }
     
@@ -495,6 +518,13 @@ document.addEventListener('DOMContentLoaded', () => {
             maskEraserBtn.classList.remove('border-gray-200');
             maskBrushBtn.classList.remove('border-2', 'border-blue-400', 'text-blue-600');
             maskBrushBtn.classList.add('border-gray-200');
+            
+            // Show mask overlay when mask eraser is selected
+            if (!maskVisible && maskImageData) {
+                console.log('🎭 Automatically showing mask overlay for mask-eraser tool');
+                maskVisible = true;
+                applyMaskOverlay();
+            }
         });
     }
     
