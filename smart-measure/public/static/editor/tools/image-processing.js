@@ -111,10 +111,10 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('✅ Mask data extracted, length:', maskImageData.data.length);
             window.logger.debug('✅ Mask data extracted and cached');
             
-            // Check first few pixels
-            console.log('🎭 Sample mask pixels:', 
-                maskImageData.data[0], maskImageData.data[1], maskImageData.data[2],
-                maskImageData.data[4], maskImageData.data[5], maskImageData.data[6]
+            // Check first few pixels (RGBA)
+            console.log('🎭 Sample mask pixels (RGBA):', 
+                'Pixel 0:', maskImageData.data[0], maskImageData.data[1], maskImageData.data[2], maskImageData.data[3],
+                'Pixel 1:', maskImageData.data[4], maskImageData.data[5], maskImageData.data[6], maskImageData.data[7]
             );
         };
         
@@ -202,27 +202,29 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('🎭 Canvas size:', canvas.width, 'x', canvas.height);
         console.log('🎭 Mask data length:', maskImageData.data.length);
         
-        // Apply blue overlay where mask is white (product area)
-        let whitePixelCount = 0;
-        let blackPixelCount = 0;
+        // Apply blue overlay based on alpha channel (transparency)
+        // Opaque (alpha > 0) = product area
+        // Transparent (alpha = 0) = background
+        let opaquePixelCount = 0;
+        let transparentPixelCount = 0;
         
         for (let i = 0; i < maskImageData.data.length; i += 4) {
-            const maskValue = maskImageData.data[i]; // Grayscale value (0-255)
+            const alpha = maskImageData.data[i + 3]; // Alpha channel (0-255)
             
-            if (maskValue > 128) { // White area = product
-                whitePixelCount++;
+            if (alpha > 10) { // Opaque/semi-transparent = product
+                opaquePixelCount++;
                 // Blend with semi-transparent blue (50% opacity)
                 imageData.data[i] = imageData.data[i] * 0.5 + 0 * 0.5;         // R
                 imageData.data[i + 1] = imageData.data[i + 1] * 0.5 + 100 * 0.5; // G
                 imageData.data[i + 2] = imageData.data[i + 2] * 0.5 + 255 * 0.5; // B
                 // Alpha remains unchanged
             } else {
-                blackPixelCount++;
+                transparentPixelCount++;
             }
         }
         
-        console.log('🎭 White pixels (product):', whitePixelCount);
-        console.log('🎭 Black pixels (background):', blackPixelCount);
+        console.log('🎭 Opaque pixels (product):', opaquePixelCount);
+        console.log('🎭 Transparent pixels (background):', transparentPixelCount);
         
         // Draw the overlaid image
         ctx.putImageData(imageData, 0, 0);
