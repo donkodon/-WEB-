@@ -572,9 +572,9 @@ editor.get('/edit/:id', async (c) => {
 
         
         </div>
-        <script src="/static/editor/common/tab-switching.js"></script>
-        {/* --- IMAGE PROCESSING LOGIC --- */}
+        {/* --- IMAGE PROCESSING LOGIC --- Load first to define mask functions */}
         <script src="/static/editor/tools/image-processing.js"></script>
+        <script src="/static/editor/common/tab-switching.js"></script>
     </Layout>
   )
 })
