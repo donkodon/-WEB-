@@ -29,7 +29,7 @@ export async function removeProductImageBackground(
     model?: string
     useBriaApi?: boolean
   }
-): Promise<{ success: true; processedUrl: string; message: string } | { success: false; error: string }> {
+): Promise<{ success: true; processedUrl: string; maskUrl?: string | null; message: string } | { success: false; error: string }> {
   const { model = 'cloudflare-ai', useBriaApi = false } = options || {}
   
   // Priority 1: Fal.ai BRIA API (if explicitly requested or API key configured)
@@ -63,6 +63,7 @@ export async function removeProductImageBackground(
         return {
           success: true,
           processedUrl: publicUrl,
+          maskUrl: null,
           message: 'Background removed using Fal.ai BRIA RMBG 2.0 (Cloud)'
         }
       } else {
@@ -101,9 +102,40 @@ export async function removeProductImageBackground(
         
         console.log(`🎉 Success! Processed URL: ${publicUrl}`)
         
+        // マスク画像も保存（Hugging Faceから返される）
+        let maskUrl: string | null = null;
+        if (result.maskDataUrl) {
+          try {
+            console.log('🎭 Saving mask image...');
+            const maskBytes = base64ToBuffer(result.maskDataUrl);
+            const timestamp = Date.now();
+            const maskKey = `${companyId}/${sku}/${filenamePart}_mask_${timestamp}.png`;
+            
+            await c.env.PRODUCT_IMAGES.put(maskKey, maskBytes, {
+              httpMetadata: { contentType: 'image/png' }
+            });
+            
+            maskUrl = `${getR2PublicUrl(c.env)}/${maskKey}`;
+            console.log(`✅ Mask saved to R2: ${maskUrl}`);
+            
+            // D1にマスク画像URLを保存
+            await c.env.DB.prepare(`
+              UPDATE product_items
+              SET mask_image_url = ?,
+                  updated_at = ?
+              WHERE sku = ? AND company_id = ?
+            `).bind(maskUrl, new Date().toISOString(), sku, companyId).run();
+            
+            console.log('✅ Mask URL saved to D1');
+          } catch (maskError: any) {
+            console.error('❌ Failed to save mask:', maskError.message);
+          }
+        }
+        
         return {
           success: true,
           processedUrl: publicUrl,
+          maskUrl: maskUrl,
           message: 'Background removed using withoutBG Focus (Free)'
         }
       }
@@ -140,6 +172,7 @@ export async function removeProductImageBackground(
         return {
           success: true,
           processedUrl: publicUrl,
+          maskUrl: null,
           message: 'Background removed using Cloudflare AI (Free)'
         }
       } else {
