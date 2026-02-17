@@ -60,13 +60,20 @@ export async function removeBackgroundWithWithoutBG(
     
     const result = await response.json()
     console.log('📡 [removeBackgroundWithWithoutBG] Got result:', result?.success)
+    console.log('📡 [removeBackgroundWithWithoutBG] Result keys:', Object.keys(result))
+    console.log('📡 [removeBackgroundWithWithoutBG] Has mask_data:', !!result.mask_data)
     
     if (!result.success || !result.image_data) {
       throw new Error(result.error || 'Invalid response from withoutBG API')
     }
     
-    logger.debug('✅ withoutBG Focus background removal completed')
-    logger.debug(`🎭 Mask data available: ${!!result.mask_data}`)
+    console.log('✅ withoutBG Focus background removal completed')
+    console.log(`🎭 Mask data available: ${!!result.mask_data}`)
+    if (result.mask_data) {
+      console.log(`🎭 Mask data length: ${result.mask_data.length} characters`)
+    } else {
+      console.log('⚠️ WARNING: No mask_data in response!')
+    }
     
     return {
       success: true,

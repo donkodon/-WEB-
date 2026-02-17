@@ -16,7 +16,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const originalSrc = editorData.dataset.originalSrc;
     const isProcessed = editorData.dataset.isProcessed === 'true';
     const imageId = editorData.dataset.imageId;
+    const maskImageUrl = editorData.dataset.maskImageUrl;
     let showingOriginal = false;
+    let maskVisible = false;
     
     // Extract SKU and filename parts once (used in multiple functions)
     const parts = imageId.replace('r2_', '').split('_');
@@ -26,6 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.logger.debug('🎨 Image Edit Screen Initialized:');
     window.logger.debug('📸 Processed URL:', processedSrc);
     window.logger.debug('📸 Original URL:', originalSrc);
+    window.logger.debug('🎭 Mask Image URL:', maskImageUrl);
     window.logger.debug('✅ Is Processed:', isProcessed);
     window.logger.debug('📦 SKU:', sku, 'Filename:', filenamePart);
     
@@ -42,6 +45,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let maskCanvas = document.createElement('canvas');
     let maskCtx = maskCanvas.getContext('2d');
     let maskMode = false;
+    
+    // Mask image data (loaded from mask_image_url)
+    let maskImageData = null;
+    let maskImage = null;
     
     // Adjustment values
     let brightness = 0;
@@ -66,9 +73,44 @@ document.addEventListener('DOMContentLoaded', () => {
         // Initialize mask (全体を商品として設定)
         maskCtx.fillStyle = 'rgba(0, 100, 255, 0.5)';
         maskCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
+        
+        // Load mask image if available
+        if (maskImageUrl && maskImageUrl !== '') {
+            loadMaskImage();
+        }
     };
     
     img.src = processedSrc;
+    
+    // ==================== LOAD MASK IMAGE ====================
+    function loadMaskImage() {
+        window.logger.debug('🎭 Loading mask image from:', maskImageUrl);
+        maskImage = new Image();
+        maskImage.crossOrigin = "Anonymous";
+        
+        maskImage.onload = function() {
+            window.logger.debug('✅ Mask image loaded:', maskImage.width, 'x', maskImage.height);
+            
+            // Draw mask to temporary canvas to extract pixel data
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            // Draw mask image (白=商品、黒=背景)
+            tempCtx.drawImage(maskImage, 0, 0, canvas.width, canvas.height);
+            
+            // Store mask data for later use
+            maskImageData = tempCtx.getImageData(0, 0, canvas.width, canvas.height);
+            window.logger.debug('✅ Mask data extracted and cached');
+        };
+        
+        maskImage.onerror = function(err) {
+            window.logger.error('❌ Failed to load mask image:', err);
+        };
+        
+        maskImage.src = maskImageUrl;
+    }
     
     // ==================== TOGGLE ORIGINAL ====================
     window.toggleOriginal = function() {
@@ -83,6 +125,63 @@ document.addEventListener('DOMContentLoaded', () => {
             button.innerHTML = '<i class="fas fa-image mr-2"></i> 処理後画像を表示';
         }
     };
+    
+    // ==================== TOGGLE MASK ====================
+    window.toggleMask = function() {
+        if (!maskImageData) {
+            window.logger.warn('⚠️ No mask image data available');
+            return;
+        }
+        
+        maskVisible = !maskVisible;
+        const button = document.getElementById('btn-toggle-mask');
+        
+        if (maskVisible) {
+            // Show mask overlay (blue overlay on product area)
+            applyMaskOverlay();
+            if (button) {
+                button.innerHTML = '<i class="fas fa-eye-slash mr-2"></i> マスクを非表示';
+                button.classList.remove('bg-blue-500', 'hover:bg-blue-600');
+                button.classList.add('bg-gray-500', 'hover:bg-gray-600');
+            }
+        } else {
+            // Hide mask overlay (show original image)
+            ctx.drawImage(img, 0, 0);
+            applyCurrentAdjustments();
+            if (button) {
+                button.innerHTML = '<i class="fas fa-eye mr-2"></i> マスクを表示';
+                button.classList.remove('bg-gray-500', 'hover:bg-gray-600');
+                button.classList.add('bg-blue-500', 'hover:bg-blue-600');
+            }
+        }
+    };
+    
+    // ==================== APPLY MASK OVERLAY ====================
+    function applyMaskOverlay() {
+        if (!maskImageData) return;
+        
+        // Redraw base image
+        ctx.drawImage(img, 0, 0);
+        
+        // Get current image data
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        
+        // Apply blue overlay where mask is white (product area)
+        for (let i = 0; i < maskImageData.data.length; i += 4) {
+            const maskValue = maskImageData.data[i]; // Grayscale value (0-255)
+            
+            if (maskValue > 128) { // White area = product
+                // Blend with semi-transparent blue (50% opacity)
+                imageData.data[i] = imageData.data[i] * 0.5 + 0 * 0.5;         // R
+                imageData.data[i + 1] = imageData.data[i + 1] * 0.5 + 100 * 0.5; // G
+                imageData.data[i + 2] = imageData.data[i + 2] * 0.5 + 255 * 0.5; // B
+                // Alpha remains unchanged
+            }
+        }
+        
+        // Draw the overlaid image
+        ctx.putImageData(imageData, 0, 0);
+    }
     
     // ==================== SLIDERS ====================
     const brightnessSlider = document.getElementById('range-brightness');
@@ -178,6 +277,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         ctx.putImageData(imageData, 0, 0);
+        
+        // If mask is visible, reapply mask overlay
+        if (maskVisible && maskImageData) {
+            applyMaskOverlay();
+        }
+    }
+    
+    // Helper function to apply current adjustments (used by toggleMask)
+    function applyCurrentAdjustments() {
+        if (brightness !== 0 || wb !== 5500 || hue !== 0) {
+            applyAllAdjustments();
+        }
     }
     
     // ==================== TOOL SELECTION ====================

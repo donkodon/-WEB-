@@ -122,7 +122,8 @@ editor.get('/edit/:id', async (c) => {
         const dbResult = await c.env.DB.prepare(`
           SELECT updated_at, 
                  COALESCE(processed_images, '[]') as processed_images,
-                 COALESCE(final_images, '[]') as final_images
+                 COALESCE(final_images, '[]') as final_images,
+                 mask_image_url
           FROM product_items 
           WHERE sku = ? AND company_id = ?
           LIMIT 1
@@ -131,6 +132,10 @@ editor.get('/edit/:id', async (c) => {
         if (dbResult) {
           if (dbResult.updated_at) {
             updatedAt = dbResult.updated_at as string;
+          }
+          if (dbResult.mask_image_url) {
+            maskImageUrl = dbResult.mask_image_url as string;
+            logger.debug(`🎭 Mask image URL found: ${maskImageUrl}`);
           }
           try {
             processedImages = JSON.parse(dbResult.processed_images as string || '[]');
@@ -214,6 +219,11 @@ editor.get('/edit/:id', async (c) => {
                  <button id="btn-toggle-original" onclick="window.toggleOriginal()" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg flex items-center hover:bg-gray-50 transition-colors text-sm font-medium">
                     <i class="fas fa-image mr-2"></i> 元画像を確認
                  </button>
+                 {hasMask && (
+                   <button id="btn-toggle-mask" onclick="window.toggleMask()" class="bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center hover:bg-blue-600 transition-colors text-sm font-medium">
+                      <i class="fas fa-eye mr-2"></i> マスクを表示
+                   </button>
+                 )}
                  <button onclick="window.location.reload()" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg flex items-center hover:bg-gray-50 transition-colors text-sm font-medium">
                     <i class="fas fa-history mr-2"></i> リセット
                  </button>

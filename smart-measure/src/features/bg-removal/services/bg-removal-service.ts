@@ -82,6 +82,11 @@ export async function removeProductImageBackground(
     
     try {
       const result = await removeBackgroundWithWithoutBG(originalUrl)
+      console.log('📦 [bg-removal-service] withoutBG result:', { 
+        success: result.success, 
+        hasImage: !!result.imageDataUrl,
+        hasMask: !!result.maskDataUrl 
+      })
       
       if (result.success && result.imageDataUrl) {
         console.log('✅ withoutBG success, converting base64 to bytes...')
