@@ -108,13 +108,16 @@ measurement.post('/api/auto-measure', async (c) => {
     
     // Copy measurement image to R2
     let measurementImageR2Url = output.image;
+    let maskImageR2Url = output.mask; // マスク画像URL
+    
     if (output.image && c.env.PRODUCT_IMAGES) {
       try {
         logger.debug(`📥 Downloading measurement image from ${output.image}`);
         const imageResponse = await fetch(output.image);
         if (imageResponse.ok) {
           const imageBuffer = await imageResponse.arrayBuffer();
-          const measurementImageKey = `${companyId}/${sku}/measurement_${Date.now()}.png`;
+          const timestamp = Date.now();
+          const measurementImageKey = `${companyId}/${sku}/measurement_${timestamp}.png`;
           await c.env.PRODUCT_IMAGES.put(measurementImageKey, imageBuffer, {
             httpMetadata: {
               contentType: 'image/png'
@@ -122,6 +125,28 @@ measurement.post('/api/auto-measure', async (c) => {
           });
           measurementImageR2Url = ImageUrlHelper.toFullUrl(measurementImageKey);
           logger.debug(`✅ Saved measurement image to R2: ${measurementImageR2Url}`);
+          
+          // マスク画像もR2に保存
+          if (output.mask) {
+            try {
+              logger.debug(`📥 Downloading mask image from ${output.mask}`);
+              const maskResponse = await fetch(output.mask);
+              if (maskResponse.ok) {
+                const maskBuffer = await maskResponse.arrayBuffer();
+                const maskImageKey = `${companyId}/${sku}/mask_${timestamp}.png`;
+                await c.env.PRODUCT_IMAGES.put(maskImageKey, maskBuffer, {
+                  httpMetadata: {
+                    contentType: 'image/png'
+                  }
+                });
+                maskImageR2Url = ImageUrlHelper.toFullUrl(maskImageKey);
+                logger.debug(`✅ Saved mask image to R2: ${maskImageR2Url}`);
+              }
+            } catch (maskError) {
+              logError('Copy mask image to R2', maskError);
+              // Continue with original URL or null
+            }
+          }
         }
       } catch (error) {
         logError('Copy measurement image to R2', error);
@@ -147,6 +172,7 @@ measurement.post('/api/auto-measure', async (c) => {
             reference_object = ?,
             measurements = ?,
             annotated_image_url = ?,
+            mask_image_url = ?,
             measurement_status = ?,
             measurement_category = ?,
             measured_at = ?,
@@ -157,6 +183,7 @@ measurement.post('/api/auto-measure', async (c) => {
         JSON.stringify({ pixelPerCm: output.pixel_per_cm }),
         JSON.stringify(output.measurements),
         measurementImageR2Url,
+        maskImageR2Url,
         'auto',
         garmentClass,
         new Date().toISOString(),
@@ -205,11 +232,12 @@ measurement.post('/api/auto-measure', async (c) => {
         reference_object, 
         measurements, 
         annotated_image_url,
+        mask_image_url,
         measurement_status,
         measurement_category,
         measured_at,
         created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       sku,
       itemCode,
@@ -219,6 +247,7 @@ measurement.post('/api/auto-measure', async (c) => {
       JSON.stringify({ pixelPerCm: output.pixel_per_cm }),
       JSON.stringify(output.measurements),
       measurementImageR2Url,
+      maskImageR2Url,
       'auto',
       garmentClass,
       new Date().toISOString(),
