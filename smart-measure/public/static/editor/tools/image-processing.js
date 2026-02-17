@@ -141,7 +141,41 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
-    // ==================== TOGGLE MASK ====================
+    // ==================== SHOW/HIDE MASK OVERLAY ====================
+    // Called from tab switching
+    window.showMaskOverlay = function() {
+        console.log('🎭 showMaskOverlay called');
+        
+        if (!maskImageData) {
+            console.warn('⚠️ No mask image data available');
+            
+            // Try to load mask if URL exists but data is not loaded
+            if (maskImageUrl && maskImageUrl !== '' && !maskImage) {
+                console.log('🎭 Attempting to load mask image...');
+                loadMaskImage();
+            }
+            return;
+        }
+        
+        if (!maskVisible) {
+            maskVisible = true;
+            applyMaskOverlay();
+            console.log('✅ Mask overlay shown');
+        }
+    };
+    
+    window.hideMaskOverlay = function() {
+        console.log('🎭 hideMaskOverlay called');
+        
+        if (maskVisible) {
+            maskVisible = false;
+            ctx.drawImage(img, 0, 0);
+            applyCurrentAdjustments();
+            console.log('✅ Mask overlay hidden');
+        }
+    };
+    
+    // ==================== TOGGLE MASK (legacy) ====================
     window.toggleMask = function() {
         console.log('🎭 toggleMask called');
         console.log('🎭 maskImageUrl:', maskImageUrl);
@@ -361,28 +395,12 @@ document.addEventListener('DOMContentLoaded', () => {
         currentTool = 'brush';
         maskMode = false;
         window.logger.debug('✅ Brush tool selected');
-        
-        // Hide mask overlay when switching to regular tools
-        if (maskVisible) {
-            console.log('🎭 Hiding mask overlay (switched to brush tool)');
-            maskVisible = false;
-            ctx.drawImage(img, 0, 0);
-            applyCurrentAdjustments();
-        }
     });
     
     if (btnEraser) btnEraser.addEventListener('click', () => {
         currentTool = 'eraser';
         maskMode = false;
         window.logger.debug('✅ Eraser tool selected');
-        
-        // Hide mask overlay when switching to regular tools
-        if (maskVisible) {
-            console.log('🎭 Hiding mask overlay (switched to eraser tool)');
-            maskVisible = false;
-            ctx.drawImage(img, 0, 0);
-            applyCurrentAdjustments();
-        }
     });
     
     // ==================== DRAWING ====================
@@ -479,7 +497,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 maskMode = true;
                 currentTool = 'mask-eraser';
                 window.logger.debug('✅ Mask mode enabled');
-                alert('マスクモードが有効になりました。\n青い部分が商品として保持されます。\n消しゴムで背景を指定してください。');
+                // REMOVED: alert popup
             } else {
                 maskPanel.classList.add('hidden');
                 maskIndicator.classList.add('hidden');
@@ -501,13 +519,7 @@ document.addEventListener('DOMContentLoaded', () => {
             maskBrushBtn.classList.remove('border-gray-200');
             maskEraserBtn.classList.remove('border-2', 'border-blue-400', 'text-blue-600');
             maskEraserBtn.classList.add('border-gray-200');
-            
-            // Show mask overlay when mask brush is selected
-            if (!maskVisible && maskImageData) {
-                console.log('🎭 Automatically showing mask overlay for mask-brush tool');
-                maskVisible = true;
-                applyMaskOverlay();
-            }
+            // Mask overlay is already shown by tab switching
         });
     }
     
@@ -518,13 +530,7 @@ document.addEventListener('DOMContentLoaded', () => {
             maskEraserBtn.classList.remove('border-gray-200');
             maskBrushBtn.classList.remove('border-2', 'border-blue-400', 'text-blue-600');
             maskBrushBtn.classList.add('border-gray-200');
-            
-            // Show mask overlay when mask eraser is selected
-            if (!maskVisible && maskImageData) {
-                console.log('🎭 Automatically showing mask overlay for mask-eraser tool');
-                maskVisible = true;
-                applyMaskOverlay();
-            }
+            // Mask overlay is already shown by tab switching
         });
     }
     
