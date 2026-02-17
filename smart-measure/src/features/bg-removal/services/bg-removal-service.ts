@@ -104,10 +104,12 @@ export async function removeProductImageBackground(
         
         // マスク画像も保存（Hugging Faceから返される）
         let maskUrl: string | null = null;
+        console.log(`🎭 Mask data available: ${!!result.maskDataUrl}`);
         if (result.maskDataUrl) {
           try {
             console.log('🎭 Saving mask image...');
             const maskBytes = base64ToBuffer(result.maskDataUrl);
+            console.log(`🎭 Mask bytes length: ${maskBytes.length}`);
             const timestamp = Date.now();
             const maskKey = `${companyId}/${sku}/${filenamePart}_mask_${timestamp}.png`;
             
@@ -128,8 +130,14 @@ export async function removeProductImageBackground(
             
             console.log('✅ Mask URL saved to D1');
           } catch (maskError: any) {
-            console.error('❌ Failed to save mask:', maskError.message);
+            console.error('❌ Failed to save mask:', maskError);
+            console.error('❌ Error details:', {
+              message: maskError.message,
+              stack: maskError.stack
+            });
           }
+        } else {
+          console.log('⚠️ No mask data returned from withoutBG API');
         }
         
         return {
