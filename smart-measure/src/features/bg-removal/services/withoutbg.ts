@@ -5,11 +5,15 @@
 import type { WithoutBGResult } from '../types'
 import { logger } from '../../../shared/helpers/logger'
 
-const WITHOUTBG_API_URL = 'https://jinkedon-withoutbg-api.hf.space/api/remove-bg'
+const WITHOUTBG_BASE_URL = 'https://jinkedon-withoutbg-api.hf.space'
+const WITHOUTBG_URL_ENDPOINT = `${WITHOUTBG_BASE_URL}/api/remove-bg-from-url`
+const WITHOUTBG_BASE64_ENDPOINT = `${WITHOUTBG_BASE_URL}/api/remove-bg-base64`
 
 /**
  * Remove background using withoutBG Focus model
  * Supports both URL and base64 data URL formats
+ * - URL入力 → /api/remove-bg-from-url (JSON: { image_url, return_mask })
+ * - base64入力 → /api/remove-bg-base64 (JSON: { image_base64, return_mask })
  */
 export async function removeBackgroundWithWithoutBG(
   imageUrl: string
@@ -18,6 +22,7 @@ export async function removeBackgroundWithWithoutBG(
     console.log('🎨 [removeBackgroundWithWithoutBG] Starting... imageUrl:', imageUrl?.substring(0, 100))
     
     let requestBody: any
+    let apiEndpoint: string
     
     if (imageUrl.startsWith('data:')) {
       logger.debug('📦 Detected base64 data URL, extracting base64 data...')
@@ -30,11 +35,15 @@ export async function removeBackgroundWithWithoutBG(
       const base64Data = matches[2]
       logger.debug(`📊 Base64 data length: ${base64Data.length} characters`)
       
+      // base64入力 → /api/remove-bg-base64
+      apiEndpoint = WITHOUTBG_BASE64_ENDPOINT
       requestBody = {
         image_base64: base64Data,
         return_mask: true
       }
     } else {
+      // URL入力 → /api/remove-bg-from-url
+      apiEndpoint = WITHOUTBG_URL_ENDPOINT
       requestBody = {
         image_url: imageUrl,
         return_mask: true
@@ -42,9 +51,10 @@ export async function removeBackgroundWithWithoutBG(
     }
     
     console.log('📡 [removeBackgroundWithWithoutBG] Sending request to withoutBG API...')
+    console.log('📡 Endpoint:', apiEndpoint)
     console.log('📡 Request body:', JSON.stringify(requestBody).substring(0, 200))
     
-    const response = await fetch(WITHOUTBG_API_URL, {
+    const response = await fetch(apiEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody)
