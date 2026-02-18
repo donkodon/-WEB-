@@ -64,7 +64,7 @@ editor.get('/edit/:id', async (c) => {
     const dbResult = await c.env.DB.prepare(`
       SELECT 
         COALESCE(measurement_image_url, annotated_image_url) as image_url,
-        mask_image_url,
+        mask_image_url_r2,
         updated_at
       FROM product_items
       WHERE sku = ? AND company_id = ?
@@ -73,7 +73,7 @@ editor.get('/edit/:id', async (c) => {
     
     if (dbResult && dbResult.image_url) {
       const imageUrl = dbResult.image_url as string;
-      maskImageUrl = dbResult.mask_image_url as string | null;
+      maskImageUrl = dbResult.mask_image_url_r2 as string | null;
       
       imageResult = {
         id: id,
@@ -123,7 +123,7 @@ editor.get('/edit/:id', async (c) => {
           SELECT updated_at, 
                  COALESCE(processed_images, '[]') as processed_images,
                  COALESCE(final_images, '[]') as final_images,
-                 mask_image_url
+                 mask_image_url_r2
           FROM product_items 
           WHERE sku = ? AND company_id = ?
           LIMIT 1
@@ -133,9 +133,9 @@ editor.get('/edit/:id', async (c) => {
           if (dbResult.updated_at) {
             updatedAt = dbResult.updated_at as string;
           }
-          if (dbResult.mask_image_url) {
-            maskImageUrl = dbResult.mask_image_url as string;
-            logger.debug(`🎭 Mask image URL found: ${maskImageUrl}`);
+          if (dbResult.mask_image_url_r2) {
+            maskImageUrl = dbResult.mask_image_url_r2 as string;
+            logger.debug(`🎭 Mask image URL found (mask_image_url_r2): ${maskImageUrl}`);
           }
           try {
             processedImages = JSON.parse(dbResult.processed_images as string || '[]');

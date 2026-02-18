@@ -125,15 +125,15 @@ export async function removeProductImageBackground(
             maskUrl = `${getR2PublicUrl(c.env)}/${maskKey}`;
             console.log(`✅ Mask saved to R2: ${maskUrl}`);
             
-            // D1にマスク画像URLを保存
+            // D1にマスク画像URLを保存（背景削除マスクはmask_image_url_r2に保存）
             await c.env.DB.prepare(`
               UPDATE product_items
-              SET mask_image_url = ?,
+              SET mask_image_url_r2 = ?,
                   updated_at = ?
               WHERE sku = ? AND company_id = ?
             `).bind(maskUrl, new Date().toISOString(), sku, companyId).run();
             
-            console.log('✅ Mask URL saved to D1');
+            console.log('✅ Mask URL saved to D1 (mask_image_url_r2)');
           } catch (maskError: any) {
             console.error('❌ Failed to save mask:', maskError);
             console.error('❌ Error details:', {

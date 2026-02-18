@@ -28,10 +28,11 @@ maskEditor.get('/mask-editor/:sku', async (c) => {
     const companyId = getCompanyIdFromContext(c);
     
     // Get measurement image and mask image URLs from database
+    // mask_image_url_r2: 背景削除マスク（withoutBG / 手動編集）
     const result = await c.env.DB.prepare(`
         SELECT 
             COALESCE(measurement_image_url, annotated_image_url) as image_url,
-            mask_image_url
+            mask_image_url_r2
         FROM product_items
         WHERE sku = ? AND company_id = ?
         LIMIT 1
@@ -42,7 +43,7 @@ maskEditor.get('/mask-editor/:sku', async (c) => {
     }
     
     const originalImageUrl = result.image_url as string;
-    const maskImageUrl = result.mask_image_url as string | null;
+    const maskImageUrl = result.mask_image_url_r2 as string | null;
     
     return c.render(
         <Layout active="dashboard" title="マスク編集">

@@ -44,14 +44,14 @@ maskApi.post('/api/update-mask/:sku', async (c) => {
         
         const maskUrl = ImageUrlHelper.toFullUrl(r2Key);
         
-        // Update product_items with new mask URL
+        // Update product_items with new mask URL（背景削除マスクはmask_image_url_r2に保存）
         await c.env.DB.prepare(`
             UPDATE product_items
-            SET mask_image_url = ?, updated_at = ?
+            SET mask_image_url_r2 = ?, updated_at = ?
             WHERE sku = ? AND company_id = ?
         `).bind(maskUrl, new Date().toISOString(), sku, companyId).run();
         
-        logger.debug(`✅ Updated product_items with edited mask URL`);
+        logger.debug(`✅ Updated product_items with edited mask URL (mask_image_url_r2)`);
         
         return c.json({
             success: true,
@@ -104,14 +104,14 @@ maskApi.post('/api/save-mask/:sku', async (c) => {
             // Build public URL
             const maskUrl = `${getR2PublicUrl(c.env)}/${r2Key}`;
             
-            // Update database
+            // Update database（背景削除マスクはmask_image_url_r2に保存）
             await c.env.DB.prepare(`
                 UPDATE product_items 
-                SET mask_image_url = ?, updated_at = CURRENT_TIMESTAMP
+                SET mask_image_url_r2 = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE sku = ? AND company_id = ?
             `).bind(maskUrl, sku, companyId).run();
             
-            logger.debug(`✅ Database updated with mask URL`);
+            logger.debug(`✅ Database updated with mask URL (mask_image_url_r2)`);
             
             return c.json({
                 success: true,
@@ -137,11 +137,11 @@ maskApi.post('/api/regenerate-with-mask/:sku', async (c) => {
         
         logger.debug(`🔄 Regenerating image for SKU ${sku} with edited mask`);
         
-        // Get original image and mask URLs
+        // Get original image and mask URLs（背景削除マスクはmask_image_url_r2から取得）
         const result = await c.env.DB.prepare(`
             SELECT 
                 COALESCE(measurement_image_url, annotated_image_url) as image_url,
-                mask_image_url
+                mask_image_url_r2
             FROM product_items
             WHERE sku = ? AND company_id = ?
             LIMIT 1
@@ -151,12 +151,12 @@ maskApi.post('/api/regenerate-with-mask/:sku', async (c) => {
             return c.json({ error: 'Image not found for this SKU' }, 404);
         }
         
-        if (!result.mask_image_url) {
+        if (!result.mask_image_url_r2) {
             return c.json({ error: 'Mask image not found for this SKU' }, 404);
         }
         
         const originalUrl = result.image_url as string;
-        const maskUrl = result.mask_image_url as string;
+        const maskUrl = result.mask_image_url_r2 as string;
         
         logger.debug(`📸 Original image: ${originalUrl}`);
         logger.debug(`🎭 Mask image: ${maskUrl}`);
