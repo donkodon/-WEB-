@@ -126,16 +126,25 @@ export async function removeProductImageBackground(
             
             // D1のmask_images_r2（JSON配列）に追記
             // 既存の配列を取得して、同じfilenamePartのエントリを上書き or 追加
+            console.log(`🔍 [mask-save] Querying DB: sku=${sku}, companyId=${companyId}`);
             const existing = await c.env.DB.prepare(`
-              SELECT mask_images_r2 FROM product_items
+              SELECT mask_images_r2, sku, company_id FROM product_items
               WHERE sku = ? AND company_id = ?
             `).bind(sku, companyId).first();
+            
+            console.log(`🔍 [mask-save] DB SELECT result: ${JSON.stringify(existing)}`);
             
             let maskImages: Array<{ filename: string; url: string }> = [];
             try {
               const raw = existing?.mask_images_r2 as string | null;
-              if (raw) maskImages = JSON.parse(raw);
-            } catch { maskImages = []; }
+              console.log(`🔍 [mask-save] raw mask_images_r2: ${raw}`);
+              if (raw && raw !== '[]' && raw !== '') {
+                maskImages = JSON.parse(raw);
+              }
+            } catch (parseErr) {
+              console.error(`❌ [mask-save] JSON.parse failed:`, parseErr);
+              maskImages = [];
+            }
             
             // 同じ filenamePart があれば上書き、なければ追加
             const idx = maskImages.findIndex(m => m.filename === filenamePart);
@@ -145,14 +154,18 @@ export async function removeProductImageBackground(
               maskImages.push({ filename: filenamePart, url: maskUrl });
             }
             
-            await c.env.DB.prepare(`
+            const newMaskJson = JSON.stringify(maskImages);
+            console.log(`🔍 [mask-save] Updating with: ${newMaskJson}`);
+            
+            const updateResult = await c.env.DB.prepare(`
               UPDATE product_items
               SET mask_images_r2 = ?,
                   updated_at = ?
               WHERE sku = ? AND company_id = ?
-            `).bind(JSON.stringify(maskImages), new Date().toISOString(), sku, companyId).run();
+            `).bind(newMaskJson, new Date().toISOString(), sku, companyId).run();
             
-            console.log(`✅ Mask URL saved to D1 (mask_images_r2): ${JSON.stringify(maskImages)}`);
+            console.log(`🔍 [mask-save] UPDATE result: changes=${updateResult.meta?.changes}, success=${updateResult.success}`);
+            console.log(`✅ Mask URL saved to D1 (mask_images_r2): ${newMaskJson}`);
           } catch (maskError: any) {
             console.error('❌ Failed to save mask:', maskError);
             console.error('❌ Error details:', {

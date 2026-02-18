@@ -152,6 +152,18 @@ bgRemoval.post('/api/remove-bg-image/:imageId', async (c) => {
       throw new Error(result.error)
     }
     
+    // DB確認（デバッグ用）
+    let dbMaskImages = null;
+    try {
+      const dbCheck = await c.env.DB.prepare(`
+        SELECT mask_images_r2, sku, company_id FROM product_items
+        WHERE sku = ? AND company_id = ?
+      `).bind(resolved.sku || sku, resolved.companyId).first();
+      dbMaskImages = dbCheck?.mask_images_r2;
+    } catch (dbErr: any) {
+      console.error('❌ DB check failed:', dbErr.message);
+    }
+    
     return c.json({ 
       success: true,
       imageId,
@@ -160,7 +172,10 @@ bgRemoval.post('/api/remove-bg-image/:imageId', async (c) => {
       message: result.message,
       _debug: {
         hasMaskUrl: !!result.maskUrl,
-        maskUrlValue: result.maskUrl || 'null'
+        maskUrlValue: result.maskUrl || 'null',
+        companyId: resolved.companyId,
+        sku: resolved.sku || sku,
+        dbMaskImages: dbMaskImages
       }
     })
 
