@@ -38,8 +38,10 @@ export interface ProductItem {
   image_status: 'original' | 'processed' | 'final'
   ai_landmarks: string | null // JSON object
   annotated_image_url: string | null
-  mask_image_url: string | null
+  mask_image_url: string | null        // 採寸マスク（スマホアプリが書く）
   measurement_image_url: string | null
+  mask_image_url_r2: string | null     // 旧: 背景削除マスク単一URL（非推奨）
+  mask_images_r2: string | null        // 新: 背景削除マスクJSON配列 [{filename, url}, ...]
   created_at: string
   updated_at: string
   has_measurement?: number // Computed field (0 or 1)

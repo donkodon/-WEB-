@@ -139,7 +139,7 @@ editor.get('/edit/:id', async (c) => {
           SELECT updated_at, 
                  COALESCE(processed_images, '[]') as processed_images,
                  COALESCE(final_images, '[]') as final_images,
-                 mask_image_url_r2
+                 COALESCE(mask_images_r2, '[]') as mask_images_r2
           FROM product_items 
           WHERE sku = ? AND company_id = ?
           LIMIT 1
@@ -149,10 +149,19 @@ editor.get('/edit/:id', async (c) => {
           if (dbResult.updated_at) {
             updatedAt = dbResult.updated_at as string;
           }
-          // 通常画像（r2_）は背景削除マスク mask_image_url_r2 を使用
-          if (dbResult.mask_image_url_r2) {
-            maskImageUrl = dbResult.mask_image_url_r2 as string;
-            logger.debug(`🎭 Mask image URL found (mask_image_url_r2): ${maskImageUrl}`);
+          // mask_images_r2（JSON配列）から filenamePart に一致するマスクURLを取得
+          try {
+            const maskImages: Array<{ filename: string; url: string }> =
+              JSON.parse(dbResult.mask_images_r2 as string || '[]');
+            const matched = maskImages.find(m => m.filename === filenamePart);
+            if (matched) {
+              maskImageUrl = matched.url;
+              logger.debug(`🎭 Mask image URL found (mask_images_r2[${filenamePart}]): ${maskImageUrl}`);
+            } else {
+              logger.debug(`🎭 No mask found for filenamePart: ${filenamePart} in mask_images_r2: ${JSON.stringify(maskImages)}`);
+            }
+          } catch (e) {
+            logger.warn('⚠️ Failed to parse mask_images_r2:', e);
           }
           try {
             processedImages = JSON.parse(dbResult.processed_images as string || '[]');
@@ -245,8 +254,8 @@ editor.get('/edit/:id', async (c) => {
         <div class="flex gap-4 h-[calc(100vh-140px)]">
             {/* Left Sidebar: Tools */}
             <div class="w-72 bg-white border border-gray-200 rounded-xl p-4 flex flex-col overflow-y-auto">
-                {/* Tab Navigation - Only show if measurement image with mask */}
-                {isMeasurement && hasMask && (
+                {/* Tab Navigation - マスクがあれば採寸/通常問わず表示 */}
+                {hasMask && (
                     <div class="flex space-x-2 mb-4 border-b border-gray-200">
                         <button 
                             id="tab-adjust" 
@@ -550,8 +559,8 @@ editor.get('/edit/:id', async (c) => {
             </div>
         </div>
 
-        {/* Load mask editor script if measurement image with mask */}
-        {isMeasurement && hasMask && (
+        {/* Load mask editor script if mask exists */}
+        {hasMask && (
             <script src="/static/editor/mask/editor.js"></script>
         )}
         
