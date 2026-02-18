@@ -1,91 +1,64 @@
 /**
  * Background Removal Orchestration Service
- * Coordinates all background removal methods with priority fallback
+ * 
+ * Priority:
+ * 1. withoutBG Focus API (Free, Hugging Face Spaces)
+ * 2. Cloudflare AI (fallback)
+ * 3. Fal.ai BRIA API (if API key configured or explicitly requested)
  */
-import type { AppEnv } from '../../../types/bindings'
-import type { Context } from 'hono'
-import type { BgRemovalResult } from '../types'
-import { removeBackgroundWithCloudflareAI } from './cloudflare-ai'
-import { removeBackgroundWithWithoutBG } from './withoutbg'
-import { callBriaApi, isBriaApiKeyValid } from './bria-api'
-import { uploadProcessedImageToR2, uploadAndUpdateDatabase, base64ToBuffer } from '../helpers/r2-uploader'
+import type { HonoContext } from '../../../types/bindings'
 import { logger } from '../../../shared/helpers/logger'
+import { removeBackgroundWithWithoutBG } from './withoutbg'
+import { removeBackgroundWithCloudflareAI } from './cloudflare-ai'
+import { callBriaApi, isBriaApiKeyValid } from './bria-api'
+import { base64ToBuffer, uploadAndUpdateDatabase } from '../helpers/r2-uploader'
 import { getR2PublicUrl } from '../../image-editor/helpers/r2-url'
 
-/**
- * Remove background for product image
- * Priority order:
- * 1. withoutBG Focus API (free, Hugging Face Spaces)
- * 2. Cloudflare AI (fallback)
- * 3. Fal.ai BRIA API (if API key configured)
- */
 export async function removeProductImageBackground(
-  c: Context<AppEnv>,
+  c: HonoContext,
   originalUrl: string,
   companyId: string,
   sku: string,
   filenamePart: string,
-  options?: {
-    model?: string
-    useBriaApi?: boolean
-  }
-): Promise<{ success: true; processedUrl: string; maskUrl?: string | null; message: string } | { success: false; error: string }> {
+  options?: { model?: string; useBriaApi?: boolean }
+): Promise<{ success: true; processedUrl: string; maskUrl: string | null; message: string } | { success: false; error: string }> {
   const { model = 'cloudflare-ai', useBriaApi = false } = options || {}
-  
-  // Priority 1: Fal.ai BRIA API (if explicitly requested or API key configured)
+
+  // Priority 1: Fal.ai BRIA API (if key configured or explicitly requested)
   const briaApiKey = c.env.BRIA_API_KEY || c.env.FAL_API_KEY
-  const isBriaValid = isBriaApiKeyValid(briaApiKey)
-  
-  if (isBriaValid && (useBriaApi || model === 'bria')) {
+  if (isBriaApiKeyValid(briaApiKey) && (useBriaApi || model === 'bria')) {
     logger.debug('🌐 Using Fal.ai BRIA RMBG 2.0 API (cloud-based)')
     
-    if (!originalUrl.startsWith('data:')) {
-      const briaResult = await callBriaApi(originalUrl, briaApiKey)
-      
+    if (originalUrl.startsWith('data:')) {
+      logger.warn('Data URL detected, falling back to withoutBG')
+    } else {
+      const briaResult = await callBriaApi(originalUrl, briaApiKey!)
       if (briaResult.success && briaResult.imageUrl) {
-        const imageResponse = await fetch(briaResult.imageUrl)
-        const imageBuffer = await imageResponse.arrayBuffer()
-        
+        const response = await fetch(briaResult.imageUrl)
+        const imageBuffer = await response.arrayBuffer()
         const { publicUrl } = await uploadAndUpdateDatabase(
           c.env.PRODUCT_IMAGES,
           c.env.DB,
           getR2PublicUrl(c.env),
-          {
-            companyId,
-            sku,
-            filenamePart,
-            imageBuffer
-          }
+          { companyId, sku, filenamePart, imageBuffer }
         )
-        
         logger.debug(`✅ Processed with BRIA API: ${publicUrl}`)
-        
-        return {
-          success: true,
-          processedUrl: publicUrl,
-          maskUrl: null,
-          message: 'Background removed using Fal.ai BRIA RMBG 2.0 (Cloud)'
-        }
+        return { success: true, processedUrl: publicUrl, maskUrl: null, message: 'Background removed using Fal.ai BRIA RMBG 2.0 (Cloud)' }
       } else {
         logger.error('BRIA API failed, falling back:', briaResult.error)
       }
-    } else {
-      logger.warn('Data URL detected, falling back to withoutBG')
     }
   }
-  
-  // Priority 2: withoutBG Focus (free, always try first for URL images)
-  const isBase64Image = originalUrl.startsWith('data:')
-  
-  if (!isBase64Image) {
+
+  // Priority 2: withoutBG Focus API (Free, for non-base64 URLs)
+  if (!originalUrl.startsWith('data:')) {
     console.log('🚀 Starting withoutBG Focus model for background removal (URL mode)')
-    
     try {
       const result = await removeBackgroundWithWithoutBG(originalUrl)
-      console.log('📦 [bg-removal-service] withoutBG result:', { 
-        success: result.success, 
+      console.log('📦 [bg-removal-service] withoutBG result:', {
+        success: result.success,
         hasImage: !!result.imageDataUrl,
-        hasMask: !!result.maskDataUrl 
+        hasMask: !!result.maskDataUrl
       })
       
       if (result.success && result.imageDataUrl) {
@@ -126,23 +99,18 @@ export async function removeProductImageBackground(
             
             // D1のmask_images_r2（JSON配列）に追記
             // 既存の配列を取得して、同じfilenamePartのエントリを上書き or 追加
-            console.log(`🔍 [mask-save] Querying DB: sku=${sku}, companyId=${companyId}`);
             const existing = await c.env.DB.prepare(`
-              SELECT mask_images_r2, sku, company_id FROM product_items
+              SELECT mask_images_r2 FROM product_items
               WHERE sku = ? AND company_id = ?
             `).bind(sku, companyId).first();
-            
-            console.log(`🔍 [mask-save] DB SELECT result: ${JSON.stringify(existing)}`);
             
             let maskImages: Array<{ filename: string; url: string }> = [];
             try {
               const raw = existing?.mask_images_r2 as string | null;
-              console.log(`🔍 [mask-save] raw mask_images_r2: ${raw}`);
               if (raw && raw !== '[]' && raw !== '') {
                 maskImages = JSON.parse(raw);
               }
-            } catch (parseErr) {
-              console.error(`❌ [mask-save] JSON.parse failed:`, parseErr);
+            } catch {
               maskImages = [];
             }
             
@@ -155,16 +123,13 @@ export async function removeProductImageBackground(
             }
             
             const newMaskJson = JSON.stringify(maskImages);
-            console.log(`🔍 [mask-save] Updating with: ${newMaskJson}`);
-            
-            const updateResult = await c.env.DB.prepare(`
+            await c.env.DB.prepare(`
               UPDATE product_items
               SET mask_images_r2 = ?,
                   updated_at = ?
               WHERE sku = ? AND company_id = ?
             `).bind(newMaskJson, new Date().toISOString(), sku, companyId).run();
             
-            console.log(`🔍 [mask-save] UPDATE result: changes=${updateResult.meta?.changes}, success=${updateResult.success}`);
             console.log(`✅ Mask URL saved to D1 (mask_images_r2): ${newMaskJson}`);
           } catch (maskError: any) {
             console.error('❌ Failed to save mask:', maskError);
@@ -204,22 +169,10 @@ export async function removeProductImageBackground(
           c.env.PRODUCT_IMAGES,
           c.env.DB,
           getR2PublicUrl(c.env),
-          {
-            companyId,
-            sku,
-            filenamePart,
-            imageBuffer: result.imageBuffer
-          }
+          { companyId, sku, filenamePart, imageBuffer: result.imageBuffer }
         )
-        
         logger.debug(`✅ Processed with Cloudflare AI: ${publicUrl}`)
-        
-        return {
-          success: true,
-          processedUrl: publicUrl,
-          maskUrl: null,
-          message: 'Background removed using Cloudflare AI (Free)'
-        }
+        return { success: true, processedUrl: publicUrl, maskUrl: null, message: 'Background removed using Cloudflare AI (Free)' }
       } else {
         logger.error('❌ Cloudflare AI failed:', result.error)
         throw new Error(result.error || 'Cloudflare AI processing failed')
@@ -230,10 +183,6 @@ export async function removeProductImageBackground(
     }
   }
   
-  // No more services available
   logger.error('❌ All background removal services failed')
-  return {
-    success: false,
-    error: 'Background removal failed: All services are unavailable. Please try again later.'
-  }
+  return { success: false, error: 'Background removal failed: All services are unavailable. Please try again later.' }
 }
