@@ -135,6 +135,11 @@
                     
                     if (res.ok) {
                         const data = await res.json();
+                        console.log('🔍 [BG-REMOVAL] API response:', JSON.stringify({
+                            message: data.message,
+                            maskUrl: data.maskUrl,
+                            _debug: data._debug
+                        }));
                         window.logger.debug('✅ Success for image', imageId, ':', data);
                         successCount++;
                         

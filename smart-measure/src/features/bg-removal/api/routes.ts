@@ -157,7 +157,11 @@ bgRemoval.post('/api/remove-bg-image/:imageId', async (c) => {
       imageId,
       processedUrl: result.processedUrl,
       maskUrl: result.maskUrl || null,
-      message: result.message
+      message: result.message,
+      _debug: {
+        hasMaskUrl: !!result.maskUrl,
+        maskUrlValue: result.maskUrl || 'null'
+      }
     })
 
   } catch (error: any) {
