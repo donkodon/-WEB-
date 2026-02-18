@@ -264,11 +264,11 @@ bgRemoval.post('/api/upload-processed-measurement/:sku', async (c) => {
     
     await c.env.DB.prepare(`
       UPDATE product_items
-      SET measurement_image_url = ?, mask_image_url = ?, updated_at = ?
+      SET measurement_image_url = ?, mask_image_url_r2 = ?, updated_at = ?
       WHERE sku = ? AND company_id = ?
     `).bind(processedUrl, maskUrl, new Date().toISOString(), sku, companyId).run()
     
-    logger.debug(`✅ Updated product_items with resized measurement image URL and mask URL (mask_image_url)`)
+    logger.debug(`✅ Updated product_items with resized measurement image URL and mask URL (mask_image_url_r2)`)
     
     return c.json({
       success: true,
