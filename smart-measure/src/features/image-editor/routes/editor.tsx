@@ -61,10 +61,11 @@ editor.get('/edit/:id', async (c) => {
     isMeasurement = true;
     
     // Get measurement image and mask URL from database
+    // 採寸データは mask_image_url（Replicateが生成した採寸マスク）を使用
     const dbResult = await c.env.DB.prepare(`
       SELECT 
         COALESCE(measurement_image_url, annotated_image_url) as image_url,
-        mask_image_url_r2,
+        mask_image_url,
         updated_at
       FROM product_items
       WHERE sku = ? AND company_id = ?
@@ -73,7 +74,7 @@ editor.get('/edit/:id', async (c) => {
     
     if (dbResult && dbResult.image_url) {
       const imageUrl = dbResult.image_url as string;
-      maskImageUrl = dbResult.mask_image_url_r2 as string | null;
+      maskImageUrl = dbResult.mask_image_url as string | null;
       
       imageResult = {
         id: id,
@@ -133,6 +134,7 @@ editor.get('/edit/:id', async (c) => {
           if (dbResult.updated_at) {
             updatedAt = dbResult.updated_at as string;
           }
+          // 通常画像（r2_）は背景削除マスク mask_image_url_r2 を使用
           if (dbResult.mask_image_url_r2) {
             maskImageUrl = dbResult.mask_image_url_r2 as string;
             logger.debug(`🎭 Mask image URL found (mask_image_url_r2): ${maskImageUrl}`);
