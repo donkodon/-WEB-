@@ -554,28 +554,44 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // ==================== SAVE ====================
     window.saveEditedImage = async function() {
-        const button = document.getElementById('btn-save-edit');
-        if (!button) return;
+        const button = document.getElementById('btn-save');
+        if (!button) {
+            window.logger.error('❌ btn-save not found');
+            return;
+        }
         
         button.disabled = true;
-        button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>保存中...';
+        button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> 保存中...';
         
         try {
-            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-            const formData = new FormData();
-            formData.append('image', blob, sku + '_' + filenamePart + '_f.png');
-            formData.append('imageId', imageId);
+            // Canvas to base64
+            const imageData = canvas.toDataURL('image/png');
             
-            const response = await window.authenticatedFetch('/api/save-edited-image', {
+            window.logger.debug('💾 Saving edited image:', imageId);
+            window.logger.debug('📊 Image data length:', imageData.length);
+            
+            const response = await window.authenticatedFetch('/api/save-edited-image/' + imageId, {
                 method: 'POST',
-                body: formData
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    imageData: imageData,
+                    imageId: imageId
+                })
             });
             
             const result = await response.json();
             
             if (result.success) {
-                alert('画像を保存しました');
-                window.location.reload();
+                // 成功メッセージ表示
+                button.innerHTML = '<i class="fas fa-check mr-2"></i> 保存完了！';
+                button.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+                button.classList.add('bg-green-600');
+                
+                setTimeout(() => {
+                    window.location.href = '/dashboard';
+                }, 1000);
             } else {
                 throw new Error(result.error || 'Failed to save');
             }
@@ -583,10 +599,26 @@ document.addEventListener('DOMContentLoaded', () => {
             window.logger.error('Save error:', error);
             alert('保存に失敗しました: ' + error.message);
         } finally {
-            button.disabled = false;
-            button.innerHTML = '<i class="fas fa-save mr-2"></i>保存';
+            if (button.disabled) {
+                button.disabled = false;
+                // 失敗時のみ元のテキストに戻す
+                if (!button.classList.contains('bg-green-600')) {
+                    button.innerHTML = '<i class="fas fa-save mr-2"></i> 保存して次へ';
+                }
+            }
         }
     };
+    
+    // ==================== SAVE BUTTON EVENT ====================
+    const saveButton = document.getElementById('btn-save');
+    if (saveButton) {
+        saveButton.addEventListener('click', () => {
+            window.saveEditedImage();
+        });
+        window.logger.debug('✅ Save button event listener attached');
+    } else {
+        window.logger.error('❌ btn-save element not found - save will not work');
+    }
     
     window.logger.debug('✅ Image processing initialized');
 });
