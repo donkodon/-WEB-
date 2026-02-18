@@ -25,6 +25,7 @@ import { removeProductImageBackground } from '../services/bg-removal-service'
 // Helpers
 import { parseImageId, resolveR2ImageUrl, getSearchedPaths } from '../helpers/image-resolver'
 import { base64ToBuffer } from '../helpers/r2-uploader'
+import { markImageAsProcessed } from '../../image-editor/helpers/image-status'
 
 const bgRemoval = new Hono<AppEnv>()
 
@@ -231,8 +232,8 @@ bgRemoval.post('/api/upload-processed-measurement/:sku', async (c) => {
     const base64Data = body.imageDataUrl.split(',')[1]
     const processedImageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0)).buffer
     
-    const timestamp = Date.now()
-    const r2Key = `${companyId}/${sku}/measurement_${timestamp}_p.png`
+    // 通常画像と同じ命名規則: measurement_p.png（固定名、タイムスタンプ不要）
+    const r2Key = `${companyId}/${sku}/measurement_p.png`
     
     if (c.env.PRODUCT_IMAGES) {
       await c.env.PRODUCT_IMAGES.put(r2Key, processedImageBuffer, {
@@ -241,7 +242,9 @@ bgRemoval.post('/api/upload-processed-measurement/:sku', async (c) => {
       logger.debug(`✅ Uploaded resized measurement image to R2: ${r2Key}`)
     }
     
-    const processedUrl = ImageUrlHelper.toFullUrl(r2Key)
+    // 通常画像と同じ仕組み: processed_imagesに "measurement" を追加
+    await markImageAsProcessed(c.env.DB, sku, companyId, 'measurement')
+    logger.debug(`✅ Marked measurement as processed in processed_images`)
     
     // Upload mask image if provided
     let maskUrl = null
@@ -250,6 +253,7 @@ bgRemoval.post('/api/upload-processed-measurement/:sku', async (c) => {
       const maskBase64Data = body.maskDataUrl.split(',')[1]
       const maskImageBuffer = Uint8Array.from(atob(maskBase64Data), c => c.charCodeAt(0)).buffer
       
+      const timestamp = Date.now()
       const maskR2Key = `${companyId}/${sku}/mask_${timestamp}.png`
       
       if (c.env.PRODUCT_IMAGES) {
@@ -262,13 +266,17 @@ bgRemoval.post('/api/upload-processed-measurement/:sku', async (c) => {
       maskUrl = ImageUrlHelper.toFullUrl(maskR2Key)
     }
     
+    // mask_image_url_r2のみ更新（measurement_image_urlは触らない）
     await c.env.DB.prepare(`
       UPDATE product_items
-      SET measurement_image_url = ?, mask_image_url_r2 = ?, updated_at = ?
+      SET mask_image_url_r2 = ?, updated_at = ?
       WHERE sku = ? AND company_id = ?
-    `).bind(processedUrl, maskUrl, new Date().toISOString(), sku, companyId).run()
+    `).bind(maskUrl, new Date().toISOString(), sku, companyId).run()
     
-    logger.debug(`✅ Updated product_items with resized measurement image URL and mask URL (mask_image_url_r2)`)
+    logger.debug(`✅ Updated product_items: processed_images += "measurement", mask_image_url_r2 updated`)
+    
+    // image-proxy経由のURLを返す（通常画像と同じ仕組み）
+    const processedUrl = `/api/image-proxy/${sku}/measurement_p.png`
     
     return c.json({
       success: true,

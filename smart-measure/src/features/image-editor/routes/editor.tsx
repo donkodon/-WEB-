@@ -61,10 +61,12 @@ editor.get('/edit/:id', async (c) => {
     isMeasurement = true;
     
     // Get measurement image and mask URL from database
-    // 採寸データは mask_image_url（Replicateが生成した採寸マスク）を使用
+    // 通常画像と同じ仕組み: processed_imagesに"measurement"があれば_p.pngをimage-proxy経由で表示
     const dbResult = await c.env.DB.prepare(`
       SELECT 
-        COALESCE(measurement_image_url, annotated_image_url) as image_url,
+        COALESCE(annotated_image_url, measurement_image_url) as original_url,
+        COALESCE(processed_images, '[]') as processed_images,
+        mask_image_url_r2,
         mask_image_url,
         updated_at
       FROM product_items
@@ -72,17 +74,30 @@ editor.get('/edit/:id', async (c) => {
       LIMIT 1
     `).bind(sku, companyId).first();
     
-    if (dbResult && dbResult.image_url) {
-      const imageUrl = dbResult.image_url as string;
-      maskImageUrl = dbResult.mask_image_url as string | null;
-      
+    if (dbResult && dbResult.original_url) {
+      const originalUrl = dbResult.original_url as string;
+      const updatedAt = dbResult.updated_at as string;
+      const cacheV = new Date(updatedAt).getTime();
+
+      // processed_imagesに"measurement"があれば背景削除済み
+      let processedImages: string[] = [];
+      try { processedImages = JSON.parse(dbResult.processed_images as string || '[]'); } catch {}
+      const isProcessed = processedImages.includes('measurement');
+
+      // マスク: 背景削除マスク優先、なければ採寸マスク
+      maskImageUrl = (dbResult.mask_image_url_r2 || dbResult.mask_image_url) as string | null;
+
+      const processedUrl = isProcessed
+        ? `/api/image-proxy/${sku}/measurement_p.png?v=${cacheV}`
+        : null;
+
       imageResult = {
         id: id,
-        original_url: imageUrl,
-        processed_url: imageUrl.includes('_p.png') ? imageUrl : null,
+        original_url: originalUrl,
+        processed_url: processedUrl,
         sku: sku,
         product_name: `商品 ${sku} - 採寸データ`,
-        status: imageUrl.includes('_p.png') ? 'processed' : 'measurement'
+        status: isProcessed ? 'processed' : 'measurement'
       };
     }
   } else if (id.startsWith('r2_')) {

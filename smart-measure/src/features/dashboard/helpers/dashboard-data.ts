@@ -112,7 +112,7 @@ export async function fetchDashboardData(options: DashboardDataOptions): Promise
   const productItemsResult = await env.DB.prepare(`
     SELECT sku, image_urls, updated_at, 
            CASE WHEN ai_landmarks IS NOT NULL THEN 1 ELSE 0 END as has_measurement,
-           COALESCE(measurement_image_url, annotated_image_url) as measurement_image_url,
+           COALESCE(annotated_image_url, measurement_image_url) as annotated_image_url,
            mask_image_url,
            COALESCE(processed_images, '[]') as processed_images,
            COALESCE(final_images, '[]') as final_images,
@@ -243,17 +243,25 @@ export async function fetchDashboardData(options: DashboardDataOptions): Promise
     }
     
     // Add measurement image if available
-    const measurementImageUrl = pi.measurement_image_url
+    // 通常画像と同じ仕組み: processed_imagesに"measurement"があれば_p.pngをimage-proxy経由で表示
+    const annotatedImageUrl = (pi as any).annotated_image_url
     const maskImageUrl = pi.mask_image_url
-    if (measurementImageUrl && productData.has_measurement) {
+    if (annotatedImageUrl && productData.has_measurement) {
       const measurementImageId = `measurement_${sku}`
-      const isProcessed = measurementImageUrl.includes('_p.png')
+      const isProcessed = processedImages.includes('measurement')
+      
+      // 元画像: annotated_image_url（スマホアプリが保存したURL）
+      const originalUrl = annotatedImageUrl
+      // 背景削除済み: image-proxy経由（通常画像と同じ仕組み）
+      const processedUrl = isProcessed
+        ? `/api/image-proxy/${sku}/measurement_p.png?v=${new Date(updatedAt).getTime()}`
+        : null
       
       productData.images.push({
         id: measurementImageId,
-        original_url: measurementImageUrl,
-        processed_url: isProcessed ? measurementImageUrl : null,
-        display_url: measurementImageUrl,
+        original_url: originalUrl,
+        processed_url: processedUrl,
+        display_url: processedUrl || originalUrl,
         mask_url: maskImageUrl || null,
         status: isProcessed ? 'completed' : 'measurement',
         created_at: new Date().toISOString(),
