@@ -424,7 +424,7 @@ editor.get('/edit/:id', async (c) => {
                 {/* End Image Adjust Tools */}
                 
                 {/* Mask Edit Tools */}
-                <div id="mask-tools" style="display: none;">
+                <div id="mask-tools" class="hidden">
                     {/* Mode Selection */}
                     <div class="mb-6">
                         <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">編集モード</div>
