@@ -92,11 +92,16 @@
             return;
         }
 
-        const { canvas, ctx, img, maskCanvas, maskCtx } = S;
+        const { canvas, ctx, maskCanvas, maskCtx } = S;
         let { maskImageData } = S;
 
         // ベース画像を再描画
-        ctx.drawImage(img, 0, 0);
+        // originalImage キャッシュがある場合はそこから（img.src依存を避ける）
+        if (S.originalImage && !S.showingOriginal) {
+            ctx.putImageData(S.originalImage, 0, 0);
+        } else {
+            ctx.drawImage(S.img, 0, 0);
+        }
 
         // ── サイズ不一致チェック ──────────────────────────────────────
         // maskImageData のサイズが canvas と違う場合はスケールし直す
@@ -131,10 +136,10 @@
         for (let i = 0; i < mData.length; i += 4) {
             const lum = mData[i] + mData[i + 1] + mData[i + 2]; // 0-765
             if (lum > 10) {
-                // 商品エリア: 青オーバーレイ 50%
-                iData[i]     = iData[i]     * 0.5;
-                iData[i + 1] = iData[i + 1] * 0.5 + 50;
-                iData[i + 2] = iData[i + 2] * 0.5 + 128;
+                // 商品エリア: 青オーバーレイ 50%（rgba(0,100,255,0.5) をブレンド）
+                iData[i]     = iData[i]     * 0.5;           // R: 元の50%
+                iData[i + 1] = iData[i + 1] * 0.5 + 50;     // G: 元の50% + 50
+                iData[i + 2] = iData[i + 2] * 0.5 + 127;    // B: 元の50% + 127 (=255*0.5)
                 bright++;
             } else {
                 dark++;

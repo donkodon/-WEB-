@@ -369,7 +369,14 @@
             0, 0, S.maskCanvas.width, S.maskCanvas.height
         );
 
-        S.ctx.drawImage(S.img, 0, 0);
+        // オリジナル画像を再描画してオーバーレイを適用
+        if (S.originalImage && S.showingOriginal === false) {
+            // 調整タブ側なら originalImage キャッシュから（ここには来ないはずだが念のため）
+            S.ctx.putImageData(S.originalImage, 0, 0);
+        } else {
+            // マスクタブ側: canvas に現在表示中のオリジナルはそのまま。
+            // drawImage は img 依存なので独自Imageで再描画せずオーバーレイだけ重ねる
+        }
         window.ImageAdjust && window.ImageAdjust.applyMaskOverlay();
         console.log(`↶ Undo: index ${maskHistoryIndex + 1} → ${maskHistoryIndex}`);
     };
@@ -398,8 +405,12 @@
             S.pendingMaskDataUrl = maskDataUrl;
             console.log('✅ Step1: mask data stored in memory (pending upload)');
 
-            // Step 2: オリジナル × マスク → 透過 PNG 合成
-            const origImg = await _loadImage(S.originalSrc);
+            // Step 2: ベース画像 × マスク → 透過 PNG 合成
+            // f画像 > p画像 > オリジナルの優先順位で使用
+            // processedSrc は editor-state で f>p>original 優先に設定されている
+            const baseSrc = S.processedSrc || S.originalSrc;
+            console.log('🖼️ saveMask base image:', baseSrc);
+            const origImg = await _loadImage(baseSrc);
 
             const comp    = document.createElement('canvas');
             comp.width    = origImg.width;
