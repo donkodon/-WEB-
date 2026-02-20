@@ -50,23 +50,20 @@
             maskTools.classList.remove('hidden');
             toolTitle.textContent = 'マスク編集';
             
-            // Switch to original image first
+            // Switch to original image, then show mask overlay in callback
             console.log('🎭 Switching to original image for mask editing');
             if (window.switchToOriginalForMask) {
-                window.switchToOriginalForMask();
+                window.switchToOriginalForMask(function() {
+                    // 画像描画完了後にマスクオーバーレイを表示
+                    if (window.showMaskOverlay) {
+                        window.showMaskOverlay();
+                    } else {
+                        console.error('❌ window.showMaskOverlay is not defined!');
+                    }
+                });
             } else {
                 console.error('❌ window.switchToOriginalForMask is not defined!');
             }
-            
-            // Wait for image to load, then show mask overlay
-            setTimeout(() => {
-                console.log('🎭 Checking window.showMaskOverlay:', typeof window.showMaskOverlay);
-                if (window.showMaskOverlay) {
-                    window.showMaskOverlay();
-                } else {
-                    console.error('❌ window.showMaskOverlay is not defined!');
-                }
-            }, 100);
         }
     };
     

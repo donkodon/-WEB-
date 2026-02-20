@@ -173,15 +173,22 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // ==================== SWITCH TO ORIGINAL FOR MASK ====================
     // Called when switching to mask editing tab
-    window.switchToOriginalForMask = function() {
+    // callback: 画像描画完了後に呼ぶ関数（マスクオーバーレイ表示など）
+    window.switchToOriginalForMask = function(callback) {
         console.log('🎨 switchToOriginalForMask called');
         console.log('📸 Current showingOriginal:', showingOriginal);
-        console.log('📸 originalSrc:', originalSrc);
         
-        // If already showing original, just redraw
+        // Update toggle button
+        const button = document.getElementById('btn-toggle-original');
+        if (button) {
+            button.innerHTML = '<i class="fas fa-image mr-2"></i> 処理後画像を表示';
+        }
+        
+        // If already showing original, just redraw and call callback immediately
         if (showingOriginal) {
             console.log('✅ Already showing original image, redrawing canvas');
             ctx.drawImage(img, 0, 0);
+            if (callback) callback();
             return;
         }
         
@@ -197,14 +204,27 @@ document.addEventListener('DOMContentLoaded', () => {
             // Redraw canvas with original image
             ctx.drawImage(originalImg, 0, 0);
             console.log('✅ Switched to original image for mask editing');
+            // 画像ロード完了後にコールバック実行（マスクオーバーレイ表示）
+            if (callback) callback();
+        };
+        originalImg.onerror = function() {
+            // CORS失敗時はプロキシ経由で再試行
+            console.warn('⚠️ originalImg CORS failed, using proxy');
+            const proxyUrl = `/api/images/proxy?url=${encodeURIComponent(originalSrc)}`;
+            const proxyImg = new Image();
+            proxyImg.onload = function() {
+                img.src = proxyUrl;
+                ctx.drawImage(proxyImg, 0, 0);
+                console.log('✅ Switched to original via proxy');
+                if (callback) callback();
+            };
+            proxyImg.onerror = function() {
+                console.error('❌ Failed to load original via proxy too');
+                if (callback) callback(); // エラーでもコールバックは実行
+            };
+            proxyImg.src = proxyUrl;
         };
         originalImg.src = originalSrc;
-        
-        // Update toggle button if it exists
-        const button = document.getElementById('btn-toggle-original');
-        if (button) {
-            button.innerHTML = '<i class="fas fa-image mr-2"></i> 処理後画像を表示';
-        }
     };
     
     // ==================== SWITCH TO PROCESSED IMAGE ====================
@@ -236,9 +256,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Called from tab switching
     window.showMaskOverlay = function() {
         console.log('🎭 showMaskOverlay called');
-        console.log('🎭 maskImageUrl:', maskImageUrl);
-        console.log('🎭 maskImageData:', maskImageData);
-        console.log('🎭 maskVisible:', maskVisible);
+        console.log('🎭 maskImageData:', !!maskImageData);
+        console.log('🎭 maskVisible (before):', maskVisible);
         
         if (!maskImageData) {
             console.warn('⚠️ No mask image data available');
@@ -259,14 +278,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        if (!maskVisible) {
-            console.log('🎭 Setting maskVisible = true and calling applyMaskOverlay()');
-            maskVisible = true;
-            applyMaskOverlay();
-            console.log('✅ Mask overlay shown');
-        } else {
-            console.log('ℹ️ Mask overlay already visible');
-        }
+        // フラグに関わらず常に描画する（switchToOriginalForMask後にcanvasがリセットされるため）
+        maskVisible = true;
+        applyMaskOverlay();
+        console.log('✅ Mask overlay applied');
     };
     
     window.hideMaskOverlay = function() {
