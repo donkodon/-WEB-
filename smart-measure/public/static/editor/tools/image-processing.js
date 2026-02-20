@@ -342,8 +342,8 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('🎭 Mask data length:', maskImageData.data.length);
         
         // Apply blue overlay based on RGB brightness
-        // Bright (RGB sum > 3) = product area → show blue overlay
-        // Dark (RGB sum <= 3) = background area → no overlay
+        // Bright (RGB sum > 10) = product area → show blue overlay
+        // Dark (RGB sum <= 10) = background area → no overlay
         let darkPixelCount = 0;
         let brightPixelCount = 0;
         
@@ -355,8 +355,10 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Check if pixel is bright (product area)
             // RGB (255,255,255) has brightness = 765
+            // RGB (0,0,0) has brightness = 0
             // RGB (1,1,1) has brightness = 3
-            if (brightness > 3) {
+            // Use threshold of 10 to include dark colors
+            if (brightness > 10) {
                 brightPixelCount++;
                 // Apply blue overlay to product area (50% opacity)
                 imageData.data[i] = imageData.data[i] * 0.5 + 0 * 0.5;         // R
@@ -606,20 +608,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function drawMask(x1, y1, x2, y2) {
+        console.log('🎨 drawMask called, tool:', currentTool, 'size:', maskBrushSize);
+        
         maskCtx.lineCap = 'round';
         maskCtx.lineJoin = 'round';
         maskCtx.lineWidth = maskBrushSize;
+        maskCtx.globalCompositeOperation = 'source-over';
         
         if (currentTool === 'mask-brush') {
             // Brush: paint white (product area - will show blue overlay)
-            maskCtx.globalCompositeOperation = 'source-over';
-            maskCtx.strokeStyle = 'rgb(255, 255, 255)'; // White
-            maskCtx.fillStyle = 'rgb(255, 255, 255)';   // White
+            maskCtx.strokeStyle = 'rgba(255, 255, 255, 1.0)'; // Solid white
+            console.log('🖌️ Painting white (product area)');
         } else if (currentTool === 'mask-eraser') {
             // Eraser: paint black (background area - will NOT show blue overlay)
-            maskCtx.globalCompositeOperation = 'source-over';
-            maskCtx.strokeStyle = 'rgb(1, 1, 1)';       // Black
-            maskCtx.fillStyle = 'rgb(1, 1, 1)';         // Black
+            maskCtx.strokeStyle = 'rgba(0, 0, 0, 1.0)'; // Solid black
+            console.log('🧹 Painting black (background area)');
         }
         
         maskCtx.beginPath();
@@ -629,6 +632,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Update maskImageData with current mask canvas
         maskImageData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+        console.log('✅ maskImageData updated, length:', maskImageData.data.length);
         
         // Redraw the entire canvas with updated mask overlay
         ctx.drawImage(img, 0, 0);
