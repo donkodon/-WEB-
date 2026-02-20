@@ -70,18 +70,33 @@ document.addEventListener('DOMContentLoaded', () => {
             originalImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
         }
         
-        // Initialize mask (全体を商品として設定)
-        maskCtx.fillStyle = 'rgba(0, 100, 255, 0.5)';
-        maskCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
+        // Initialize mask canvas
+        // For mask format: opaque (alpha=255) = product, transparent (alpha=0) = background
+        // Initial state: all pixels opaque (all product, no background removal)
+        const initialMaskData = maskCtx.createImageData(maskCanvas.width, maskCanvas.height);
+        for (let i = 0; i < initialMaskData.data.length; i += 4) {
+            initialMaskData.data[i] = 255;     // R (white)
+            initialMaskData.data[i + 1] = 255; // G (white)
+            initialMaskData.data[i + 2] = 255; // B (white)
+            initialMaskData.data[i + 3] = 255; // A (opaque = product)
+        }
+        maskCtx.putImageData(initialMaskData, 0, 0);
+        
+        // Store initial mask data (for cases where no mask URL exists)
+        maskImageData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+        console.log('✅ Initial mask data created: all opaque (all product area)');
         
         // Save initial mask state to history
         if (typeof saveMaskHistory === 'function') {
             saveMaskHistory();
         }
         
-        // Load mask image if available
+        // Load mask image if available (will override initial mask)
         if (maskImageUrl && maskImageUrl !== '') {
+            console.log('🎭 Mask URL exists, loading mask image...');
             loadMaskImage();
+        } else {
+            console.log('⚠️ No mask URL, using initial mask (all product, no background)');
         }
     };
     
