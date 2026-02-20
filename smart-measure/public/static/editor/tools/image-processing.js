@@ -521,8 +521,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnEraser = document.getElementById('btn-eraser');
     
     if (btnCrop) btnCrop.addEventListener('click', () => {
-        currentTool = null;
-        alert('切り抜き機能は近日実装予定です');
+        currentTool = 'crop';
+        maskMode = false;
+        canvas.style.cursor = 'crosshair';
+        window.logger.debug('✅ Crop tool selected');
     });
     
     if (btnBrush) btnBrush.addEventListener('click', () => {
@@ -537,6 +539,58 @@ document.addEventListener('DOMContentLoaded', () => {
         window.logger.debug('✅ Eraser tool selected');
     });
     
+    // ==================== CROP OVERLAY CANVAS ====================
+    // main-canvas の上に重ねる透明な canvas（切り抜き選択枠の描画用）
+    const cropOverlay = document.createElement('canvas');
+    cropOverlay.style.position = 'absolute';
+    cropOverlay.style.top = '0';
+    cropOverlay.style.left = '0';
+    cropOverlay.style.pointerEvents = 'none'; // クリックはmain-canvasが受け取る
+    cropOverlay.style.display = 'none';
+    canvas.parentElement.style.position = 'relative';
+    canvas.parentElement.appendChild(cropOverlay);
+    const cropCtx = cropOverlay.getContext('2d');
+
+    // 切り抜き選択状態
+    let cropStartX = 0, cropStartY = 0;
+    let cropEndX = 0, cropEndY = 0;
+    let isCropping = false;
+
+    // オーバーレイのサイズをmain-canvasに合わせる
+    function syncCropOverlaySize() {
+        const rect = canvas.getBoundingClientRect();
+        cropOverlay.width = rect.width;
+        cropOverlay.height = rect.height;
+        cropOverlay.style.width = rect.width + 'px';
+        cropOverlay.style.height = rect.height + 'px';
+    }
+
+    // 切り抜き選択枠を描画
+    function drawCropRect(x1, y1, x2, y2) {
+        cropCtx.clearRect(0, 0, cropOverlay.width, cropOverlay.height);
+        const rx = Math.min(x1, x2), ry = Math.min(y1, y2);
+        const rw = Math.abs(x2 - x1), rh = Math.abs(y2 - y1);
+
+        // 選択範囲外を暗くする
+        cropCtx.fillStyle = 'rgba(0,0,0,0.45)';
+        cropCtx.fillRect(0, 0, cropOverlay.width, cropOverlay.height);
+        cropCtx.clearRect(rx, ry, rw, rh);
+
+        // 選択枠（点線）
+        cropCtx.strokeStyle = '#3b82f6';
+        cropCtx.lineWidth = 2;
+        cropCtx.setLineDash([6, 3]);
+        cropCtx.strokeRect(rx, ry, rw, rh);
+
+        // 四隅のハンドル
+        cropCtx.setLineDash([]);
+        cropCtx.fillStyle = '#3b82f6';
+        const corners = [[rx,ry],[rx+rw,ry],[rx,ry+rh],[rx+rw,ry+rh]];
+        corners.forEach(([cx, cy]) => {
+            cropCtx.fillRect(cx - 4, cy - 4, 8, 8);
+        });
+    }
+
     // ==================== DRAWING ====================
     let lastX = 0;
     let lastY = 0;
@@ -576,6 +630,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const rect = canvas.getBoundingClientRect();
         lastX = (e.clientX - rect.left) * (canvas.width / rect.width);
         lastY = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+        // 切り抜きツール: 選択開始
+        if (currentTool === 'crop') {
+            syncCropOverlaySize();
+            cropOverlay.style.display = 'block';
+            cropStartX = e.clientX - rect.left;
+            cropStartY = e.clientY - rect.top;
+            cropEndX = cropStartX;
+            cropEndY = cropStartY;
+            isCropping = true;
+        }
     }
     
     function draw(e) {
@@ -584,6 +649,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const rect = canvas.getBoundingClientRect();
         const x = (e.clientX - rect.left) * (canvas.width / rect.width);
         const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+        // 切り抜きツール: 選択枠をリアルタイム描画
+        if (currentTool === 'crop') {
+            cropEndX = e.clientX - rect.left;
+            cropEndY = e.clientY - rect.top;
+            drawCropRect(cropStartX, cropStartY, cropEndX, cropEndY);
+            return;
+        }
         
         // Check if using mask tools
         const isMaskTool = currentTool === 'mask-brush' || currentTool === 'mask-eraser';
@@ -601,6 +674,57 @@ document.addEventListener('DOMContentLoaded', () => {
     function stopDrawing() {
         if (!isDrawing) return;
         isDrawing = false;
+
+        // 切り抜きツール: 選択確定 → 範囲外を透明化
+        if (currentTool === 'crop' && isCropping) {
+            isCropping = false;
+            cropOverlay.style.display = 'none';
+            cropCtx.clearRect(0, 0, cropOverlay.width, cropOverlay.height);
+
+            // CSS座標 → canvas座標に変換
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x1 = Math.round(Math.min(cropStartX, cropEndX) * scaleX);
+            const y1 = Math.round(Math.min(cropStartY, cropEndY) * scaleY);
+            const x2 = Math.round(Math.max(cropStartX, cropEndX) * scaleX);
+            const y2 = Math.round(Math.max(cropStartY, cropEndY) * scaleY);
+            const w = x2 - x1;
+            const h = y2 - y1;
+
+            // 選択範囲が小さすぎる場合はキャンセル
+            if (w < 5 || h < 5) {
+                console.log('⚠️ Crop area too small, cancelled');
+                return;
+            }
+
+            // 選択範囲内の画像を切り出して canvas を再構成
+            const croppedData = ctx.getImageData(x1, y1, w, h);
+            canvas.width = w;
+            canvas.height = h;
+            ctx.putImageData(croppedData, 0, 0);
+
+            // maskCanvas も同サイズにリサイズ（マスクを選択範囲に合わせてトリミング）
+            const croppedMask = maskCtx.getImageData(x1, y1, w, h);
+            maskCanvas.width = w;
+            maskCanvas.height = h;
+            maskCtx.putImageData(croppedMask, 0, 0);
+            maskImageData = maskCtx.getImageData(0, 0, w, h);
+
+            // originalImage キャッシュをリセット（切り抜き後を新しい原点に）
+            originalImage = ctx.getImageData(0, 0, w, h);
+
+            console.log(`✅ Crop applied: (${x1},${y1}) ${w}x${h}`);
+
+            // クロップ後はツールを解除してカーソルを戻す
+            currentTool = null;
+            canvas.style.cursor = 'default';
+            // ボタンのアクティブ状態をリセット
+            document.querySelectorAll('.tool-btn').forEach(btn =>
+                btn.classList.remove('border-blue-500', 'bg-blue-50')
+            );
+            return;
+        }
         
         // マスクツール使用後: ストローク完了時点でヒストリ保存 + maskImageData同期
         const isMaskTool = currentTool === 'mask-brush' || currentTool === 'mask-eraser';
