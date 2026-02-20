@@ -181,12 +181,14 @@ editor.get('/edit/:id', async (c) => {
       logger.debug(`🔍 Calling getImageDisplayUrl with filenamePart: ${filenamePart}`);
       
       // Use helper function to get display URL based on DB status (no R2 API calls)
+      // updatedAt を渡すことでキャッシュバスターを DB の更新日時ベースに固定する
       const imageStatus = getImageDisplayUrl(
         sku,
         filenamePart,
         processedImages,
         finalImages,
-        companyId
+        companyId,
+        updatedAt
       );
       
       const baseImageUrl = imageStatus.url;
@@ -220,12 +222,14 @@ editor.get('/edit/:id', async (c) => {
     return c.redirect('/dashboard');
   }
   
-  // Use processed image if available, otherwise original
-  // 🆕 Add timestamp to bypass browser cache after regeneration
+  // f画像 > p画像 > オリジナルの優先順位で表示
+  // getImageDisplayUrl がすでにキャッシュバスター付きURLを返すので、
+  // ?v= の二重付与を避けるためそのまま使用する
   const baseImageSrc = (imageResult.processed_url || imageResult.original_url) as string;
-  const imageSrc = `${baseImageSrc}?v=${Date.now()}`;
+  // baseImageSrc にすでに ?v= が含まれる場合は追加しない
+  const imageSrc = baseImageSrc.includes('?v=') ? baseImageSrc : `${baseImageSrc}?v=${Date.now()}`;
   const baseOriginalSrc = imageResult.original_url as string;
-  const originalSrc = `${baseOriginalSrc}?v=${Date.now()}`;
+  const originalSrc = baseOriginalSrc.includes('?v=') ? baseOriginalSrc : `${baseOriginalSrc}?v=${Date.now()}`;
   const isProcessed = !!imageResult.processed_url;
   const productSku = imageResult.sku || 'Unknown';
   const productName = imageResult.product_name || '';
