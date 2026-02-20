@@ -28,40 +28,32 @@ document.addEventListener('DOMContentLoaded', function () {
     // ────────────────────────────────────────────────────────────────
     // 1. メイン画像のロード
     // ────────────────────────────────────────────────────────────────
-    // 初回ロードフラグ（saveMask後の img.src 変更で originalImage を上書きしないようにする）
-    let _initialLoadDone = false;
-
-    img.onload = function () {
-        if (_initialLoadDone) {
-            // 2回目以降（switchToProcessedImage 等による img.src 変更）は
-            // canvas への再描画のみ行い、originalImage は更新しない
-            console.log('🔄 img.onload (secondary): redraw only, originalImage preserved');
-            canvas.width  = img.naturalWidth  || img.width;
-            canvas.height = img.naturalHeight || img.height;
-            ctx.drawImage(img, 0, 0);
-            return;
-        }
-        _initialLoadDone = true;
+    // 初回のみ実行される onload ハンドラ
+    // ※ img.onload はこの1回限りで削除する。
+    //   switchToOriginalForMask / switchToProcessedImage は
+    //   img を経由せず独自の Image オブジェクトで描画するため
+    //   img.onload が再発火して originalImage を上書きすることはない。
+    function onInitialImageLoad() {
+        // 1回限りの onload なので即削除
+        img.onload  = null;
+        img.onerror = null;
 
         // キャンバスサイズを画像に合わせる
-        canvas.width      = img.width;
-        canvas.height     = img.height;
-        maskCanvas.width  = img.width;
-        maskCanvas.height = img.height;
+        canvas.width      = img.naturalWidth  || img.width;
+        canvas.height     = img.naturalHeight || img.height;
+        maskCanvas.width  = canvas.width;
+        maskCanvas.height = canvas.height;
 
         ctx.drawImage(img, 0, 0);
-        window.logger && window.logger.debug('✅ Image loaded (initial):', img.width, 'x', img.height);
+        window.logger && window.logger.debug('✅ Image loaded (initial):', canvas.width, 'x', canvas.height);
 
-        // originalImage キャッシュを保存（調整のベース）
-        if (!S.originalImage) {
-            S.originalImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        }
+        // originalImage キャッシュを保存（調整・切り替えのベース）
+        S.originalImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
         // マスク画像をロード、または空マスクを生成
         if (S.maskImageUrl) {
             window.MaskTools && window.MaskTools.loadMaskImage();
         } else {
-            // 全黒マスク（背景=黒、商品エリアなし）で初期化
             const blankMask = maskCtx.createImageData(maskCanvas.width, maskCanvas.height);
             for (let i = 0; i < blankMask.data.length; i += 4) {
                 blankMask.data[i]     = 0;
@@ -74,8 +66,12 @@ document.addEventListener('DOMContentLoaded', function () {
             window.MaskTools && window.MaskTools.saveMaskHistory();
             console.log('✅ Blank mask initialized');
         }
-    };
+    }
 
+    img.onload  = onInitialImageLoad;
+    img.onerror = function () {
+        console.error('❌ Failed to load initial image:', S.processedSrc);
+    };
     img.src = S.processedSrc;
 
     // ────────────────────────────────────────────────────────────────

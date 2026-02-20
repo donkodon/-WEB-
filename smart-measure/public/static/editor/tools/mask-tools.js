@@ -141,67 +141,58 @@
 
     // ── window API（tab-switching.js・editor.tsx から呼ばれる） ──────
 
-    /** マスクタブに切り替える際：オリジナル画像に変更してオーバーレイを表示 */
+    /** マスクタブに切り替える際：オリジナル画像をキャンバスに描画してオーバーレイを表示 */
     window.switchToOriginalForMask = function (callback) {
         const S = window.EditorState;
         if (!S) return;
-        const { canvas, ctx, img, originalSrc, showingOriginal } = S;
+        const { canvas, ctx, originalSrc, showingOriginal } = S;
 
         // トグルボタンのラベル更新
         const btn = document.getElementById('btn-toggle-original');
         if (btn) btn.innerHTML = '<i class="fas fa-image mr-2"></i> 処理後画像を表示';
 
+        // すでにオリジナル表示中ならそのままコールバックを呼ぶ
         if (showingOriginal) {
-            ctx.drawImage(img, 0, 0);
             if (callback) callback();
             return;
         }
 
         S.showingOriginal = true;
 
-        const origImg       = new Image();
-        origImg.crossOrigin = 'anonymous';
-
-        origImg.onload = function () {
-            // canvas をオリジナル画像サイズに合わせる
-            if (canvas.width !== origImg.naturalWidth || canvas.height !== origImg.naturalHeight) {
-                console.log(`📐 Resizing canvas: ${canvas.width}x${canvas.height} → ${origImg.naturalWidth}x${origImg.naturalHeight}`);
-                canvas.width  = origImg.naturalWidth;
-                canvas.height = origImg.naturalHeight;
-                // maskCanvas も同じサイズにリサイズ（内容はスケール）
-                _resizeMaskCanvas(origImg.naturalWidth, origImg.naturalHeight);
-            }
-            img.src = originalSrc;
-            ctx.drawImage(origImg, 0, 0);
-            console.log('✅ Switched to original for mask');
-            if (callback) callback();
-        };
-
-        origImg.onerror = function () {
-            // CORS 失敗 → プロキシ経由
-            console.warn('⚠️ CORS failed, retrying via proxy');
-            const proxy   = new Image();
-            proxy.onload  = function () {
-                if (canvas.width !== proxy.naturalWidth || canvas.height !== proxy.naturalHeight) {
-                    canvas.width  = proxy.naturalWidth;
-                    canvas.height = proxy.naturalHeight;
-                    _resizeMaskCanvas(proxy.naturalWidth, proxy.naturalHeight);
+        // ── img.src は変更しない ──
+        // 独自の Image オブジェクトでオリジナルをロードして canvas に描画する。
+        // これにより image-processing.js の img.onload が再発火せず、
+        // originalImage キャッシュが保全される。
+        function drawOriginal(src) {
+            const tmpImg       = new Image();
+            tmpImg.crossOrigin = 'anonymous';
+            tmpImg.onload = function () {
+                if (canvas.width !== tmpImg.naturalWidth || canvas.height !== tmpImg.naturalHeight) {
+                    console.log(`📐 Resizing canvas: ${canvas.width}x${canvas.height} → ${tmpImg.naturalWidth}x${tmpImg.naturalHeight}`);
+                    canvas.width  = tmpImg.naturalWidth;
+                    canvas.height = tmpImg.naturalHeight;
+                    _resizeMaskCanvas(tmpImg.naturalWidth, tmpImg.naturalHeight);
                 }
-                img.src = `/api/images/proxy?url=${encodeURIComponent(originalSrc)}`;
-                ctx.drawImage(proxy, 0, 0);
+                ctx.drawImage(tmpImg, 0, 0);
+                console.log('✅ Switched to original for mask (img.src untouched)');
                 if (callback) callback();
             };
-            proxy.onerror = function () {
-                console.error('❌ Proxy load failed');
-                if (callback) callback();
+            tmpImg.onerror = function () {
+                if (src !== `/api/images/proxy?url=${encodeURIComponent(originalSrc)}`) {
+                    console.warn('⚠️ Direct load failed, retrying via proxy');
+                    drawOriginal(`/api/images/proxy?url=${encodeURIComponent(originalSrc)}`);
+                } else {
+                    console.error('❌ Both direct & proxy failed for original');
+                    if (callback) callback(); // エラーでもコールバックを呼ぶ
+                }
             };
-            proxy.src = `/api/images/proxy?url=${encodeURIComponent(originalSrc)}`;
-        };
+            tmpImg.src = src;
+        }
 
-        origImg.src = originalSrc;
+        drawOriginal(originalSrc);
     };
 
-    /** 調整タブに切り替える際：処理済み画像に変更 */
+    /** 調整タブに切り替える際：処理済み画像（合成済みキャッシュ）をキャンバスに再描画 */
     window.switchToProcessedImage = function () {
         const S = window.EditorState;
         if (!S) return;
@@ -209,9 +200,9 @@
         S.showingOriginal = false;
         S.maskVisible     = false;
 
-        // originalImage キャッシュが存在する場合はそこから再描画する。
-        // これにより img.src の変更を介さず、image-processing.js の img.onload が
-        // originalImage を上書きするのを防ぐ。
+        // originalImage キャッシュが存在する場合は必ずそこから再描画する。
+        // saveMask後はキャッシュが合成済み画像になっているため正しい状態を返せる。
+        // img.src は変更しない（img.onload を再発火させないため）。
         if (S.originalImage) {
             const { canvas, ctx } = S;
             canvas.width  = S.originalImage.width;
@@ -219,9 +210,10 @@
             ctx.putImageData(S.originalImage, 0, 0);
             console.log('✅ Switched to processed image (from originalImage cache)');
         } else {
-            // フォールバック: img.src で再描画（saveMask前など）
+            // 初回ロード前など originalImage がない場合のフォールバック
+            // この場合のみ img.src を触る（onInitialImageLoad がまだ呼ばれていない状態）
             S.img.src = S.processedSrc;
-            console.log('✅ Switched to processed image (via img.src)');
+            console.log('✅ Switched to processed image (fallback via img.src)');
         }
 
         const btn = document.getElementById('btn-toggle-original');
@@ -259,24 +251,34 @@
 
         S.maskVisible = false;
 
-        // originalImage キャッシュがあればそこから再描画（img.src依存を避ける）
-        if (S.originalImage && !S.showingOriginal) {
+        // キャンバスを再描画する。
+        // マスクタブ（showingOriginal=true）の場合は canvas に既にオリジナルが描かれているので
+        // そのまま何もしない（オーバーレイだけ消すため ctx.putImageData は不要）。
+        // 調整タブ（showingOriginal=false）の場合は originalImage キャッシュから再描画。
+        if (!S.showingOriginal && S.originalImage) {
             S.ctx.putImageData(S.originalImage, 0, 0);
-        } else {
-            S.ctx.drawImage(S.img, 0, 0);
+        } else if (S.showingOriginal) {
+            // マスクタブでオーバーレイを消す場合：オリジナルを再描画
+            // switchToOriginalForMask と同じく独自 Image で描く
+            const tmpImg       = new Image();
+            tmpImg.crossOrigin = 'anonymous';
+            tmpImg.onload = function () {
+                S.ctx.drawImage(tmpImg, 0, 0);
+            };
+            tmpImg.src = S.originalSrc;
         }
         window.ImageAdjust && window.ImageAdjust.applyCurrentAdjustments();
         console.log('✅ Mask overlay hidden');
     };
 
-    /** オリジナル ↔ 処理済み をトグルする */
+    /** オリジナル ↔ 処理済み をトグルする（調整タブ内のプレビュー確認ボタン） */
     window.toggleOriginal = function () {
         const S   = window.EditorState;
         if (!S) return;
         const btn = document.getElementById('btn-toggle-original');
 
         if (S.showingOriginal) {
-            // 処理済み画像に戻す: originalImage キャッシュがあればそこから再描画
+            // 処理済み（合成）画像に戻す: originalImage キャッシュから
             S.showingOriginal = false;
             if (S.originalImage) {
                 const { canvas, ctx } = S;
@@ -284,12 +286,21 @@
                 canvas.height = S.originalImage.height;
                 ctx.putImageData(S.originalImage, 0, 0);
             } else {
-                S.img.src = S.processedSrc;
+                S.img.src = S.processedSrc; // フォールバック
             }
             if (btn) btn.innerHTML = '<i class="fas fa-image mr-2"></i> 元画像を確認';
         } else {
-            S.img.src         = S.originalSrc;
+            // オリジナルを表示: 独自 Image でロード（img.src を汚染しない）
             S.showingOriginal = true;
+            const tmpImg       = new Image();
+            tmpImg.crossOrigin = 'anonymous';
+            tmpImg.onload = function () {
+                S.ctx.drawImage(tmpImg, 0, 0);
+            };
+            tmpImg.onerror = function () {
+                tmpImg.src = `/api/images/proxy?url=${encodeURIComponent(S.originalSrc)}`;
+            };
+            tmpImg.src = S.originalSrc;
             if (btn) btn.innerHTML = '<i class="fas fa-image mr-2"></i> 処理後画像を表示';
         }
     };
