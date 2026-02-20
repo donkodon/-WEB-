@@ -309,23 +309,6 @@ editor.get('/edit/:id', async (c) => {
                     </div>
                 </div>
 
-                {/* Background Selection (Static for now) */}
-                <div class="mb-4">
-                    <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">背景色</div>
-                    <div class="flex space-x-2">
-                         <div class="w-9 h-9 rounded-lg bg-gray-100 border-2 border-transparent hover:border-blue-400 cursor-pointer overflow-hidden relative" onclick="alert('透明背景モード')">
-                            <div class="absolute inset-0 opacity-50" style="background-image: radial-gradient(#cbd5e1 1px, transparent 1px); background-size: 4px 4px;"></div>
-                            <div class="absolute inset-0 flex items-center justify-center"><i class="fas fa-ban text-gray-400 text-xs"></i></div>
-                         </div>
-                         <div class="w-9 h-9 rounded-lg bg-white border-2 border-blue-600 cursor-pointer relative shadow-sm">
-                             <div class="absolute -bottom-1.5 -right-1.5 bg-blue-600 text-white text-[8px] px-1 py-0 rounded-full font-bold">ON</div>
-                         </div>
-                         <div class="w-9 h-9 rounded-lg bg-gray-100 border-2 border-transparent hover:border-blue-400 cursor-pointer"></div>
-                         <div class="w-9 h-9 rounded-lg border-2 border-dashed border-gray-300 hover:border-blue-400 cursor-pointer flex items-center justify-center">
-                             <i class="fas fa-palette text-gray-400 text-xs"></i>
-                         </div>
-                    </div>
-                </div>
 
                 {/* Manual Tools */}
                 <div class="mb-4">
@@ -359,11 +342,6 @@ editor.get('/edit/:id', async (c) => {
 
                 {/* Options & Actions */}
                  <div class="mt-auto pt-4 border-t border-gray-100">
-                    <label class="flex items-center space-x-2 p-2 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 mb-3">
-                        <input type="checkbox" checked class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-gray-300" />
-                        <span class="text-xs font-medium text-gray-700">影を保持する</span>
-                    </label>
-
                      <div class="space-y-2">
                          <button id="btn-save" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg shadow-md shadow-blue-200 transition-all flex items-center justify-center text-sm">
                              <i class="fas fa-save mr-2"></i> 保存して次へ
