@@ -650,4 +650,56 @@ images.post('/api/reorder-images', async (c) => {
     }
 });
 
+// --- API: 汎用画像プロキシ（CORS回避用・マスクエディタから利用）---
+// R2のCORSヘッダーが不足している場合にクライアントから呼び出す
+images.get('/api/images/proxy', async (c) => {
+    try {
+        const targetUrl = c.req.query('url');
+        if (!targetUrl) {
+            return c.json({ error: 'url parameter required' }, 400);
+        }
+
+        // 許可するドメインのみプロキシ（セキュリティ）
+        const allowedHosts = [
+            'pub-300562464768499b8fcaee903d0f9861.r2.dev',
+            'image-upload-api.jinkedon2.workers.dev',
+            'r2.dev'
+        ];
+        let parsedUrl: URL;
+        try {
+            parsedUrl = new URL(targetUrl);
+        } catch {
+            return c.json({ error: 'Invalid URL' }, 400);
+        }
+
+        const isAllowed = allowedHosts.some(host => parsedUrl.hostname.endsWith(host));
+        if (!isAllowed) {
+            logger.warn('🚫 Proxy blocked for host:', parsedUrl.hostname);
+            return c.json({ error: 'Host not allowed' }, 403);
+        }
+
+        logger.debug('🔀 Image proxy:', targetUrl);
+
+        const response = await fetch(targetUrl);
+        if (!response.ok) {
+            return c.json({ error: 'Upstream fetch failed', status: response.status }, 502);
+        }
+
+        const contentType = response.headers.get('content-type') || 'image/png';
+        const body = await response.arrayBuffer();
+
+        return new Response(body, {
+            headers: {
+                'Content-Type': contentType,
+                'Access-Control-Allow-Origin': '*',
+                'Cache-Control': 'public, max-age=3600'
+            }
+        });
+
+    } catch (error: any) {
+        logError('Image proxy URL', error, {});
+        return c.json({ error: 'Proxy error' }, 500);
+    }
+});
+
 export default images
