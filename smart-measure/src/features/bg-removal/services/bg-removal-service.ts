@@ -115,8 +115,8 @@ export async function removeProductImageBackground(
             console.log('🎭 Saving mask image...');
             const maskBytes = base64ToBuffer(result.maskDataUrl);
             console.log(`🎭 Mask bytes length: ${maskBytes.length}`);
-            const timestamp = Date.now();
-            const maskKey = `${companyId}/${sku}/${filenamePart}_mask_${timestamp}.png`;
+            // マスクは常に固定キー: {companyId}/{sku}/mask.png（上書き保存）
+            const maskKey = `${companyId}/${sku}/mask.png`;
             
             await c.env.PRODUCT_IMAGES.put(maskKey, maskBytes, {
               httpMetadata: { contentType: 'image/png' }
