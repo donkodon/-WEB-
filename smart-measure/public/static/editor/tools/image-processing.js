@@ -884,11 +884,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = await response.json();
             console.log('✅ Mask saved:', result.r2Key, '| maskBasename:', result.maskBasename);
             
+            // 保存成功後: 画像調整タブへ切り替え
+            if (window.switchTab) {
+                window.switchTab('adjust');
+            }
+            
         } catch (error) {
             console.error('❌ Mask save error:', error);
         }
     };
-=======
+
     // ==================== SAVE BUTTON EVENT ====================
     const saveButton = document.getElementById('btn-save');
     if (saveButton) {

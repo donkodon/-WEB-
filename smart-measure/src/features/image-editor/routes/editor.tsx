@@ -523,7 +523,7 @@ editor.get('/edit/:id', async (c) => {
                                 <i class="fas fa-undo mr-2"></i> リセット
                             </button>
                             <button onclick={`saveMask('${productSku}')`} class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg shadow-md shadow-blue-200 transition-all flex items-center justify-center text-sm">
-                                <i class="fas fa-save mr-2"></i> 保存
+                                <i class="fas fa-save mr-2"></i> 保存して次へ
                             </button>
                         </div>
                     </div>
