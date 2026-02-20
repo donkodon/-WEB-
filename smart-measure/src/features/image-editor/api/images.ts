@@ -338,7 +338,7 @@ images.get('/api/download-processed-image/:imageId', async (c) => {
 });
 
 
-images.post('/api/save-edited-image/:imageId', async (c) => {
+images.post('/api/save-edited-image/:imageId', requireFirebaseAuth, async (c) => {
     try {
         const imageId = c.req.param('imageId');
         const body = await c.req.json();
@@ -364,13 +364,11 @@ images.post('/api/save-edited-image/:imageId', async (c) => {
         const sku = parts[1];
         const filenamePart = parts.slice(2).join('_');
         
-        // Phase A: Build R2 key for FINAL image: {company_id}/{sku}/{filename}_f.png
-        // _f.png = Final/Completed image (with edits applied)
-        // _p.png = Processed/White-background only (preserved)
-        // Get company_id from cookie (Phase 1 with dynamic company_id)
-        const cookies = c.req.header('Cookie') || '';
-        const companyIdMatch = cookies.match(/company_id=([^;]+)/);
-        const companyId = companyIdMatch ? companyIdMatch[1] : FIXED_COMPANY_ID;
+        // Get company_id from authenticated user (Firebase Auth)
+        const user = c.get('user') as { companyId?: string } | undefined;
+        const companyId = user?.companyId || getCompanyId(c);
+        logger.debug('🏢 Company ID:', companyId, '(from:', user?.companyId ? 'auth' : 'cookie', ')');
+        
         const finalKey = `${companyId}/${sku}/${filenamePart}_f.png`;
         
         logger.debug('📂 Final image key:', finalKey);

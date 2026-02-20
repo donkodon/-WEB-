@@ -101,12 +101,16 @@
                             const resizedDataUrl = await window.resizeAndCenterImage(bgData.processedDataUrl, 1200, 1200);
                             window.logger.debug('✅ Resized, data URL length:', resizedDataUrl.length);
                             
-                            // Step 3: Upload resized image
+                            // Step 3: Upload resized image (including mask if available)
                             window.logger.debug('📤 Step 3: Uploading resized measurement image...');
+                            window.logger.debug('🎭 Mask data available:', !!bgData.maskDataUrl);
                             res = await window.authenticatedFetch('/api/upload-processed-measurement/' + sku, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ imageDataUrl: resizedDataUrl })
+                                body: JSON.stringify({ 
+                                    imageDataUrl: resizedDataUrl,
+                                    maskDataUrl: bgData.maskDataUrl  // マスクデータを追加
+                                })
                             });
                             window.logger.debug('📡 Upload response:', res.status, res.statusText);
                         } else {
@@ -131,6 +135,11 @@
                     
                     if (res.ok) {
                         const data = await res.json();
+                        console.log('🔍 [BG-REMOVAL] API response:', JSON.stringify({
+                            message: data.message,
+                            maskUrl: data.maskUrl,
+                            _debug: data._debug
+                        }));
                         window.logger.debug('✅ Success for image', imageId, ':', data);
                         successCount++;
                         

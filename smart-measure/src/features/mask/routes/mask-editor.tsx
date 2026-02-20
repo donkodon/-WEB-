@@ -10,10 +10,11 @@ maskEditor.get('/mask-editor/:sku', async (c) => {
     const companyId = getCompanyId(c);
     
     // Get measurement image, mask image URLs, and image_urls from database
+    // mask_image_url_r2: 背景削除マスク（withoutBG / 手動編集）
     const result = await c.env.DB.prepare(`
         SELECT 
             COALESCE(measurement_image_url, annotated_image_url) as image_url,
-            mask_image_url,
+            mask_image_url_r2,
             image_urls
         FROM product_items
         WHERE sku = ? AND company_id = ?
@@ -25,7 +26,7 @@ maskEditor.get('/mask-editor/:sku', async (c) => {
     }
     
     const originalImageUrl = result.image_url as string;
-    const maskImageUrl = result.mask_image_url as string | null;
+    const maskImageUrl = result.mask_image_url_r2 as string | null;
 
     // image_urls から最初の画像のファイル名ベース部分を抽出
     // 例: "4469bcc2-09b1-4218-8ad4-78fd92ced9a7.jpg" → "4469bcc2-09b1-4218-8ad4-78fd92ced9a7"
