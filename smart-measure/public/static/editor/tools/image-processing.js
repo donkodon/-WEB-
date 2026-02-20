@@ -869,9 +869,14 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('🔄 Mask reset');
     };
     
-    // Save mask
-    // - /api/save-mask を使用（filenamePart を送り {filenamePart}_mask.png で上書き保存）
-    // - 企業IDはサーバー側でFirebase認証済みuserから取得（クライアントは送らない）
+    // ==================== SAVE MASK → 背景削除合成 → 画像調整タブ ====================
+    // 処理フロー:
+    //   1. マスクをR2に保存 (/api/save-mask)
+    //   2. オリジナル画像 × マスクをブラウザで合成 → 透過PNG
+    //   3. 合成画像をR2にアップロード (/api/upload-processed-image)
+    //      → DB の processed_images も更新される
+    //   4. canvasを合成画像で更新
+    //   5. 画像調整タブへ切替
     window.saveMask = async function(productSku) {
         console.log('💾 saveMask called for SKU:', productSku);
         
@@ -879,33 +884,138 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('❌ maskCanvas not initialized');
             return;
         }
+
+        // ボタンをローディング状態に
+        const saveBtn = document.querySelector('#mask-tools button.bg-blue-600');
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> 処理中...';
+        }
         
         try {
+            // ── Step 1: マスクをR2に保存 ──
             const maskDataUrl = maskCanvas.toDataURL('image/png');
-            // filenamePart はスコープ内で定義済み（例: 4469bcc2-09b1-4218-8ad4-78fd92ced9a7）
-            console.log('📸 Sending mask to /api/save-mask/' + productSku, '| filenamePart:', filenamePart);
+            console.log('📸 Step1: Saving mask for SKU:', productSku, '| filenamePart:', filenamePart);
             
-            const response = await window.authenticatedFetch(`/api/save-mask/${productSku}`, {
+            const maskRes = await window.authenticatedFetch(`/api/save-mask/${productSku}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ maskDataUrl, filenamePart })
             });
-            
-            if (!response.ok) {
-                const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-                throw new Error(error.details || error.error || 'Save failed');
+            if (!maskRes.ok) {
+                const err = await maskRes.json().catch(() => ({ error: 'Unknown error' }));
+                throw new Error('マスク保存失敗: ' + (err.details || err.error));
             }
+            const maskResult = await maskRes.json();
+            console.log('✅ Step1 done: mask saved to', maskResult.r2Key);
+
+            // ── Step 2: オリジナル × マスク → 透過PNG合成 ──
+            console.log('🎨 Step2: Compositing original × mask...');
             
-            const result = await response.json();
-            console.log('✅ Mask saved:', result.r2Key, '| maskBasename:', result.maskBasename);
+            // オリジナル画像をロード（imgオブジェクトは既にメモリ上にある）
+            // originalSrc はクロージャ内の変数
+            const origImg = await new Promise((resolve, reject) => {
+                const i = new Image();
+                i.crossOrigin = 'anonymous';
+                i.onload = () => resolve(i);
+                i.onerror = () => {
+                    // CORS失敗 → プロキシ経由
+                    const pi = new Image();
+                    pi.onload = () => resolve(pi);
+                    pi.onerror = () => reject(new Error('Failed to load original image'));
+                    pi.src = `/api/images/proxy?url=${encodeURIComponent(originalSrc)}`;
+                };
+                // ?v= パラメータを除いたURLで取得（CORSが通る）
+                i.src = originalSrc;
+            });
+
+            // 合成用キャンバスを作成
+            const compositeCanvas = document.createElement('canvas');
+            compositeCanvas.width = origImg.width;
+            compositeCanvas.height = origImg.height;
+            const compCtx = compositeCanvas.getContext('2d');
+
+            // オリジナル画像を描画
+            compCtx.drawImage(origImg, 0, 0);
+
+            // マスクを使ってピクセルごとに背景を透明化
+            // マスク: 白(255,255,255) = 商品エリア(残す), 黒(0,0,0) = 背景(透明)
+            const imgData = compCtx.getImageData(0, 0, compositeCanvas.width, compositeCanvas.height);
             
-            // 保存成功後: 画像調整タブへ切り替え
+            // maskCanvas を合成キャンバスと同サイズにスケール
+            const maskTemp = document.createElement('canvas');
+            maskTemp.width = compositeCanvas.width;
+            maskTemp.height = compositeCanvas.height;
+            const maskTempCtx = maskTemp.getContext('2d');
+            maskTempCtx.drawImage(maskCanvas, 0, 0, compositeCanvas.width, compositeCanvas.height);
+            const maskData = maskTempCtx.getImageData(0, 0, compositeCanvas.width, compositeCanvas.height);
+
+            // マスクの明るさ(R+G+B)でアルファを設定
+            for (let i = 0; i < imgData.data.length; i += 4) {
+                const r = maskData.data[i];
+                const g = maskData.data[i + 1];
+                const b = maskData.data[i + 2];
+                const brightness = (r + g + b) / 3; // 0=黒(背景) 255=白(商品)
+                imgData.data[i + 3] = brightness;   // アルファチャンネルに設定
+            }
+            compCtx.putImageData(imgData, 0, 0);
+
+            const compositeDataUrl = compositeCanvas.toDataURL('image/png');
+            console.log('✅ Step2 done: composite image generated');
+
+            // ── Step 3: 合成画像をR2にアップロード ──
+            console.log('📤 Step3: Uploading composite to /api/upload-processed-image...');
+            
+            const uploadRes = await window.authenticatedFetch(`/api/upload-processed-image/${productSku}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ imageDataUrl: compositeDataUrl, filenamePart })
+            });
+            if (!uploadRes.ok) {
+                const err = await uploadRes.json().catch(() => ({ error: 'Unknown error' }));
+                throw new Error('アップロード失敗: ' + (err.details || err.error));
+            }
+            const uploadResult = await uploadRes.json();
+            console.log('✅ Step3 done: uploaded to', uploadResult.r2Key);
+
+            // ── Step 4: canvasを合成画像で更新 ──
+            console.log('🖼️ Step4: Updating canvas with composite image...');
+            // processedSrc を新URLに更新（クロージャ変数を再代入）
+            // image-proxy経由のURLに切り替え（キャッシュバスター付き）
+            const newProcessedUrl = `/api/image-proxy/${productSku}/${filenamePart}_p.png?v=${Date.now()}`;
+            
+            // img オブジェクトを新しい処理済み画像に切り替え
+            img.src = newProcessedUrl;
+            showingOriginal = false;
+            maskVisible = false;
+            
+            // canvasに合成画像を直接描画（即時反映）
+            canvas.width = compositeCanvas.width;
+            canvas.height = compositeCanvas.height;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(compositeCanvas, 0, 0);
+            
+            // originalImageキャッシュも更新
+            originalImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            
+            console.log('✅ Step4 done: canvas updated');
+
+            // ── Step 5: 画像調整タブへ切替 ──
+            console.log('🔄 Step5: Switching to adjust tab...');
             if (window.switchTab) {
                 window.switchTab('adjust');
             }
-            
+            console.log('✅ All steps done!');
+
         } catch (error) {
-            console.error('❌ Mask save error:', error);
+            console.error('❌ saveMask error:', error);
+            alert('保存中にエラーが発生しました: ' + error.message);
+        } finally {
+            // ボタンを元に戻す
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="fas fa-save mr-2"></i> 保存して次へ';
+            }
         }
     };
 

@@ -183,20 +183,26 @@ bgRemoval.post('/api/upload-processed-measurement/:sku', async (c) => {
 bgRemoval.post('/api/upload-processed-image/:sku', async (c) => {
   try {
     const sku = c.req.param('sku')
-    const companyId = getCompanyId(c)
+    const user = c.get('user') as { companyId?: string } | undefined
+    const companyId = user?.companyId || getCompanyId(c)
     const { imageDataUrl, filenamePart } = await c.req.json()
 
     if (!imageDataUrl?.startsWith('data:image/png;base64,')) return c.json({ error: 'Invalid image data' }, 400)
     if (!filenamePart) return c.json({ error: 'filenamePart is required' }, 400)
 
+    // R2にアップロード
     const r2Key = `${companyId}/${sku}/${filenamePart}_p.png`
     await c.env.PRODUCT_IMAGES.put(r2Key, base64ToBuffer(imageDataUrl), {
       httpMetadata: { contentType: 'image/png' }
     })
+    logger.debug(`✅ Uploaded processed image: ${r2Key}`)
+
+    // DBのprocessed_imagesを更新（image-proxy経由で表示されるようにする）
+    await markImageAsProcessed(c.env.DB, sku, companyId, filenamePart)
+    logger.debug(`✅ DB updated: processed_images for ${sku}/${filenamePart}`)
 
     const processedUrl = `${getR2PublicUrl(c.env)}/${r2Key}`
-    logger.debug(`✅ Uploaded processed image: ${r2Key}`)
-    return c.json({ success: true, sku, processedUrl, r2Key, message: 'Processed image uploaded successfully' })
+    return c.json({ success: true, sku, processedUrl, r2Key, filenamePart, message: 'Processed image uploaded successfully' })
   } catch (error: any) {
     logError('Upload processed image', error, { sku: c.req.param('sku') })
     return c.json(createSafeErrorResponse(error, ErrorCode.UPLOAD_FAILED), 500)
