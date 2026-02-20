@@ -33,22 +33,6 @@ function getCompanyIdFromAuth(c: any): string {
     return fallback
 }
 
-/**
- * URLからファイル名（拡張子なし）を抽出
- * 例: "https://pub.r2.dev/1025L/SKU/abc_mask.png" → "abc_mask"
- */
-function extractFilenameFromUrl(url: string): string | null {
-    if (!url) return null
-    try {
-        const pathname = new URL(url).pathname
-        const filename = pathname.split('/').pop() || ''
-        return filename.replace(/\.[^.]+$/, '') || null
-    } catch {
-        const filename = url.split('/').pop() || ''
-        return filename.replace(/\.[^.]+$/, '') || null
-    }
-}
-
 
 // --- API: マスク情報取得（デバッグ・クライアント確認用）---
 maskApi.get('/api/mask-info/:sku', async (c) => {
@@ -85,23 +69,12 @@ maskApi.post('/api/save-mask/:sku', async (c) => {
             return c.json({ error: 'Invalid mask data' }, 400);
         }
 
-        // ① DBから既存マスクURLを取得してファイル名を確定
-        const existing = await c.env.DB.prepare(`
-            SELECT mask_image_url FROM product_items
-            WHERE sku = ? AND company_id = ?
-            LIMIT 1
-        `).bind(sku, companyId).first();
-
-        const existingMaskUrl = existing?.mask_image_url as string | null;
-        const existingFilename = extractFilenameFromUrl(existingMaskUrl || '');
-
-        // ファイル名: 既存があればそのまま使用、なければ {sku}_mask（新規）
-        const filenamePart = existingFilename || `${sku}_mask`;
-        const r2Key = `${companyId}/${sku}/${filenamePart}.png`;
+        // R2キーは常に固定: {companyId}/{sku}/mask.png
+        // 既存ファイルがあれば上書き、なければ新規作成
+        const r2Key = `${companyId}/${sku}/mask.png`;
 
         logger.debug(`🎭 Saving mask: company=${companyId}, sku=${sku}`)
-        logger.debug(`📦 Existing mask URL: ${existingMaskUrl || 'none'}`)
-        logger.debug(`📄 Filename: ${filenamePart} → R2 key: ${r2Key}`)
+        logger.debug(`📦 R2 key (fixed): ${r2Key}`)
 
         if (!c.env.PRODUCT_IMAGES) {
             return c.json({ error: 'R2 bucket not configured' }, 500);
@@ -131,8 +104,7 @@ maskApi.post('/api/save-mask/:sku', async (c) => {
             companyId,
             maskUrl,
             r2Key,
-            isOverwrite: !!existingFilename,
-            message: existingFilename ? `Overwritten: ${r2Key}` : `New mask created: ${r2Key}`
+            message: `Mask saved: ${r2Key}`
         });
 
     } catch (error: any) {
