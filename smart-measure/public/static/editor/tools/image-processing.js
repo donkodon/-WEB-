@@ -327,28 +327,30 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('🎭 Mask data length:', maskImageData.data.length);
         
         // Apply blue overlay based on alpha channel (transparency)
-        // Opaque (alpha > 0) = product area
-        // Transparent (alpha = 0) = background
-        let opaquePixelCount = 0;
+        // Transparent (alpha <= 1) = background area → show blue overlay
+        // Opaque (alpha > 1) = product area → no overlay
         let transparentPixelCount = 0;
+        let opaquePixelCount = 0;
         
         for (let i = 0; i < maskImageData.data.length; i += 4) {
             const alpha = maskImageData.data[i + 3]; // Alpha channel (0-255)
             
-            if (alpha > 10) { // Opaque/semi-transparent = product
-                opaquePixelCount++;
-                // Blend with semi-transparent blue (50% opacity)
+            // Check if pixel is transparent (background area)
+            if (alpha <= 1) {
+                transparentPixelCount++;
+                // Apply blue overlay to background area (50% opacity)
                 imageData.data[i] = imageData.data[i] * 0.5 + 0 * 0.5;         // R
                 imageData.data[i + 1] = imageData.data[i + 1] * 0.5 + 100 * 0.5; // G
                 imageData.data[i + 2] = imageData.data[i + 2] * 0.5 + 255 * 0.5; // B
                 // Alpha remains unchanged
             } else {
-                transparentPixelCount++;
+                opaquePixelCount++;
+                // No overlay on product area (opaque pixels)
             }
         }
         
-        console.log('🎭 Opaque pixels (product):', opaquePixelCount);
-        console.log('🎭 Transparent pixels (background):', transparentPixelCount);
+        console.log('🎭 Transparent pixels (background with blue overlay):', transparentPixelCount);
+        console.log('🎭 Opaque pixels (product, no overlay):', opaquePixelCount);
         
         // Draw the overlaid image
         ctx.putImageData(imageData, 0, 0);
