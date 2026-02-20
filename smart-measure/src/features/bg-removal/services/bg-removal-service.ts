@@ -115,8 +115,9 @@ export async function removeProductImageBackground(
             console.log('🎭 Saving mask image...');
             const maskBytes = base64ToBuffer(result.maskDataUrl);
             console.log(`🎭 Mask bytes length: ${maskBytes.length}`);
-            // マスクは常に固定キー: {companyId}/{sku}/mask.png（上書き保存）
-            const maskKey = `${companyId}/${sku}/mask.png`;
+            // マスクキー: {companyId}/{sku}/{filenamePart}_mask.png
+            // filenamePart = オリジナル画像のファイル名ベース（例: 4469bcc2-09b1-4218-8ad4-78fd92ced9a7）
+            const maskKey = `${companyId}/${sku}/${filenamePart}_mask.png`;
             
             await c.env.PRODUCT_IMAGES.put(maskKey, maskBytes, {
               httpMetadata: { contentType: 'image/png' }

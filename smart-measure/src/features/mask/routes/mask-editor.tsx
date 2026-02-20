@@ -9,11 +9,12 @@ maskEditor.get('/mask-editor/:sku', async (c) => {
     const sku = c.req.param('sku');
     const companyId = getCompanyId(c);
     
-    // Get measurement image and mask image URLs from database
+    // Get measurement image, mask image URLs, and image_urls from database
     const result = await c.env.DB.prepare(`
         SELECT 
             COALESCE(measurement_image_url, annotated_image_url) as image_url,
-            mask_image_url
+            mask_image_url,
+            image_urls
         FROM product_items
         WHERE sku = ? AND company_id = ?
         LIMIT 1
@@ -25,6 +26,19 @@ maskEditor.get('/mask-editor/:sku', async (c) => {
     
     const originalImageUrl = result.image_url as string;
     const maskImageUrl = result.mask_image_url as string | null;
+
+    // image_urls から最初の画像のファイル名ベース部分を抽出
+    // 例: "4469bcc2-09b1-4218-8ad4-78fd92ced9a7.jpg" → "4469bcc2-09b1-4218-8ad4-78fd92ced9a7"
+    let imageFilenamePart = '';
+    try {
+        const imageUrls: string[] = JSON.parse((result.image_urls as string) || '[]');
+        if (imageUrls.length > 0) {
+            const firstUrl = imageUrls[0];
+            const filename = firstUrl.split('/').pop() || '';
+            const dotIndex = filename.lastIndexOf('.');
+            imageFilenamePart = dotIndex > 0 ? filename.substring(0, dotIndex) : filename;
+        }
+    } catch { /* パース失敗は無視 */ }
     
     return c.render(
         <Layout active="dashboard" title="マスク編集">
@@ -149,6 +163,7 @@ maskEditor.get('/mask-editor/:sku', async (c) => {
                  data-original-image={originalImageUrl} 
                  data-mask-image={maskImageUrl}
                  data-sku={sku}
+                 data-filename-part={imageFilenamePart}
                  style="display: none;">
             </div>
             <script src="/static/editor/mask/editor.js"></script>

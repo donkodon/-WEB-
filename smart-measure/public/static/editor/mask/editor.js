@@ -30,7 +30,8 @@ let maskEditorState = {
     historyIndex: -1,
     maxHistory: 20,
     originalMaskImageUrl: null,
-    sku: null
+    sku: null,
+    filenamePart: null  // オリジナル画像のファイル名ベース (例: 4469bcc2-09b1-4218-8ad4-78fd92ced9a7)
 };
 
 // =============================================
@@ -90,6 +91,8 @@ window.initMaskEditor = async function(originalImageUrl, maskImageUrl) {
     const container = document.getElementById('mask-editor-container');
     if (container) {
         maskEditorState.sku = container.dataset.sku || null;
+        maskEditorState.filenamePart = container.dataset.filenamePart || null;
+        window.logger.debug('📁 filenamePart from container:', maskEditorState.filenamePart);
     }
 
     const canvas = document.getElementById('mask-canvas') || document.getElementById('main-canvas');
@@ -414,11 +417,15 @@ window.maskEditorSave = async function(sku) {
     try {
         showToast('保存中...', 'info');
 
-        // maskDataUrl だけ送る。ファイル名はサーバーがDBから決定する
+        // filenamePart を一緒に送る（例: 4469bcc2-09b1-4218-8ad4-78fd92ced9a7）
+        // サーバー側で {filenamePart}_mask.png として保存される
+        const filenamePart = maskEditorState.filenamePart || null;
+        window.logger.debug('📁 Sending filenamePart:', filenamePart);
+
         const res = await fetchFn(`/api/save-mask/${sku}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ maskDataUrl })
+            body: JSON.stringify({ maskDataUrl, filenamePart })
         });
 
         if (!res.ok) {

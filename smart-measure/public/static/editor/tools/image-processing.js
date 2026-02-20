@@ -834,7 +834,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     
     // Save mask
-    // - /api/save-mask を使用（サーバー側でDBから既存ファイル名を取得して上書き保存）
+    // - /api/save-mask を使用（filenamePart を送り {filenamePart}_mask.png で上書き保存）
     // - 企業IDはサーバー側でFirebase認証済みuserから取得（クライアントは送らない）
     window.saveMask = async function(productSku) {
         console.log('💾 saveMask called for SKU:', productSku);
@@ -846,12 +846,13 @@ document.addEventListener('DOMContentLoaded', () => {
         
         try {
             const maskDataUrl = maskCanvas.toDataURL('image/png');
-            console.log('📸 Sending mask to /api/save-mask/' + productSku);
+            // filenamePart はスコープ内で定義済み（例: 4469bcc2-09b1-4218-8ad4-78fd92ced9a7）
+            console.log('📸 Sending mask to /api/save-mask/' + productSku, '| filenamePart:', filenamePart);
             
             const response = await window.authenticatedFetch(`/api/save-mask/${productSku}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ maskDataUrl })
+                body: JSON.stringify({ maskDataUrl, filenamePart })
             });
             
             if (!response.ok) {
@@ -860,7 +861,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             const result = await response.json();
-            console.log('✅ Mask saved:', result.r2Key, '| overwrite:', result.isOverwrite);
+            console.log('✅ Mask saved:', result.r2Key, '| maskBasename:', result.maskBasename);
             
         } catch (error) {
             console.error('❌ Mask save error:', error);

@@ -58,27 +58,81 @@ maskApi.get('/api/mask-info/:sku', async (c) => {
 });
 
 
-// --- API: Save Mask Image（サーバー側でファイル名を決定して上書き保存）---
+/**
+ * URLからファイル名のベース部分を抽出
+ * 例: https://xxx.r2.dev/relight/101010/4469bcc2-09b1-4218-8ad4-78fd92ced9a7.jpg
+ *   → "4469bcc2-09b1-4218-8ad4-78fd92ced9a7"
+ */
+function extractBasenameFromUrl(url: string): string | null {
+    try {
+        const pathname = new URL(url).pathname;
+        const filename = pathname.split('/').pop() || '';
+        const dotIndex = filename.lastIndexOf('.');
+        return dotIndex > 0 ? filename.substring(0, dotIndex) : filename || null;
+    } catch {
+        // URL形式でない場合はパスとして処理
+        const filename = url.split('/').pop() || '';
+        const dotIndex = filename.lastIndexOf('.');
+        return dotIndex > 0 ? filename.substring(0, dotIndex) : filename || null;
+    }
+}
+
+// --- API: Save Mask Image（オリジナル画像名ベースで {basename}_mask.png に保存）---
 maskApi.post('/api/save-mask/:sku', async (c) => {
     const sku = c.req.param('sku');
     try {
         const companyId = getCompanyIdFromAuth(c)
-        const { maskDataUrl } = await c.req.json();
+        const body = await c.req.json();
+        const { maskDataUrl, filenamePart } = body;
 
         if (!maskDataUrl || !maskDataUrl.startsWith('data:image/png;base64,')) {
             return c.json({ error: 'Invalid mask data' }, 400);
         }
 
-        // R2キーは常に固定: {companyId}/{sku}/mask.png
-        // 既存ファイルがあれば上書き、なければ新規作成
-        const r2Key = `${companyId}/${sku}/mask.png`;
-
-        logger.debug(`🎭 Saving mask: company=${companyId}, sku=${sku}`)
-        logger.debug(`📦 R2 key (fixed): ${r2Key}`)
-
         if (!c.env.PRODUCT_IMAGES) {
             return c.json({ error: 'R2 bucket not configured' }, 500);
         }
+
+        // ① ファイル名を決定
+        // 優先順位: 1) クライアントから送られたfilenamePart → {filenamePart}_mask.png
+        //          2) DBのimage_urlsから最初の画像のベース名 → {basename}_mask.png
+        //          3) フォールバック: {sku}_mask.png
+        let maskBasename: string;
+
+        if (filenamePart && filenamePart.trim()) {
+            // クライアントから filenamePart が送られた場合（例: 4469bcc2-09b1-4218-8ad4-78fd92ced9a7）
+            maskBasename = `${filenamePart.trim()}_mask`;
+            logger.debug(`🎯 Using filenamePart from client: ${maskBasename}`)
+        } else {
+            // DBからオリジナル画像URLを取得してファイル名を決定
+            try {
+                const dbResult = await c.env.DB.prepare(`
+                    SELECT image_urls FROM product_items
+                    WHERE sku = ? AND company_id = ?
+                    LIMIT 1
+                `).bind(sku, companyId).first();
+
+                const imageUrls: string[] = JSON.parse((dbResult?.image_urls as string) || '[]');
+                const firstImageUrl = imageUrls[0] || null;
+
+                if (firstImageUrl) {
+                    const basename = extractBasenameFromUrl(firstImageUrl);
+                    maskBasename = basename ? `${basename}_mask` : `${sku}_mask`;
+                    logger.debug(`🎯 Using basename from image_urls: ${maskBasename} (from ${firstImageUrl})`)
+                } else {
+                    maskBasename = `${sku}_mask`;
+                    logger.debug(`🎯 Fallback to sku_mask: ${maskBasename}`)
+                }
+            } catch (e) {
+                maskBasename = `${sku}_mask`;
+                logger.warn(`⚠️ Failed to get image_urls, fallback: ${maskBasename}`, e)
+            }
+        }
+
+        const r2Key = `${companyId}/${sku}/${maskBasename}.png`;
+
+        logger.debug(`🎭 Saving mask: company=${companyId}, sku=${sku}`)
+        logger.debug(`📦 R2 key: ${r2Key}`)
 
         // ② Decode base64 → R2にPUT（同じキーなら上書き）
         const base64Data = maskDataUrl.replace(/^data:image\/png;base64,/, '');
@@ -104,6 +158,7 @@ maskApi.post('/api/save-mask/:sku', async (c) => {
             companyId,
             maskUrl,
             r2Key,
+            maskBasename,
             message: `Mask saved: ${r2Key}`
         });
 
