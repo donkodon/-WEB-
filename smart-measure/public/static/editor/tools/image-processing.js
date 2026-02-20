@@ -576,12 +576,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const rect = canvas.getBoundingClientRect();
         lastX = (e.clientX - rect.left) * (canvas.width / rect.width);
         lastY = (e.clientY - rect.top) * (canvas.height / rect.height);
-        
-        // Save mask history when starting to draw on mask
-        const isMaskTool = currentTool === 'mask-brush' || currentTool === 'mask-eraser';
-        if (isMaskTool) {
-            saveMaskHistory();
-        }
     }
     
     function draw(e) {
@@ -605,7 +599,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function stopDrawing() {
+        if (!isDrawing) return;
         isDrawing = false;
+        
+        // マスクツール使用後: ストローク完了時点でヒストリ保存 + maskImageData同期
+        const isMaskTool = currentTool === 'mask-brush' || currentTool === 'mask-eraser';
+        if (isMaskTool) {
+            saveMaskHistory();
+            // maskImageData を maskCanvas の最新状態で同期
+            maskImageData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+            console.log('💾 Stroke complete: history saved, maskImageData synced');
+        }
     }
     
     function drawOnCanvas(x1, y1, x2, y2) {
@@ -803,16 +807,21 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('🎨 Mask mode set to:', mode);
     };
     
-    // Undo mask edit
+    // Undo mask edit (1ストローク前に戻る)
     window.undoMask = function() {
         if (maskHistoryIndex > 0) {
             maskHistoryIndex--;
             const maskData = maskHistory[maskHistoryIndex];
+            // maskCanvas を1つ前の状態に戻す
             maskCtx.putImageData(maskData, 0, 0);
+            // maskImageData も同期（saveMask時に使われる）
+            maskImageData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+            // canvasを再描画してオーバーレイを反映
+            ctx.drawImage(img, 0, 0);
             applyMaskOverlay();
-            console.log('↶ Mask undo, index:', maskHistoryIndex);
+            console.log('↶ Undo: index', maskHistoryIndex + 1, '→', maskHistoryIndex);
         } else {
-            console.log('⚠️ No more undo history');
+            console.log('⚠️ これ以上元に戻せません (index:', maskHistoryIndex, ')');
         }
     };
     
