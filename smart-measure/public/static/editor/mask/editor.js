@@ -411,34 +411,60 @@ function extractFilenamePart(url) {
  * マスクを保存
  * - Firebase トークンを Authorization ヘッダーで送信
  * - companyId はサーバー側で Firebase 認証済み user から取得
- * - 元のマスクURLと同じファイル名で上書き保存（初回は {sku}_mask）
+ * - ファイル名確定の優先順位:
+ *   1. DBから最新のマスクURLを取得してファイル名を使う（上書き保存）
+ *   2. 初期表示時のマスクURLのファイル名
+ *   3. どちらもなければ {sku}_mask（新規）
+ * - alert/confirm は一切表示しない（UI上のトースト通知のみ）
  */
 window.maskEditorSave = async function(sku) {
     window.logger.debug('💾 Saving mask for SKU:', sku);
 
-    const { offscreenMaskCanvas, originalMaskImageUrl } = maskEditorState;
+    const { offscreenMaskCanvas } = maskEditorState;
     if (!offscreenMaskCanvas) {
-        alert('マスクが見つかりません');
+        showToast('マスクが見つかりません', 'error');
         return;
     }
 
     const maskDataUrl = offscreenMaskCanvas.toDataURL('image/png');
+    const fetchFn = (typeof window.authenticatedFetch === 'function')
+        ? window.authenticatedFetch
+        : fetch;
 
-    // 元のマスクURLからファイル名取得（上書き保存のため）
-    let filenamePart = extractFilenamePart(originalMaskImageUrl);
+    // ① まずDBから最新のマスクURLを取得してファイル名を確定する
+    let filenamePart = null;
+    try {
+        const infoRes = await fetchFn(`/api/mask-info/${sku}`);
+        if (infoRes.ok) {
+            const info = await infoRes.json();
+            if (info.maskImageUrl) {
+                // DBの最新URLからファイル名取得 → 上書き保存
+                filenamePart = extractFilenamePart(info.maskImageUrl);
+                // stateも最新URLで更新しておく
+                maskEditorState.originalMaskImageUrl = info.maskImageUrl;
+                window.logger.debug('📄 Filename from DB:', filenamePart, '(', info.maskImageUrl, ')');
+            }
+        }
+    } catch (e) {
+        window.logger.warn('⚠️ Could not fetch mask info, falling back:', e.message);
+    }
+
+    // ② DBから取れなければ、ページ初期表示時のURLを使う
+    if (!filenamePart) {
+        filenamePart = extractFilenamePart(maskEditorState.originalMaskImageUrl);
+        if (filenamePart) {
+            window.logger.debug('📄 Filename from initial URL:', filenamePart);
+        }
+    }
+
+    // ③ それでもなければ新規ファイル名
     if (!filenamePart) {
         filenamePart = `${sku}_mask`;
         window.logger.debug('📄 New mask, using default filename:', filenamePart);
-    } else {
-        window.logger.debug('📄 Overwriting existing mask:', filenamePart, 'URL:', originalMaskImageUrl);
     }
 
     try {
-        // Firebase認証トークンを含めて送信
-        // window.authenticatedFetch が未定義の場合は通常fetch（ローカル開発用）
-        const fetchFn = (typeof window.authenticatedFetch === 'function')
-            ? window.authenticatedFetch
-            : fetch;
+        showToast('保存中...', 'info');
 
         const res = await fetchFn(`/api/save-mask/${sku}`, {
             method: 'POST',
@@ -455,17 +481,47 @@ window.maskEditorSave = async function(sku) {
         window.logger.debug('✅ Mask saved:', data);
         window.logger.debug('📦 Saved to R2 key:', data.r2Key);
 
-        alert('マスクを保存しました！');
-
-        if (confirm('編集したマスクで画像を再生成しますか？')) {
-            await window.maskEditorRegenerate(sku);
+        // 保存成功後、stateのURLを最新に更新（次の保存で同じファイル名を使うため）
+        if (data.maskUrl) {
+            maskEditorState.originalMaskImageUrl = data.maskUrl;
         }
+
+        showToast('マスクを保存しました', 'success');
 
     } catch (error) {
         window.logger.error('❌ Save failed:', error);
-        alert('保存に失敗しました: ' + error.message);
+        showToast('保存に失敗しました: ' + error.message, 'error');
     }
 };
+
+/**
+ * トースト通知を表示（alert/confirmの代替）
+ */
+function showToast(message, type = 'info') {
+    // 既存のトーストがあれば削除
+    const existing = document.getElementById('mask-toast');
+    if (existing) existing.remove();
+
+    const colors = {
+        success: 'bg-green-600',
+        error:   'bg-red-600',
+        info:    'bg-blue-600'
+    };
+    const icons = {
+        success: '✓',
+        error:   '✕',
+        info:    '…'
+    };
+
+    const toast = document.createElement('div');
+    toast.id = 'mask-toast';
+    toast.className = `fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-5 py-3 rounded-xl shadow-lg text-white text-sm font-medium transition-all ${colors[type] || colors.info}`;
+    toast.innerHTML = `<span>${icons[type] || '•'}</span><span>${message}</span>`;
+    document.body.appendChild(toast);
+
+    // 3秒後に自動消去（errorは5秒）
+    setTimeout(() => toast.remove(), type === 'error' ? 5000 : 3000);
+}
 
 // =============================================
 // 再生成

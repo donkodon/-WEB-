@@ -19,6 +19,29 @@ const maskApi = new Hono<AppEnv>()
 // Firebase認証ミドルウェアを全エンドポイントに適用
 maskApi.use('*', requireFirebaseAuth)
 
+// --- API: 現在のマスクURL取得（保存前のファイル名確定用）---
+maskApi.get('/api/mask-info/:sku', async (c) => {
+    const sku = c.req.param('sku');
+    try {
+        const companyId = getCompanyIdFromAuth(c)
+        const result = await c.env.DB.prepare(`
+            SELECT mask_image_url FROM product_items
+            WHERE sku = ? AND company_id = ?
+            LIMIT 1
+        `).bind(sku, companyId).first();
+
+        return c.json({
+            success: true,
+            sku,
+            companyId,
+            maskImageUrl: result?.mask_image_url || null
+        });
+    } catch (error: any) {
+        logError('Mask info', error, { sku });
+        return c.json(createSafeErrorResponse(error, ErrorCode.DB_QUERY_FAILED), 500);
+    }
+});
+
 /**
  * 企業IDをFirebase認証済みuserから取得（cookieフォールバックなし）
  * requireFirebaseAuth通過済みなので必ずuserが存在する
