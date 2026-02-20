@@ -70,33 +70,31 @@ document.addEventListener('DOMContentLoaded', () => {
             originalImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
         }
         
-        // Initialize mask canvas
-        // For mask format: opaque (alpha=255) = product, transparent (alpha=0) = background
-        // Initial state: all pixels opaque (all product, no background removal)
-        const initialMaskData = maskCtx.createImageData(maskCanvas.width, maskCanvas.height);
-        for (let i = 0; i < initialMaskData.data.length; i += 4) {
-            initialMaskData.data[i] = 255;     // R (white)
-            initialMaskData.data[i + 1] = 255; // G (white)
-            initialMaskData.data[i + 2] = 255; // B (white)
-            initialMaskData.data[i + 3] = 255; // A (opaque = product)
-        }
-        maskCtx.putImageData(initialMaskData, 0, 0);
-        
-        // Store initial mask data (for cases where no mask URL exists)
-        maskImageData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
-        console.log('✅ Initial mask data created: all opaque (all product area)');
-        
-        // Save initial mask state to history
-        if (typeof saveMaskHistory === 'function') {
-            saveMaskHistory();
-        }
-        
-        // Load mask image if available (will override initial mask)
+        // Load mask image if available
         if (maskImageUrl && maskImageUrl !== '') {
             console.log('🎭 Mask URL exists, loading mask image...');
             loadMaskImage();
         } else {
-            console.log('⚠️ No mask URL, using initial mask (all product, no background)');
+            console.log('⚠️ No mask URL provided');
+            // Initialize with empty mask (no overlay)
+            // Create all-black mask (no product area marked)
+            const initialMaskData = maskCtx.createImageData(maskCanvas.width, maskCanvas.height);
+            for (let i = 0; i < initialMaskData.data.length; i += 4) {
+                initialMaskData.data[i] = 0;       // R (black)
+                initialMaskData.data[i + 1] = 0;   // G (black)
+                initialMaskData.data[i + 2] = 0;   // B (black)
+                initialMaskData.data[i + 3] = 255; // A (opaque)
+            }
+            maskCtx.putImageData(initialMaskData, 0, 0);
+            
+            // Store initial mask data
+            maskImageData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+            console.log('✅ Initial empty mask data created (no overlay)');
+            
+            // Save initial mask state to history
+            if (typeof saveMaskHistory === 'function') {
+                saveMaskHistory();
+            }
         }
     };
     
@@ -126,8 +124,9 @@ document.addEventListener('DOMContentLoaded', () => {
             // Draw mask image (白=商品、黒=背景)
             tempCtx.drawImage(maskImage, 0, 0, canvas.width, canvas.height);
             
-            // Store mask data for later use
+            // Store mask data in maskImageData AND maskCanvas
             maskImageData = tempCtx.getImageData(0, 0, canvas.width, canvas.height);
+            maskCtx.putImageData(maskImageData, 0, 0); // Copy to maskCanvas for editing
             console.log('✅ Mask data extracted, length:', maskImageData.data.length);
             window.logger.debug('✅ Mask data extracted and cached');
             
@@ -136,6 +135,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 'Pixel 0:', maskImageData.data[0], maskImageData.data[1], maskImageData.data[2], maskImageData.data[3],
                 'Pixel 1:', maskImageData.data[4], maskImageData.data[5], maskImageData.data[6], maskImageData.data[7]
             );
+            
+            // Save to history after loading
+            if (typeof saveMaskHistory === 'function') {
+                saveMaskHistory();
+            }
             
             // If mask is visible, apply overlay immediately after loading
             if (maskVisible) {
