@@ -29,6 +29,12 @@
             maskTools.classList.add('hidden');
             toolTitle.textContent = '画像調整';
             
+            // Switch back to processed image
+            console.log('📸 Switching back to processed image');
+            if (window.switchToProcessedImage) {
+                window.switchToProcessedImage();
+            }
+            
             // Hide mask overlay when switching to adjust tab
             console.log('🎭 Checking window.hideMaskOverlay:', typeof window.hideMaskOverlay);
             if (window.hideMaskOverlay) {
@@ -43,6 +49,14 @@
             adjustTools.classList.add('hidden');
             maskTools.classList.remove('hidden');
             toolTitle.textContent = 'マスク編集';
+            
+            // Switch to original image first
+            console.log('🎭 Switching to original image for mask editing');
+            if (window.switchToOriginalForMask) {
+                window.switchToOriginalForMask();
+            } else {
+                console.error('❌ window.switchToOriginalForMask is not defined!');
+            }
             
             // Show mask overlay when switching to mask tab
             console.log('🎭 Checking window.showMaskOverlay:', typeof window.showMaskOverlay);

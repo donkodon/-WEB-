@@ -146,6 +146,56 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
+    // ==================== SWITCH TO ORIGINAL FOR MASK ====================
+    // Called when switching to mask editing tab
+    window.switchToOriginalForMask = function() {
+        console.log('🎨 switchToOriginalForMask called');
+        console.log('📸 Current showingOriginal:', showingOriginal);
+        console.log('📸 originalSrc:', originalSrc);
+        
+        // If already showing original, no need to switch
+        if (showingOriginal) {
+            console.log('✅ Already showing original image');
+            return;
+        }
+        
+        // Switch to original image
+        img.src = originalSrc;
+        showingOriginal = true;
+        console.log('✅ Switched to original image for mask editing');
+        
+        // Update toggle button if it exists
+        const button = document.getElementById('btn-toggle-original');
+        if (button) {
+            button.innerHTML = '<i class="fas fa-image mr-2"></i> 処理後画像を表示';
+        }
+    };
+    
+    // ==================== SWITCH TO PROCESSED IMAGE ====================
+    // Called when switching to adjust tab
+    window.switchToProcessedImage = function() {
+        console.log('🎨 switchToProcessedImage called');
+        console.log('📸 Current showingOriginal:', showingOriginal);
+        console.log('📸 processedSrc:', processedSrc);
+        
+        // If already showing processed, no need to switch
+        if (!showingOriginal) {
+            console.log('✅ Already showing processed image');
+            return;
+        }
+        
+        // Switch to processed image
+        img.src = processedSrc;
+        showingOriginal = false;
+        console.log('✅ Switched to processed image for adjustments');
+        
+        // Update toggle button if it exists
+        const button = document.getElementById('btn-toggle-original');
+        if (button) {
+            button.innerHTML = '<i class="fas fa-image mr-2"></i> 元画像を確認';
+        }
+    };
+    
     // ==================== SHOW/HIDE MASK OVERLAY ====================
     // Called from tab switching
     window.showMaskOverlay = function() {
