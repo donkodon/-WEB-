@@ -46,9 +46,27 @@ class InteractiveLandmarkEditor {
    * Load image and render when ready
    */
   loadImage() {
+    const rawUrl = this.data.image_url;
+    if (!rawUrl) {
+      this.showError('画像URLが設定されていません');
+      return;
+    }
+
+    // R2 直 URL は CORS エラーになるため image-proxy 経由に変換
+    // /api/image-proxy/:sku/:filename 形式に変換する
+    let proxyUrl = rawUrl;
+    const r2Match = rawUrl.match(/\/([^\/]+)\/([^\/]+\/)?([^\/\?]+)(\?.*)?$/);
+    if (rawUrl.includes('r2.cloudflarestorage') || rawUrl.includes('r2.dev')) {
+      // R2直URL → image-proxy 経由
+      proxyUrl = `/api/images/proxy?url=${encodeURIComponent(rawUrl)}&_cb=${Date.now()}`;
+    } else if (!rawUrl.startsWith('/api/')) {
+      // 相対パスでも image-proxy でもない場合はプロキシ経由
+      proxyUrl = `/api/images/proxy?url=${encodeURIComponent(rawUrl)}&_cb=${Date.now()}`;
+    }
+
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.src = this.data.image_url;
+    img.src = proxyUrl;
     
     img.onload = () => {
       this.canvas.width = img.width;
@@ -60,7 +78,13 @@ class InteractiveLandmarkEditor {
     };
     
     img.onerror = () => {
-      window.logger.error('Failed to load image:', this.data.image_url);
+      // プロキシ失敗時は直URL で再試行
+      if (img.src !== rawUrl) {
+        window.logger.warn('Proxy load failed, retrying with direct URL:', rawUrl);
+        img.src = rawUrl;
+        return;
+      }
+      window.logger.error('Failed to load image:', rawUrl);
       this.showError('画像の読み込みに失敗しました');
     };
   }
@@ -664,7 +688,9 @@ class InteractiveLandmarkEditor {
         saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>保存中...';
       }
       
-      const response = await fetch(`/api/measurements/${this.data.sku}`, {
+      // 認証付き fetch（init.js でセットした window._authFetch、またはフォールバック）
+      const authFetch = window._authFetch || window.authenticatedFetch || fetch;
+      const response = await authFetch(`/api/measurements/${this.data.sku}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
