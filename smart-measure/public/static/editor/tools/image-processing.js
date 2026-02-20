@@ -737,7 +737,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 button.classList.add('bg-green-600');
                 
                 setTimeout(() => {
-                    window.location.href = '/dashboard';
+                    // 画像調整画面へ遷移（現在の編集画面をリロード）
+                    window.location.href = '/edit/' + imageId;
                 }, 1000);
             } else {
                 throw new Error(result.error || 'Failed to save');
