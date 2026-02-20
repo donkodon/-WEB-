@@ -65,6 +65,10 @@
     // originalImage キャッシュ（調整の基準となる ImageData）
     let originalImage = null;
 
+    // 最終保存まで保留するデータ（マスク保存時にセット、保存してダッシュボードへで使用）
+    let pendingMaskDataUrl      = null; // マスク画像 base64 PNG
+    let pendingCompositeDataUrl = null; // p画像（背景削除合成）base64 PNG
+
     // ── 公開インターフェース ─────────────────────────────────────────
     window.EditorState = {
         // DOM
@@ -124,6 +128,12 @@
         // originalImage キャッシュ（読み書き）
         get originalImage()             { return originalImage; },
         set originalImage(v)            { originalImage = v; },
+
+        // 保留中データ（マスク保存時にセット → 最終保存時にR2へ）
+        get pendingMaskDataUrl()             { return pendingMaskDataUrl; },
+        set pendingMaskDataUrl(v)            { pendingMaskDataUrl = v; },
+        get pendingCompositeDataUrl()        { return pendingCompositeDataUrl; },
+        set pendingCompositeDataUrl(v)       { pendingCompositeDataUrl = v; },
 
         /**
          * processedSrc を新しい URL に差し替える

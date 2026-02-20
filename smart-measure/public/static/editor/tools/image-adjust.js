@@ -208,8 +208,14 @@
     // ── 画像保存 ─────────────────────────────────────────────────────
 
     /**
-     * 調整済みキャンバスを PNG で保存 → /api/save-edited-image
-     * 成功後 /dashboard へ遷移する
+     * 最終保存：マスク・p画像・f画像を一括アップロード → /dashboard へ遷移
+     *
+     * 保存フロー:
+     *   1. pendingMaskDataUrl    → /api/save-mask/:sku          (mask.png)
+     *   2. pendingCompositeDataUrl → /api/upload-processed-image/:sku (_p.png)
+     *   3. canvas（調整済み）    → /api/save-edited-image/:imageId (_f.png)
+     *   ※ 1・2 は saveMask() 時点でメモリ保留されたデータ
+     *   ※ マスク編集をスキップした場合は 3 のみ実行
      */
     window.saveEditedImage = async function () {
         const S = window.EditorState;
@@ -225,6 +231,49 @@
         button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> 保存中...';
 
         try {
+            // ── Step 1: マスク画像を R2 に保存（保留データがある場合のみ）──
+            if (S.pendingMaskDataUrl) {
+                console.log('💾 [save] Step1: uploading mask...');
+                const maskRes = await window.authenticatedFetch(`/api/save-mask/${S.sku}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        maskDataUrl:  S.pendingMaskDataUrl,
+                        filenamePart: S.filenamePart
+                    })
+                });
+                if (!maskRes.ok) {
+                    const e = await maskRes.json().catch(() => ({ error: 'Unknown' }));
+                    throw new Error('マスク保存失敗: ' + (e.details || e.error));
+                }
+                const maskResult = await maskRes.json();
+                console.log('✅ Step1 done: mask saved to', maskResult.r2Key);
+            }
+
+            // ── Step 2: p画像（背景削除合成）を R2 に保存（保留データがある場合のみ）──
+            if (S.pendingCompositeDataUrl) {
+                console.log('💾 [save] Step2: uploading p-image...');
+                const uploadRes = await window.authenticatedFetch(
+                    `/api/upload-processed-image/${S.sku}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            imageDataUrl: S.pendingCompositeDataUrl,
+                            filenamePart: S.filenamePart
+                        })
+                    }
+                );
+                if (!uploadRes.ok) {
+                    const e = await uploadRes.json().catch(() => ({ error: 'Unknown' }));
+                    throw new Error('p画像アップロード失敗: ' + (e.details || e.error));
+                }
+                const uploadResult = await uploadRes.json();
+                console.log('✅ Step2 done: p-image saved to', uploadResult.r2Key);
+            }
+
+            // ── Step 3: 調整済み canvas → f画像として R2 に保存 ──────────
+            console.log('💾 [save] Step3: uploading f-image (final)...');
             const imageData = S.canvas.toDataURL('image/png');
 
             const response = await window.authenticatedFetch(
@@ -237,15 +286,21 @@
             );
 
             const result = await response.json();
-
-            if (result.success) {
-                button.innerHTML = '<i class="fas fa-check mr-2"></i> 保存完了！';
-                button.classList.remove('bg-blue-600', 'hover:bg-blue-700');
-                button.classList.add('bg-green-600');
-                setTimeout(() => { window.location.href = '/dashboard'; }, 1000);
-            } else {
-                throw new Error(result.error || '保存に失敗しました');
+            if (!result.success) {
+                throw new Error(result.error || '最終画像の保存に失敗しました');
             }
+            console.log('✅ Step3 done: f-image saved');
+
+            // ── 全保存完了 ────────────────────────────────────────────────
+            // 保留データをクリア
+            S.pendingMaskDataUrl      = null;
+            S.pendingCompositeDataUrl = null;
+
+            button.innerHTML = '<i class="fas fa-check mr-2"></i> 保存完了！';
+            button.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+            button.classList.add('bg-green-600');
+            setTimeout(() => { window.location.href = '/dashboard'; }, 1000);
+
         } catch (error) {
             window.logger && window.logger.error('Save error:', error);
             alert('保存に失敗しました: ' + error.message);

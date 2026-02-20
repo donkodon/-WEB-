@@ -336,7 +336,10 @@
         console.log(`↶ Undo: index ${maskHistoryIndex + 1} → ${maskHistoryIndex}`);
     };
 
-    // ── マスク保存 → 背景削除合成 → 画像調整タブ ────────────────────
+    // ── マスク保存 → 背景削除合成 → canvas描画 → 画像調整タブ ──────
+    // ※ この時点では R2 へのアップロードは行わない。
+    //    マスク・p画像のデータは EditorState に保留し、
+    //    「保存してダッシュボードへ」ボタン押下時に一括アップロードする。
 
     window.saveMask = async function (productSku) {
         const S = window.EditorState;
@@ -352,19 +355,10 @@
         }
 
         try {
-            // Step 1: マスクを R2 に保存
+            // Step 1: マスクを base64 に変換して保留（R2 アップロードは後で）
             const maskDataUrl = S.maskCanvas.toDataURL('image/png');
-            const maskRes     = await window.authenticatedFetch(`/api/save-mask/${productSku}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ maskDataUrl, filenamePart: S.filenamePart })
-            });
-            if (!maskRes.ok) {
-                const e = await maskRes.json().catch(() => ({ error: 'Unknown' }));
-                throw new Error('マスク保存失敗: ' + (e.details || e.error));
-            }
-            const maskResult = await maskRes.json();
-            console.log('✅ Step1: mask saved to', maskResult.r2Key);
+            S.pendingMaskDataUrl = maskDataUrl;
+            console.log('✅ Step1: mask data stored in memory (pending upload)');
 
             // Step 2: オリジナル × マスク → 透過 PNG 合成
             const origImg = await _loadImage(S.originalSrc);
@@ -393,41 +387,25 @@
             compCtx.putImageData(imgData, 0, 0);
 
             const compositeDataUrl = comp.toDataURL('image/png');
-            console.log('✅ Step2: composite generated');
+            // p画像も保留（R2 アップロードは後で）
+            S.pendingCompositeDataUrl = compositeDataUrl;
+            console.log('✅ Step2: composite generated & stored in memory (pending upload)');
 
-            // Step 3: 合成画像を R2 にアップロード
-            const uploadRes = await window.authenticatedFetch(
-                `/api/upload-processed-image/${productSku}`,
-                {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ imageDataUrl: compositeDataUrl, filenamePart: S.filenamePart })
-                }
-            );
-            if (!uploadRes.ok) {
-                const e = await uploadRes.json().catch(() => ({ error: 'Unknown' }));
-                throw new Error('アップロード失敗: ' + (e.details || e.error));
-            }
-            const uploadResult = await uploadRes.json();
-            console.log('✅ Step3: uploaded to', uploadResult.r2Key);
-
-            // Step 4: canvas を合成画像で更新
-            const newUrl = `/api/image-proxy/${productSku}/${S.filenamePart}_p.png?v=${Date.now()}`;
+            // Step 3: canvas を合成画像で更新（画面表示のみ、R2 保存なし）
             const { canvas, ctx } = S;
             canvas.width  = comp.width;
             canvas.height = comp.height;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(comp, 0, 0);
 
-            S.originalImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            S.img.src       = newUrl;
+            S.originalImage   = ctx.getImageData(0, 0, canvas.width, canvas.height);
             S.showingOriginal = false;
             S.maskVisible     = false;
-            console.log('✅ Step4: canvas updated');
+            console.log('✅ Step3: canvas updated (display only)');
 
-            // Step 5: 画像調整タブへ切替
+            // Step 4: 画像調整タブへ切替
             if (window.switchTab) window.switchTab('adjust');
-            console.log('✅ All steps complete');
+            console.log('✅ saveMask complete (pending: mask + p-image will be saved on final save)');
 
         } catch (error) {
             console.error('❌ saveMask error:', error);
