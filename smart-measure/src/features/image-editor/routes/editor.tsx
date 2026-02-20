@@ -229,7 +229,7 @@ editor.get('/edit/:id', async (c) => {
   const isProcessed = !!imageResult.processed_url;
   const productSku = imageResult.sku || 'Unknown';
   const productName = imageResult.product_name || '';
-  const hasMask = !!maskImageUrl;
+  const hasMask = true; // マスクURLの有無に関わらず常にマスク編集タブを表示
   
   logger.debug(`📤 Sending to browser - imageSrc: ${imageSrc}, originalSrc: ${originalSrc}`);
 
@@ -254,25 +254,23 @@ editor.get('/edit/:id', async (c) => {
         <div class="flex gap-4 h-[calc(100vh-140px)]">
             {/* Left Sidebar: Tools */}
             <div class="w-72 bg-white border border-gray-200 rounded-xl p-4 flex flex-col overflow-y-auto">
-                {/* Tab Navigation - マスクがあれば採寸/通常問わず表示 */}
-                {hasMask && (
-                    <div class="flex space-x-2 mb-4 border-b border-gray-200">
-                        <button 
-                            id="tab-adjust" 
-                            class="flex-1 px-4 py-2 text-sm font-medium text-blue-600 border-b-2 border-blue-600 transition-colors"
-                            onclick="switchTab('adjust')"
-                        >
-                            <i class="fas fa-sliders-h mr-1"></i> 画像調整
-                        </button>
-                        <button 
-                            id="tab-mask" 
-                            class="flex-1 px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent transition-colors"
-                            onclick="switchTab('mask')"
-                        >
-                            <i class="fas fa-mask mr-1"></i> マスク編集
-                        </button>
-                    </div>
-                )}
+                {/* Tab Navigation - 常に表示 */}
+                <div class="flex space-x-2 mb-4 border-b border-gray-200">
+                    <button 
+                        id="tab-adjust" 
+                        class="flex-1 px-4 py-2 text-sm font-medium text-blue-600 border-b-2 border-blue-600 transition-colors"
+                        onclick="switchTab('adjust')"
+                    >
+                        <i class="fas fa-sliders-h mr-1"></i> 画像調整
+                    </button>
+                    <button 
+                        id="tab-mask" 
+                        class="flex-1 px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent transition-colors"
+                        onclick="switchTab('mask')"
+                    >
+                        <i class="fas fa-mask mr-1"></i> マスク編集
+                    </button>
+                </div>
 
                 
                 <div class="flex items-center justify-between mb-2">
@@ -560,10 +558,8 @@ editor.get('/edit/:id', async (c) => {
             </div>
         </div>
 
-        {/* Load mask editor script if mask exists */}
-        {hasMask && (
-            <script src="/static/editor/mask/editor.js"></script>
-        )}
+        {/* Load mask editor script - 常に読み込む */}
+        <script src="/static/editor/mask/editor.js"></script>
         
         {/* Editor Data Container */}
 
