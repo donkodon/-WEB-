@@ -392,30 +392,10 @@ window.maskEditorPreview = function() {
 // =============================================
 
 /**
- * URLからファイル名部分（拡張子なし）を取得
- * 例: https://pub-xxx.r2.dev/1025L280001/SKU001/abc_mask.png → "abc_mask"
- */
-function extractFilenamePart(url) {
-    if (!url) return null;
-    try {
-        const pathname = new URL(url).pathname;
-        const filename = pathname.split('/').pop() || '';
-        return filename.replace(/\.[^.]+$/, '');
-    } catch (e) {
-        const filename = (url.split('/').pop() || '');
-        return filename.replace(/\.[^.]+$/, '');
-    }
-}
-
-/**
  * マスクを保存
- * - Firebase トークンを Authorization ヘッダーで送信
- * - companyId はサーバー側で Firebase 認証済み user から取得
- * - ファイル名確定の優先順位:
- *   1. DBから最新のマスクURLを取得してファイル名を使う（上書き保存）
- *   2. 初期表示時のマスクURLのファイル名
- *   3. どちらもなければ {sku}_mask（新規）
- * - alert/confirm は一切表示しない（UI上のトースト通知のみ）
+ * - maskDataUrl だけ送る（ファイル名はサーバー側がDBから決定）
+ * - Firebase トークンを authenticatedFetch で送信
+ * - alert/confirm は一切表示しない（トースト通知のみ）
  */
 window.maskEditorSave = async function(sku) {
     window.logger.debug('💾 Saving mask for SKU:', sku);
@@ -431,45 +411,14 @@ window.maskEditorSave = async function(sku) {
         ? window.authenticatedFetch
         : fetch;
 
-    // ① まずDBから最新のマスクURLを取得してファイル名を確定する
-    let filenamePart = null;
-    try {
-        const infoRes = await fetchFn(`/api/mask-info/${sku}`);
-        if (infoRes.ok) {
-            const info = await infoRes.json();
-            if (info.maskImageUrl) {
-                // DBの最新URLからファイル名取得 → 上書き保存
-                filenamePart = extractFilenamePart(info.maskImageUrl);
-                // stateも最新URLで更新しておく
-                maskEditorState.originalMaskImageUrl = info.maskImageUrl;
-                window.logger.debug('📄 Filename from DB:', filenamePart, '(', info.maskImageUrl, ')');
-            }
-        }
-    } catch (e) {
-        window.logger.warn('⚠️ Could not fetch mask info, falling back:', e.message);
-    }
-
-    // ② DBから取れなければ、ページ初期表示時のURLを使う
-    if (!filenamePart) {
-        filenamePart = extractFilenamePart(maskEditorState.originalMaskImageUrl);
-        if (filenamePart) {
-            window.logger.debug('📄 Filename from initial URL:', filenamePart);
-        }
-    }
-
-    // ③ それでもなければ新規ファイル名
-    if (!filenamePart) {
-        filenamePart = `${sku}_mask`;
-        window.logger.debug('📄 New mask, using default filename:', filenamePart);
-    }
-
     try {
         showToast('保存中...', 'info');
 
+        // maskDataUrl だけ送る。ファイル名はサーバーがDBから決定する
         const res = await fetchFn(`/api/save-mask/${sku}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ maskDataUrl, filenamePart })
+            body: JSON.stringify({ maskDataUrl })
         });
 
         if (!res.ok) {
@@ -478,13 +427,7 @@ window.maskEditorSave = async function(sku) {
         }
 
         const data = await res.json();
-        window.logger.debug('✅ Mask saved:', data);
-        window.logger.debug('📦 Saved to R2 key:', data.r2Key);
-
-        // 保存成功後、stateのURLを最新に更新（次の保存で同じファイル名を使うため）
-        if (data.maskUrl) {
-            maskEditorState.originalMaskImageUrl = data.maskUrl;
-        }
+        window.logger.debug('✅ Mask saved:', data.r2Key, '| overwrite:', data.isOverwrite);
 
         showToast('マスクを保存しました', 'success');
 
