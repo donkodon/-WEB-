@@ -330,12 +330,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // Mask brush size
-    const maskSizeSlider = document.getElementById('mask-size');
-    const maskSizeVal = document.getElementById('mask-size-val');
-    if (maskSizeSlider) {
+    const maskSizeSlider = document.getElementById('range-mask-brush-size');
+    const maskSizeVal = document.getElementById('val-mask-brush-size');
+    if (maskSizeSlider && maskSizeVal) {
         maskSizeSlider.addEventListener('input', (e) => {
             maskBrushSize = parseInt(e.target.value);
             maskSizeVal.textContent = maskBrushSize + 'px';
+            console.log('🖌️ Mask brush size changed to:', maskBrushSize);
         });
     }
     
@@ -733,72 +734,41 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Save mask
     window.saveMask = async function(productSku) {
-        const saveBtn = document.getElementById('mask-save');
-        if (!saveBtn) return;
+        console.log('💾 saveMask called for SKU:', productSku);
         
-        saveBtn.disabled = true;
-        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>保存中...';
+        if (!maskCanvas || !maskCtx) {
+            alert('マスクが見つかりません');
+            console.error('❌ maskCanvas not initialized');
+            return;
+        }
         
         try {
-            // Create a temporary canvas for the mask (black and white)
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = maskCanvas.width;
-            tempCanvas.height = maskCanvas.height;
-            const tempCtx = tempCanvas.getContext('2d');
-            
-            // Get current mask data
-            const maskData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
-            const data = maskData.data;
-            
-            // Convert mask to black/white (white = keep product, black = remove background)
-            for (let i = 0; i < data.length; i += 4) {
-                const alpha = data[i + 3]; // Blue overlay alpha
-                
-                // If overlay is present (blue), make it white (product area)
-                // If no overlay, make it black (background area)
-                if (alpha > 128) {
-                    data[i] = 255;     // R
-                    data[i + 1] = 255; // G
-                    data[i + 2] = 255; // B
-                    data[i + 3] = 255; // A
-                } else {
-                    data[i] = 0;       // R
-                    data[i + 1] = 0;   // G
-                    data[i + 2] = 0;   // B
-                    data[i + 3] = 255; // A
-                }
-            }
-            
-            tempCtx.putImageData(maskData, 0, 0);
-            
-            // Convert to blob
-            const blob = await new Promise(resolve => tempCanvas.toBlob(resolve, 'image/png'));
-            
-            // Create FormData
-            const formData = new FormData();
-            formData.append('mask', blob, productSku + '_mask.png');
-            formData.append('sku', productSku);
+            // Get mask as data URL
+            const maskDataUrl = maskCanvas.toDataURL('image/png');
+            console.log('📸 Mask data URL created, length:', maskDataUrl.length);
             
             // Send to server
-            const response = await window.authenticatedFetch('/api/save-mask', {
+            console.log('📤 Sending mask to /api/update-mask/' + productSku);
+            const response = await window.authenticatedFetch(`/api/update-mask/${productSku}`, {
                 method: 'POST',
-                body: formData
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ maskDataUrl })
             });
             
-            const result = await response.json();
-            
-            if (result.success) {
-                alert('マスクを保存しました');
-                window.location.reload();
-            } else {
-                throw new Error(result.error || 'Failed to save mask');
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+                throw new Error(error.details || error.error || 'Save failed');
             }
+            
+            const result = await response.json();
+            console.log('✅ Mask saved:', result);
+            
+            alert('マスクを保存しました！');
+            window.location.reload();
+            
         } catch (error) {
             console.error('❌ Mask save error:', error);
             alert('マスクの保存に失敗しました: ' + error.message);
-        } finally {
-            saveBtn.disabled = false;
-            saveBtn.innerHTML = '<i class="fas fa-save mr-2"></i>マスクを保存';
         }
     };
     
