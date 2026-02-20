@@ -611,12 +611,15 @@ document.addEventListener('DOMContentLoaded', () => {
         maskCtx.lineWidth = maskBrushSize;
         
         if (currentTool === 'mask-brush') {
-            // Brush: paint blue overlay (product area)
+            // Brush: paint white (product area - will show blue overlay)
             maskCtx.globalCompositeOperation = 'source-over';
-            maskCtx.strokeStyle = 'rgba(0, 100, 255, 0.5)';
+            maskCtx.strokeStyle = 'rgb(255, 255, 255)'; // White
+            maskCtx.fillStyle = 'rgb(255, 255, 255)';   // White
         } else if (currentTool === 'mask-eraser') {
-            // Eraser: remove blue overlay (background area)
-            maskCtx.globalCompositeOperation = 'destination-out';
+            // Eraser: paint black (background area - will NOT show blue overlay)
+            maskCtx.globalCompositeOperation = 'source-over';
+            maskCtx.strokeStyle = 'rgb(1, 1, 1)';       // Black
+            maskCtx.fillStyle = 'rgb(1, 1, 1)';         // Black
         }
         
         maskCtx.beginPath();
@@ -624,15 +627,16 @@ document.addEventListener('DOMContentLoaded', () => {
         maskCtx.lineTo(x2, y2);
         maskCtx.stroke();
         
-        // Redraw the entire canvas with mask overlay
+        // Update maskImageData with current mask canvas
+        maskImageData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+        
+        // Redraw the entire canvas with updated mask overlay
         ctx.drawImage(img, 0, 0);
         applyCurrentAdjustments();
         
-        // Apply mask overlay if visible
+        // Apply updated mask overlay
         if (maskVisible) {
-            ctx.save();
-            ctx.drawImage(maskCanvas, 0, 0);
-            ctx.restore();
+            applyMaskOverlay();
         }
     }
     
