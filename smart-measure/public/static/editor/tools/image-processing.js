@@ -121,6 +121,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 'Pixel 0:', maskImageData.data[0], maskImageData.data[1], maskImageData.data[2], maskImageData.data[3],
                 'Pixel 1:', maskImageData.data[4], maskImageData.data[5], maskImageData.data[6], maskImageData.data[7]
             );
+            
+            // If mask is visible, apply overlay immediately after loading
+            if (maskVisible) {
+                console.log('🎭 Mask visible flag is true, applying overlay...');
+                applyMaskOverlay();
+            }
         };
         
         maskImage.onerror = function(err) {
@@ -153,16 +159,27 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('📸 Current showingOriginal:', showingOriginal);
         console.log('📸 originalSrc:', originalSrc);
         
-        // If already showing original, no need to switch
+        // If already showing original, just redraw
         if (showingOriginal) {
-            console.log('✅ Already showing original image');
+            console.log('✅ Already showing original image, redrawing canvas');
+            ctx.drawImage(img, 0, 0);
             return;
         }
         
         // Switch to original image
-        img.src = originalSrc;
         showingOriginal = true;
-        console.log('✅ Switched to original image for mask editing');
+        
+        // Create a new image object to load original
+        const originalImg = new Image();
+        originalImg.crossOrigin = "Anonymous";
+        originalImg.onload = function() {
+            // Update main img object
+            img.src = originalSrc;
+            // Redraw canvas with original image
+            ctx.drawImage(originalImg, 0, 0);
+            console.log('✅ Switched to original image for mask editing');
+        };
+        originalImg.src = originalSrc;
         
         // Update toggle button if it exists
         const button = document.getElementById('btn-toggle-original');

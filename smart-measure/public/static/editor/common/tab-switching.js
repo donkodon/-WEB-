@@ -58,13 +58,15 @@
                 console.error('❌ window.switchToOriginalForMask is not defined!');
             }
             
-            // Show mask overlay when switching to mask tab
-            console.log('🎭 Checking window.showMaskOverlay:', typeof window.showMaskOverlay);
-            if (window.showMaskOverlay) {
-                window.showMaskOverlay();
-            } else {
-                console.error('❌ window.showMaskOverlay is not defined!');
-            }
+            // Wait for image to load, then show mask overlay
+            setTimeout(() => {
+                console.log('🎭 Checking window.showMaskOverlay:', typeof window.showMaskOverlay);
+                if (window.showMaskOverlay) {
+                    window.showMaskOverlay();
+                } else {
+                    console.error('❌ window.showMaskOverlay is not defined!');
+                }
+            }, 100);
         }
     };
     
