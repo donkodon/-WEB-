@@ -422,32 +422,17 @@ editor.get('/edit/:id', async (c) => {
 
                     {/* History Controls */}
                     <div class="mb-6">
-                        <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">履歴</div>
-                        <div class="flex space-x-2">
-                            <button 
-                                onclick="undoMask()"
-                                class="flex-1 bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors"
-                            >
-                                <i class="fas fa-undo mr-1"></i> 元に戻す
-                            </button>
-                            <button 
-                                onclick="redoMask()"
-                                class="flex-1 bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors"
-                            >
-                                <i class="fas fa-redo mr-1"></i> やり直し
-                            </button>
-                        </div>
+                        <button 
+                            onclick="undoMask()"
+                            class="w-full bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors"
+                        >
+                            <i class="fas fa-undo mr-1"></i> 元に戻す
+                        </button>
                     </div>
 
                     {/* Save Mask */}
                     <div class="mt-auto pt-4 border-t border-gray-100">
                         <div class="space-y-2">
-                            <button onclick="previewMask()" class="w-full bg-white hover:bg-gray-50 text-gray-700 font-medium py-2 rounded-lg transition-colors text-sm border border-gray-200">
-                                <i class="fas fa-eye mr-2"></i> プレビュー
-                            </button>
-                            <button onclick="resetMask()" class="w-full bg-white hover:bg-gray-50 text-gray-500 font-medium py-2 rounded-lg transition-colors text-sm border border-gray-200">
-                                <i class="fas fa-undo mr-2"></i> リセット
-                            </button>
                             <button onclick={`saveMask('${productSku}')`} class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg shadow-md shadow-blue-200 transition-all flex items-center justify-center text-sm">
                                 <i class="fas fa-save mr-2"></i> 保存して次へ
                             </button>
