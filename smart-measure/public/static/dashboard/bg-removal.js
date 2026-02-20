@@ -135,7 +135,7 @@
                     
                     if (res.ok) {
                         const data = await res.json();
-                        console.log('🔍 [BG-REMOVAL] API response:', JSON.stringify({
+                        window.logger && window.logger.debug('🔍 [BG-REMOVAL] API response:', JSON.stringify({
                             message: data.message,
                             maskUrl: data.maskUrl,
                             _debug: data._debug

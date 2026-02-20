@@ -21,20 +21,6 @@ const maskApi = new Hono<AppEnv>()
 maskApi.use('*', requireFirebaseAuth)
 
 /**
- * 企業IDをFirebase認証済みuserから取得
- */
-function getCompanyIdFromAuth(c: any): string {
-    const user = c.get('user')
-    if (user?.companyId) {
-        logger.debug(`✅ Company ID from Firebase auth: ${user.companyId}`)
-        return user.companyId
-    }
-    const fallback = getCompanyId(c)
-    logger.warn(`⚠️ Firebase user has no companyId, falling back: ${fallback}`)
-    return fallback
-}
-
-/**
  * URLからファイル名のベース部分を抽出
  * 例: https://xxx.r2.dev/relight/101010/4469bcc2-09b1-4218-8ad4-78fd92ced9a7.jpg
  *   → "4469bcc2-09b1-4218-8ad4-78fd92ced9a7"
@@ -57,7 +43,7 @@ function extractBasenameFromUrl(url: string): string | null {
 maskApi.get('/api/mask-info/:sku', async (c) => {
     const sku = c.req.param('sku');
     try {
-        const companyId = getCompanyIdFromAuth(c)
+        const companyId = getCompanyId(c)
         const result = await c.env.DB.prepare(`
             SELECT mask_image_url_r2 FROM product_items
             WHERE sku = ? AND company_id = ?
@@ -81,7 +67,7 @@ maskApi.get('/api/mask-info/:sku', async (c) => {
 maskApi.post('/api/save-mask/:sku', async (c) => {
     const sku = c.req.param('sku');
     try {
-        const companyId = getCompanyIdFromAuth(c)
+        const companyId = getCompanyId(c)
         const body = await c.req.json();
         const { maskDataUrl, filenamePart } = body;
 
@@ -171,7 +157,7 @@ maskApi.post('/api/save-mask/:sku', async (c) => {
 maskApi.post('/api/regenerate-with-mask/:sku', async (c) => {
     const sku = c.req.param('sku');
     try {
-        const companyId = getCompanyIdFromAuth(c)
+        const companyId = getCompanyId(c)
         logger.debug(`🔄 Regenerating image: sku=${sku}, company=${companyId}`)
 
         const result = await c.env.DB.prepare(`

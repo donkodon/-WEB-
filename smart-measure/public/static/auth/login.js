@@ -64,7 +64,7 @@ async function handleLoginSuccess(userCredential) {
     localStorage.setItem('user_email', userCredential.user.email)
     localStorage.setItem('user_uid', userCredential.user.uid)
     
-    console.log('✅ Login successful:', userCredential.user.email)
+    window.logger && window.logger.debug('✅ Login successful:', userCredential.user.email)
     
     // Verify user and update pending UID if needed
     try {
@@ -77,12 +77,12 @@ async function handleLoginSuccess(userCredential) {
       })
       
       if (verifyResponse.ok) {
-        console.log('✅ User verified in database')
+        window.logger && window.logger.debug('✅ User verified in database')
       } else {
-        console.warn('⚠️ User verification failed, but continuing')
+        window.logger && window.logger.warn('⚠️ User verification failed, but continuing')
       }
     } catch (verifyError) {
-      console.error('❌ Verification error:', verifyError)
+      window.logger && window.logger.error('❌ Verification error:', verifyError)
       // Continue even if verification fails
     }
     
@@ -99,13 +99,13 @@ async function handleLoginSuccess(userCredential) {
         if (data.success && data.user) {
           // Set company_id cookie
           document.cookie = `company_id=${data.user.companyId}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`
-          console.log('✅ Company ID set:', data.user.companyId)
+          window.logger && window.logger.debug('✅ Company ID set:', data.user.companyId)
         }
       } else {
-        console.warn('⚠️ Failed to get user info, using default company_id')
+        window.logger && window.logger.warn('⚠️ Failed to get user info, using default company_id')
       }
     } catch (apiError) {
-      console.error('❌ API error:', apiError)
+      window.logger && window.logger.error('❌ API error:', apiError)
       // Continue to dashboard even if API fails
     }
     
@@ -113,7 +113,7 @@ async function handleLoginSuccess(userCredential) {
     window.location.href = '/dashboard'
     
   } catch (error) {
-    console.error('❌ Token storage error:', error)
+    window.logger && window.logger.error('❌ Token storage error:', error)
     showError('ログインに成功しましたが、トークンの保存に失敗しました')
     hideLoading()
   }
@@ -133,7 +133,7 @@ loginForm?.addEventListener('submit', async (e) => {
     await handleLoginSuccess(userCredential)
     
   } catch (error) {
-    console.error('❌ Login error:', error)
+    window.logger && window.logger.error('❌ Login error:', error)
     hideLoading()
     
     // User-friendly error messages
@@ -174,7 +174,7 @@ googleLoginBtn?.addEventListener('click', async () => {
     await handleLoginSuccess(result)
     
   } catch (error) {
-    console.error('❌ Google login error:', error)
+    window.logger && window.logger.error('❌ Google login error:', error)
     hideLoading()
     
     switch (error.code) {
@@ -200,7 +200,7 @@ auth.onAuthStateChanged((user) => {
                       window.location.pathname === '/legacy-login'
   
   if (user && isLoginPage) {
-    console.log('✅ Already logged in, redirecting to dashboard')
+    window.logger && window.logger.debug('✅ Already logged in, redirecting to dashboard')
     window.location.href = '/dashboard'
   }
 })

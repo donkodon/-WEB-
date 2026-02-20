@@ -9,14 +9,14 @@
         const usageResponse = await window.authenticatedFetch('/api/billing/usage');
         
         if (!usageResponse.ok) {
-            console.warn('⚠️ Failed to load usage data:', usageResponse.status);
+            window.logger && window.logger.warn('⚠️ Failed to load usage data:', usageResponse.status);
             return;
         }
         
         const usageData = await usageResponse.json();
         
         if (!usageData.success || !usageData.usage) {
-            console.warn('⚠️ Invalid usage data format');
+            window.logger && window.logger.warn('⚠️ Invalid usage data format');
             return;
         }
         
@@ -51,13 +51,13 @@
         updateTierInfo('sku', usage.sku_download_count);
         updateTierInfo('ai', usage.ai_generation_count);
         
-        console.log('✅ Usage summary loaded:', usage);
+        window.logger && window.logger.debug('✅ Usage summary loaded:', usage);
         
         // Fetch detailed breakdown
         await loadUsageBreakdown();
         
     } catch (error) {
-        console.error('❌ Error loading usage summary:', error);
+        window.logger && window.logger.error('❌ Error loading usage summary:', error);
     }
 })();
 
@@ -95,14 +95,14 @@ async function loadUsageBreakdown() {
         const response = await window.authenticatedFetch('/api/billing/usage/breakdown');
         
         if (!response.ok) {
-            console.warn('⚠️ Failed to load breakdown:', response.status);
+            window.logger && window.logger.warn('⚠️ Failed to load breakdown:', response.status);
             return;
         }
         
         const data = await response.json();
         
         if (!data.success || !data.breakdown) {
-            console.warn('⚠️ Invalid breakdown data');
+            window.logger && window.logger.warn('⚠️ Invalid breakdown data');
             return;
         }
         
@@ -144,9 +144,9 @@ async function loadUsageBreakdown() {
             aiBreakdownEl.innerHTML = '<div class="text-gray-500 text-center py-2">まだ生成がありません</div>';
         }
         
-        console.log('✅ Usage breakdown loaded');
+        window.logger && window.logger.debug('✅ Usage breakdown loaded');
         
     } catch (error) {
-        console.error('❌ Error loading breakdown:', error);
+        window.logger && window.logger.error('❌ Error loading breakdown:', error);
     }
 }

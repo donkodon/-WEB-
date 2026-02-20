@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const S = window.EditorState;
     if (!S) {
-        console.error('❌ [image-processing] EditorState not found. Check script load order.');
+        window.logger && window.logger.error('❌ [image-processing] EditorState not found. Check script load order.');
         return;
     }
 
@@ -64,13 +64,13 @@ document.addEventListener('DOMContentLoaded', function () {
             maskCtx.putImageData(blankMask, 0, 0);
             S.maskImageData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
             window.MaskTools && window.MaskTools.saveMaskHistory();
-            console.log('✅ Blank mask initialized');
+            window.logger && window.logger.debug('✅ Blank mask initialized');
         }
     }
 
     img.onload  = onInitialImageLoad;
     img.onerror = function () {
-        console.error('❌ Failed to load initial image:', S.processedSrc);
+        window.logger && window.logger.error('❌ Failed to load initial image:', S.processedSrc);
     };
     img.src = S.processedSrc;
 
@@ -131,7 +131,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (S.currentTool === 'mask-brush' || S.currentTool === 'mask-eraser') {
             window.MaskTools && window.MaskTools.saveMaskHistory();
             S.maskImageData = S.maskCtx.getImageData(0, 0, S.maskCanvas.width, S.maskCanvas.height);
-            console.log('💾 Stroke done: history saved');
+            window.logger && window.logger.debug('💾 Stroke done: history saved');
         }
     }
 

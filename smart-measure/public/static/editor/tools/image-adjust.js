@@ -88,7 +88,7 @@
     function applyMaskOverlay() {
         const S = window.EditorState;
         if (!S || !S.maskImageData) {
-            console.error('❌ [image-adjust] applyMaskOverlay: maskImageData is null');
+            window.logger && window.logger.error('❌ [image-adjust] applyMaskOverlay: maskImageData is null');
             return;
         }
 
@@ -113,7 +113,7 @@
         const maskH = maskImageData.height;
 
         if (maskW !== canvas.width || maskH !== canvas.height) {
-            console.warn(`⚠️ Mask size (${maskW}x${maskH}) != canvas (${canvas.width}x${canvas.height}). Re-scaling mask.`);
+            window.logger && window.logger.warn(`⚠️ Mask size (${maskW}x${maskH}) != canvas (${canvas.width}x${canvas.height}). Re-scaling mask.`);
 
             // maskCanvas を canvas サイズにリサイズして再描画
             const tmp    = document.createElement('canvas');
@@ -151,7 +151,7 @@
         }
 
         ctx.putImageData(imageData, 0, 0);
-        console.log(`🎭 Mask overlay: bright=${bright} dark=${dark} | canvas=${canvas.width}x${canvas.height} mask=${maskImageData.width}x${maskImageData.height}`);
+        window.logger && window.logger.debug(`🎭 Mask overlay: bright=${bright} dark=${dark} | canvas=${canvas.width}x${canvas.height} mask=${maskImageData.width}x${maskImageData.height}`);
     }
 
     // ── スライダー UI ────────────────────────────────────────────────
@@ -242,7 +242,7 @@
         try {
             // ── Step 1: マスク画像を R2 に保存（保留データがある場合のみ）──
             if (S.pendingMaskDataUrl) {
-                console.log('💾 [save] Step1: uploading mask...');
+                window.logger && window.logger.debug('💾 [save] Step1: uploading mask...');
                 const maskRes = await window.authenticatedFetch(`/api/save-mask/${S.sku}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -256,12 +256,12 @@
                     throw new Error('マスク保存失敗: ' + (e.details || e.error));
                 }
                 const maskResult = await maskRes.json();
-                console.log('✅ Step1 done: mask saved to', maskResult.r2Key);
+                window.logger && window.logger.debug('✅ Step1 done: mask saved to', maskResult.r2Key);
             }
 
             // ── Step 2: p画像（背景削除合成）を R2 に保存（保留データがある場合のみ）──
             if (S.pendingCompositeDataUrl) {
-                console.log('💾 [save] Step2: uploading p-image...');
+                window.logger && window.logger.debug('💾 [save] Step2: uploading p-image...');
                 const uploadRes = await window.authenticatedFetch(
                     `/api/upload-processed-image/${S.sku}`,
                     {
@@ -278,11 +278,11 @@
                     throw new Error('p画像アップロード失敗: ' + (e.details || e.error));
                 }
                 const uploadResult = await uploadRes.json();
-                console.log('✅ Step2 done: p-image saved to', uploadResult.r2Key);
+                window.logger && window.logger.debug('✅ Step2 done: p-image saved to', uploadResult.r2Key);
             }
 
             // ── Step 3: 調整済み canvas → f画像として R2 に保存 ──────────
-            console.log('💾 [save] Step3: uploading f-image (final)...');
+            window.logger && window.logger.debug('💾 [save] Step3: uploading f-image (final)...');
             const imageData = S.canvas.toDataURL('image/png');
 
             const response = await window.authenticatedFetch(
@@ -298,7 +298,7 @@
             if (!result.success) {
                 throw new Error(result.error || '最終画像の保存に失敗しました');
             }
-            console.log('✅ Step3 done: f-image saved');
+            window.logger && window.logger.debug('✅ Step3 done: f-image saved');
 
             // ── 全保存完了 ────────────────────────────────────────────────
             // 保留データをクリア

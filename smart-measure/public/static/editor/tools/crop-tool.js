@@ -93,7 +93,7 @@
 
         // 小さすぎる場合はキャンセル
         if (w < 5 || h < 5) {
-            console.log('⚠️ Crop area too small, cancelled');
+            window.logger && window.logger.debug('⚠️ Crop area too small, cancelled');
             return;
         }
 
@@ -113,7 +113,7 @@
         // originalImage キャッシュをリセット
         S.originalImage = ctx.getImageData(0, 0, w, h);
 
-        console.log(`✅ Crop applied: (${x1},${y1}) ${w}x${h}`);
+        window.logger && window.logger.debug(`✅ Crop applied: (${x1},${y1}) ${w}x${h}`);
 
         // ツール解除
         S.currentTool       = null;

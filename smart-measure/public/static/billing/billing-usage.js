@@ -9,14 +9,14 @@
         const response = await window.authenticatedFetch('/api/billing/usage');
         
         if (!response.ok) {
-            console.warn('⚠️ Failed to load usage data:', response.status);
+            window.logger && window.logger.warn('⚠️ Failed to load usage data:', response.status);
             return;
         }
         
         const data = await response.json();
         
         if (!data.success || !data.usage) {
-            console.warn('⚠️ Invalid usage data format');
+            window.logger && window.logger.warn('⚠️ Invalid usage data format');
             return;
         }
         
@@ -41,8 +41,8 @@
             planBadge.className = 'text-xs text-blue-600 font-medium mt-1';
         }
         
-        console.log('✅ Usage summary loaded:', usage);
+        window.logger && window.logger.debug('✅ Usage summary loaded:', usage);
     } catch (error) {
-        console.error('❌ Error loading usage summary:', error);
+        window.logger && window.logger.error('❌ Error loading usage summary:', error);
     }
 })();

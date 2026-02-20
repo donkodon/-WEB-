@@ -12,7 +12,7 @@ let tokenRefreshInterval = null
 
 // Initialize authentication state
 function initAuthGuard() {
-  console.log('🔐 Initializing authentication guard...')
+  window.logger && window.logger.debug('🔐 Initializing authentication guard...')
   
   // Check if on login page
   const isLoginPage = window.location.pathname === '/login.html' || 
@@ -24,7 +24,7 @@ function initAuthGuard() {
     if (user) {
       // User is logged in
       currentUser = user
-      console.log('✅ User authenticated:', user.email)
+      window.logger && window.logger.debug('✅ User authenticated:', user.email)
       
       try {
         // Get and store fresh token
@@ -41,19 +41,19 @@ function initAuthGuard() {
         
         // Redirect to dashboard if on login page
         if (isLoginPage) {
-          console.log('📍 Redirecting to dashboard...')
+          window.logger && window.logger.debug('📍 Redirecting to dashboard...')
           window.location.href = '/dashboard'
         }
         
       } catch (error) {
-        console.error('❌ Token refresh error:', error)
+        window.logger && window.logger.error('❌ Token refresh error:', error)
         handleAuthError()
       }
       
     } else {
       // User is not logged in
       currentUser = null
-      console.log('⚠️ No authenticated user')
+      window.logger && window.logger.debug('⚠️ No authenticated user')
       
       // Clear stored tokens
       localStorage.removeItem('firebase_token')
@@ -62,7 +62,7 @@ function initAuthGuard() {
       
       // Redirect to login if not already there
       if (!isLoginPage) {
-        console.log('📍 Redirecting to login...')
+        window.logger && window.logger.debug('📍 Redirecting to login...')
         window.location.href = '/firebase-login'
       }
     }
@@ -98,12 +98,12 @@ function setupTokenRefresh(user) {
   // Refresh token every 50 minutes (tokens expire after 1 hour)
   tokenRefreshInterval = setInterval(async () => {
     try {
-      console.log('🔄 Refreshing authentication token...')
+      window.logger && window.logger.debug('🔄 Refreshing authentication token...')
       const newToken = await user.getIdToken(true)
       localStorage.setItem('firebase_token', newToken)
-      console.log('✅ Token refreshed successfully')
+      window.logger && window.logger.debug('✅ Token refreshed successfully')
     } catch (error) {
-      console.error('❌ Token refresh failed:', error)
+      window.logger && window.logger.error('❌ Token refresh failed:', error)
       handleAuthError()
     }
   }, 50 * 60 * 1000) // 50 minutes
@@ -111,14 +111,14 @@ function setupTokenRefresh(user) {
 
 // Handle authentication errors
 function handleAuthError() {
-  console.error('⛔ Authentication error - logging out')
+  window.logger && window.logger.error('⛔ Authentication error - logging out')
   handleLogout()
 }
 
 // Logout handler
 window.handleLogout = async function() {
   try {
-    console.log('🚪 Logging out...')
+    window.logger && window.logger.debug('🚪 Logging out...')
     
     // Clear refresh interval
     if (tokenRefreshInterval) {
@@ -133,13 +133,13 @@ window.handleLogout = async function() {
     localStorage.removeItem('user_email')
     localStorage.removeItem('user_uid')
     
-    console.log('✅ Logged out successfully')
+    window.logger && window.logger.debug('✅ Logged out successfully')
     
     // Redirect to login
     window.location.href = '/firebase-login'
     
   } catch (error) {
-    console.error('❌ Logout error:', error)
+    window.logger && window.logger.error('❌ Logout error:', error)
     alert('ログアウトに失敗しました')
   }
 }
@@ -149,7 +149,7 @@ window.authenticatedFetch = async function(url, options = {}) {
   const token = localStorage.getItem('firebase_token')
   
   if (!token) {
-    console.error('❌ No authentication token found')
+    window.logger && window.logger.error('❌ No authentication token found')
     throw new Error('認証トークンがありません。再ログインしてください。')
   }
   
@@ -160,20 +160,20 @@ window.authenticatedFetch = async function(url, options = {}) {
   }
   
   try {
-    console.log('🔐 Sending authenticated request to:', url)
-    console.log('🔑 Token (first 20 chars):', token.substring(0, 20) + '...')
+    window.logger && window.logger.debug('🔐 Sending authenticated request to:', url)
+    window.logger && window.logger.debug('🔑 Token (first 20 chars):', token.substring(0, 20) + '...')
     
     const response = await fetch(url, {
       ...options,
       headers
     })
     
-    console.log('📡 Response status:', response.status)
+    window.logger && window.logger.debug('📡 Response status:', response.status)
     
     // Log error responses
     if (!response.ok) {
       const errorBody = await response.clone().text()
-      console.error('❌ API Error Response:', {
+      window.logger && window.logger.error('❌ API Error Response:', {
         status: response.status,
         statusText: response.statusText,
         body: errorBody
@@ -182,7 +182,7 @@ window.authenticatedFetch = async function(url, options = {}) {
     
     // Handle 401 Unauthorized
     if (response.status === 401) {
-      console.error('⛔ 401 Unauthorized - token may be expired')
+      window.logger && window.logger.error('⛔ 401 Unauthorized - token may be expired')
       
       // Try to refresh token
       if (currentUser) {
@@ -195,7 +195,7 @@ window.authenticatedFetch = async function(url, options = {}) {
           return fetch(url, { ...options, headers })
           
         } catch (refreshError) {
-          console.error('❌ Token refresh failed:', refreshError)
+          window.logger && window.logger.error('❌ Token refresh failed:', refreshError)
           handleAuthError()
           throw new Error('認証エラー。再ログインしてください。')
         }
@@ -208,7 +208,7 @@ window.authenticatedFetch = async function(url, options = {}) {
     return response
     
   } catch (error) {
-    console.error('❌ Fetch error:', error)
+    window.logger && window.logger.error('❌ Fetch error:', error)
     throw error
   }
 }

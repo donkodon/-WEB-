@@ -29,7 +29,7 @@
             maskHistoryIndex++;
         }
 
-        console.log(`💾 Mask history saved: index=${maskHistoryIndex} total=${maskHistory.length}`);
+        window.logger && window.logger.debug(`💾 Mask history saved: index=${maskHistoryIndex} total=${maskHistory.length}`);
     }
 
     // ── マスク画像ロード ─────────────────────────────────────────────
@@ -41,7 +41,7 @@
         // キャッシュバスターを付与（ブラウザキャッシュで古いマスクが出ないようにする）
         const rawUrl  = S.maskImageUrl;
         const maskUrl = rawUrl + (rawUrl.includes('?') ? '&' : '?') + '_cb=' + Date.now();
-        console.log('🎭 loadMaskImage (cache-busted):', maskUrl);
+        window.logger && window.logger.debug('🎭 loadMaskImage (cache-busted):', maskUrl);
 
         // /api/images/proxy 経由で読み込む（R2直URLのCORSを回避）
         const proxyUrl = `/api/images/proxy?url=${encodeURIComponent(rawUrl)}&_cb=${Date.now()}`;
@@ -56,13 +56,13 @@
 
                 // canvas がまだ 0 サイズの場合は待つ
                 if (canvas.width === 0 || canvas.height === 0) {
-                    console.warn('⚠️ canvas not ready, retrying in 200ms');
+                    window.logger && window.logger.warn('⚠️ canvas not ready, retrying in 200ms');
                     setTimeout(() => doLoad(src), 200);
                     return;
                 }
 
-                console.log('🎭 Mask image natural size:', mi.naturalWidth, 'x', mi.naturalHeight);
-                console.log('🎭 Canvas size:', canvas.width, 'x', canvas.height);
+                window.logger && window.logger.debug('🎭 Mask image natural size:', mi.naturalWidth, 'x', mi.naturalHeight);
+                window.logger && window.logger.debug('🎭 Canvas size:', canvas.width, 'x', canvas.height);
 
                 // maskCanvas をメインキャンバスと同サイズに揃えてからマスクを描画
                 maskCanvas.width  = canvas.width;
@@ -79,7 +79,7 @@
                 S.maskImageData = tmpCtx.getImageData(0, 0, canvas.width, canvas.height);
                 maskCtx.putImageData(S.maskImageData, 0, 0);
 
-                console.log('✅ Mask loaded & synced to canvas size:', canvas.width, 'x', canvas.height);
+                window.logger && window.logger.debug('✅ Mask loaded & synced to canvas size:', canvas.width, 'x', canvas.height);
 
                 saveMaskHistory();
 
@@ -90,10 +90,10 @@
 
             mi.onerror = function () {
                 if (src !== proxyUrl) {
-                    console.warn('⚠️ Direct load failed, retrying via proxy:', proxyUrl);
+                    window.logger && window.logger.warn('⚠️ Direct load failed, retrying via proxy:', proxyUrl);
                     doLoad(proxyUrl);
                 } else {
-                    console.error('❌ loadMaskImage failed (both direct and proxy):', rawUrl);
+                    window.logger && window.logger.error('❌ loadMaskImage failed (both direct and proxy):', rawUrl);
                 }
             };
 
@@ -173,7 +173,7 @@
             tmpImg.crossOrigin = 'anonymous';
             tmpImg.onload = function () {
                 if (canvas.width !== tmpImg.naturalWidth || canvas.height !== tmpImg.naturalHeight) {
-                    console.log(`📐 Resizing canvas: ${canvas.width}x${canvas.height} → ${tmpImg.naturalWidth}x${tmpImg.naturalHeight}`);
+                    window.logger && window.logger.debug(`📐 Resizing canvas: ${canvas.width}x${canvas.height} → ${tmpImg.naturalWidth}x${tmpImg.naturalHeight}`);
                     canvas.width  = tmpImg.naturalWidth;
                     canvas.height = tmpImg.naturalHeight;
                     _resizeMaskCanvas(tmpImg.naturalWidth, tmpImg.naturalHeight);
@@ -183,16 +183,16 @@
                 // ★ オリジナル画像を ImageData としてキャッシュする
                 // drawMask / applyMaskOverlay の再描画ベースとして使用する
                 S.originalForMask = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                console.log('✅ Switched to original for mask, cached as originalForMask');
+                window.logger && window.logger.debug('✅ Switched to original for mask, cached as originalForMask');
 
                 if (callback) callback();
             };
             tmpImg.onerror = function () {
                 if (src !== `/api/images/proxy?url=${encodeURIComponent(originalSrc)}`) {
-                    console.warn('⚠️ Direct load failed, retrying via proxy');
+                    window.logger && window.logger.warn('⚠️ Direct load failed, retrying via proxy');
                     drawOriginal(`/api/images/proxy?url=${encodeURIComponent(originalSrc)}`);
                 } else {
-                    console.error('❌ Both direct & proxy failed for original');
+                    window.logger && window.logger.error('❌ Both direct & proxy failed for original');
                     if (callback) callback();
                 }
             };
@@ -218,12 +218,12 @@
             canvas.width  = S.originalImage.width;
             canvas.height = S.originalImage.height;
             ctx.putImageData(S.originalImage, 0, 0);
-            console.log('✅ Switched to processed image (from originalImage cache)');
+            window.logger && window.logger.debug('✅ Switched to processed image (from originalImage cache)');
         } else {
             // 初回ロード前など originalImage がない場合のフォールバック
             // この場合のみ img.src を触る（onInitialImageLoad がまだ呼ばれていない状態）
             S.img.src = S.processedSrc;
-            console.log('✅ Switched to processed image (fallback via img.src)');
+            window.logger && window.logger.debug('✅ Switched to processed image (fallback via img.src)');
         }
 
         const btn = document.getElementById('btn-toggle-original');
@@ -251,7 +251,7 @@
 
         S.maskVisible = true;
         window.ImageAdjust && window.ImageAdjust.applyMaskOverlay();
-        console.log('✅ Mask overlay shown');
+        window.logger && window.logger.debug('✅ Mask overlay shown');
     };
 
     /** マスクオーバーレイを非表示にする */
@@ -272,7 +272,7 @@
             S.ctx.drawImage(S.img, 0, 0); // フォールバック
         }
         window.ImageAdjust && window.ImageAdjust.applyCurrentAdjustments();
-        console.log('✅ Mask overlay hidden');
+        window.logger && window.logger.debug('✅ Mask overlay hidden');
     };
 
     /** オリジナル ↔ 処理済み をトグルする（調整タブ内のプレビュー確認ボタン） */
@@ -359,7 +359,7 @@
 
     window.undoMask = function () {
         if (maskHistoryIndex <= 0) {
-            console.log('⚠️ これ以上元に戻せません');
+            window.logger && window.logger.debug('⚠️ これ以上元に戻せません');
             return;
         }
 
@@ -377,7 +377,7 @@
         // applyMaskOverlay 内で originalForMask / originalImage から再描画するので
         // ここでは明示的な描画は不要（applyMaskOverlay に一任）
         window.ImageAdjust && window.ImageAdjust.applyMaskOverlay();
-        console.log(`↶ Undo: index ${maskHistoryIndex + 1} → ${maskHistoryIndex}`);
+        window.logger && window.logger.debug(`↶ Undo: index ${maskHistoryIndex + 1} → ${maskHistoryIndex}`);
     };
 
     // ── マスク保存 → 背景削除合成 → canvas描画 → 画像調整タブ ──────
@@ -388,7 +388,7 @@
     window.saveMask = async function (productSku) {
         const S = window.EditorState;
         if (!S || !S.maskCanvas) {
-            console.error('❌ maskCanvas not initialized');
+            window.logger && window.logger.error('❌ maskCanvas not initialized');
             return;
         }
 
@@ -402,13 +402,13 @@
             // Step 1: マスクを base64 に変換して保留（R2 アップロードは後で）
             const maskDataUrl = S.maskCanvas.toDataURL('image/png');
             S.pendingMaskDataUrl = maskDataUrl;
-            console.log('✅ Step1: mask data stored in memory (pending upload)');
+            window.logger && window.logger.debug('✅ Step1: mask data stored in memory (pending upload)');
 
             // Step 2: ベース画像 × マスク → 透過 PNG 合成
             // f画像 > p画像 > オリジナルの優先順位で使用
             // processedSrc は editor-state で f>p>original 優先に設定されている
             const baseSrc = S.processedSrc || S.originalSrc;
-            console.log('🖼️ saveMask base image:', baseSrc);
+            window.logger && window.logger.debug('🖼️ saveMask base image:', baseSrc);
             const origImg = await _loadImage(baseSrc);
 
             const comp    = document.createElement('canvas');
@@ -437,7 +437,7 @@
             const compositeDataUrl = comp.toDataURL('image/png');
             // p画像も保留（R2 アップロードは後で）
             S.pendingCompositeDataUrl = compositeDataUrl;
-            console.log('✅ Step2: composite generated & stored in memory (pending upload)');
+            window.logger && window.logger.debug('✅ Step2: composite generated & stored in memory (pending upload)');
 
             // Step 3: canvas を合成画像で更新（画面表示のみ、R2 保存なし）
             const { canvas, ctx } = S;
@@ -457,14 +457,14 @@
             //   img.src には設定せず EditorState の参照だけ更新する
             S.processedSrc = compositeDataUrl;
 
-            console.log('✅ Step3: canvas updated (display only), originalImage & processedSrc updated');
+            window.logger && window.logger.debug('✅ Step3: canvas updated (display only), originalImage & processedSrc updated');
 
             // Step 4: 画像調整タブへ切替
             if (window.switchTab) window.switchTab('adjust');
-            console.log('✅ saveMask complete (pending: mask + p-image will be saved on final save)');
+            window.logger && window.logger.debug('✅ saveMask complete (pending: mask + p-image will be saved on final save)');
 
         } catch (error) {
-            console.error('❌ saveMask error:', error);
+            window.logger && window.logger.error('❌ saveMask error:', error);
             alert('保存中にエラーが発生しました: ' + error.message);
         } finally {
             if (saveBtn) {
@@ -521,7 +521,7 @@
 
         // maskImageData を更新
         S.maskImageData = maskCtx.getImageData(0, 0, newW, newH);
-        console.log(`📐 maskCanvas resized to ${newW}x${newH}`);
+        window.logger && window.logger.debug(`📐 maskCanvas resized to ${newW}x${newH}`);
     }
 
     // ── 初期化（image-processing.js の init() から呼ばれる） ─────────

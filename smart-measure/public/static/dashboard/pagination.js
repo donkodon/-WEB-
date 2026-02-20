@@ -23,7 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const token = localStorage.getItem('firebase_token');
         if (token) {
             clearInterval(waitForAuth);
-            console.log('✅ Auth ready, loading dashboard data...');
+            window.logger && window.logger.debug('✅ Auth ready, loading dashboard data...');
             loadPage(1, true);
         }
     }, 100);
@@ -32,7 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
         clearInterval(waitForAuth);
         if (!localStorage.getItem('firebase_token')) {
-            console.error('❌ Auth timeout - redirecting to login');
+            window.logger && window.logger.error('❌ Auth timeout - redirecting to login');
             window.location.href = '/firebase-login';
         }
     }, 10000);
@@ -64,7 +64,7 @@ async function loadPage(page, isInitial) {
         
         const data = await response.json();
         
-        console.log('📦 API Response:', {
+        window.logger && window.logger.debug('📦 API Response:', {
             success: data.success,
             total: data.pagination?.total,
             totalPages: data.pagination?.totalPages,
@@ -82,7 +82,7 @@ async function loadPage(page, isInitial) {
         totalProducts = data.pagination.total;
         
         // Render products
-        console.log('🎨 Rendering', data.products.length, 'products');
+        window.logger && window.logger.debug('🎨 Rendering', data.products.length, 'products');
         renderProducts(data.products);
         
         // Update pagination UI
@@ -97,7 +97,7 @@ async function loadPage(page, isInitial) {
         initializeLazyLoading();
         
     } catch (error) {
-        console.error('Failed to load page:', error);
+        window.logger && window.logger.error('Failed to load page:', error);
         const container = document.getElementById('products-container');
         if (container) {
             container.innerHTML = `
@@ -123,7 +123,7 @@ function renderProducts(products) {
     const container = document.getElementById('products-container');
     
     if (!container) {
-        console.error('Products container not found');
+        window.logger && window.logger.error('Products container not found');
         return;
     }
     
