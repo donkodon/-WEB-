@@ -484,7 +484,18 @@ editor.get('/edit/:id', async (c) => {
 
         
         </div>
-        {/* --- IMAGE PROCESSING LOGIC --- Load first to define mask functions */}
+        {/* --- IMAGE PROCESSING LOGIC --- 読み込み順を保証 ---
+             1. editor-state.js   → window.EditorState
+             2. image-adjust.js   → window.ImageAdjust
+             3. mask-tools.js     → window.MaskTools
+             4. crop-tool.js      → window.CropTool
+             5. image-processing.js → 統合エントリーポイント
+             6. tab-switching.js  → window.switchTab
+        */}
+        <script src="/static/editor/tools/editor-state.js"></script>
+        <script src="/static/editor/tools/image-adjust.js"></script>
+        <script src="/static/editor/tools/mask-tools.js"></script>
+        <script src="/static/editor/tools/crop-tool.js"></script>
         <script src="/static/editor/tools/image-processing.js"></script>
         <script src="/static/editor/common/tab-switching.js"></script>
     </Layout>
