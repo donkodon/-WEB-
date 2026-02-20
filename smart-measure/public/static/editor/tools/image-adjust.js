@@ -95,11 +95,15 @@
         const { canvas, ctx, maskCanvas, maskCtx } = S;
         let { maskImageData } = S;
 
-        // ベース画像を再描画
-        // originalImage キャッシュがある場合はそこから（img.src依存を避ける）
-        if (S.originalImage && !S.showingOriginal) {
+        // ベース画像を再描画（img.src 依存を完全排除）
+        // マスクタブ（showingOriginal=true）: originalForMask キャッシュから
+        // 調整タブ（showingOriginal=false）: originalImage キャッシュから
+        if (S.showingOriginal && S.originalForMask) {
+            ctx.putImageData(S.originalForMask, 0, 0);
+        } else if (!S.showingOriginal && S.originalImage) {
             ctx.putImageData(S.originalImage, 0, 0);
         } else {
+            // どちらのキャッシュもない場合のフォールバック（初期ロード直後など）
             ctx.drawImage(S.img, 0, 0);
         }
 

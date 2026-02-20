@@ -131,8 +131,13 @@
         S.maskImageData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
 
         // 画面を再描画
-        ctx.drawImage(img, 0, 0);
-        window.ImageAdjust && window.ImageAdjust.applyCurrentAdjustments();
+        // マスクタブ時は originalForMask キャッシュから再描画（img.src 依存を排除）
+        // originalForMask がない場合のみ img にフォールバック
+        if (S.originalForMask) {
+            ctx.putImageData(S.originalForMask, 0, 0);
+        } else {
+            ctx.drawImage(img, 0, 0);
+        }
 
         if (maskVisible) {
             window.ImageAdjust && window.ImageAdjust.applyMaskOverlay();
@@ -174,7 +179,12 @@
                     _resizeMaskCanvas(tmpImg.naturalWidth, tmpImg.naturalHeight);
                 }
                 ctx.drawImage(tmpImg, 0, 0);
-                console.log('✅ Switched to original for mask (img.src untouched)');
+
+                // ★ オリジナル画像を ImageData としてキャッシュする
+                // drawMask / applyMaskOverlay の再描画ベースとして使用する
+                S.originalForMask = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                console.log('✅ Switched to original for mask, cached as originalForMask');
+
                 if (callback) callback();
             };
             tmpImg.onerror = function () {
@@ -183,7 +193,7 @@
                     drawOriginal(`/api/images/proxy?url=${encodeURIComponent(originalSrc)}`);
                 } else {
                     console.error('❌ Both direct & proxy failed for original');
-                    if (callback) callback(); // エラーでもコールバックを呼ぶ
+                    if (callback) callback();
                 }
             };
             tmpImg.src = src;
@@ -251,21 +261,15 @@
 
         S.maskVisible = false;
 
-        // キャンバスを再描画する。
-        // マスクタブ（showingOriginal=true）の場合は canvas に既にオリジナルが描かれているので
-        // そのまま何もしない（オーバーレイだけ消すため ctx.putImageData は不要）。
-        // 調整タブ（showingOriginal=false）の場合は originalImage キャッシュから再描画。
-        if (!S.showingOriginal && S.originalImage) {
+        // キャンバスを再描画する（img.src 依存を完全排除）
+        // マスクタブ（showingOriginal=true）: originalForMask キャッシュから
+        // 調整タブ（showingOriginal=false）: originalImage キャッシュから
+        if (S.showingOriginal && S.originalForMask) {
+            S.ctx.putImageData(S.originalForMask, 0, 0);
+        } else if (!S.showingOriginal && S.originalImage) {
             S.ctx.putImageData(S.originalImage, 0, 0);
-        } else if (S.showingOriginal) {
-            // マスクタブでオーバーレイを消す場合：オリジナルを再描画
-            // switchToOriginalForMask と同じく独自 Image で描く
-            const tmpImg       = new Image();
-            tmpImg.crossOrigin = 'anonymous';
-            tmpImg.onload = function () {
-                S.ctx.drawImage(tmpImg, 0, 0);
-            };
-            tmpImg.src = S.originalSrc;
+        } else {
+            S.ctx.drawImage(S.img, 0, 0); // フォールバック
         }
         window.ImageAdjust && window.ImageAdjust.applyCurrentAdjustments();
         console.log('✅ Mask overlay hidden');
@@ -369,14 +373,9 @@
             0, 0, S.maskCanvas.width, S.maskCanvas.height
         );
 
-        // オリジナル画像を再描画してオーバーレイを適用
-        if (S.originalImage && S.showingOriginal === false) {
-            // 調整タブ側なら originalImage キャッシュから（ここには来ないはずだが念のため）
-            S.ctx.putImageData(S.originalImage, 0, 0);
-        } else {
-            // マスクタブ側: canvas に現在表示中のオリジナルはそのまま。
-            // drawImage は img 依存なので独自Imageで再描画せずオーバーレイだけ重ねる
-        }
+        // ベース画像を再描画してからオーバーレイを適用
+        // applyMaskOverlay 内で originalForMask / originalImage から再描画するので
+        // ここでは明示的な描画は不要（applyMaskOverlay に一任）
         window.ImageAdjust && window.ImageAdjust.applyMaskOverlay();
         console.log(`↶ Undo: index ${maskHistoryIndex + 1} → ${maskHistoryIndex}`);
     };
