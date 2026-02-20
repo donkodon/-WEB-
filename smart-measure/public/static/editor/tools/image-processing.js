@@ -74,6 +74,11 @@ document.addEventListener('DOMContentLoaded', () => {
         maskCtx.fillStyle = 'rgba(0, 100, 255, 0.5)';
         maskCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
         
+        // Save initial mask state to history
+        if (typeof saveMaskHistory === 'function') {
+            saveMaskHistory();
+        }
+        
         // Load mask image if available
         if (maskImageUrl && maskImageUrl !== '') {
             loadMaskImage();
@@ -430,12 +435,42 @@ document.addEventListener('DOMContentLoaded', () => {
     canvas.addEventListener('mouseup', stopDrawing);
     canvas.addEventListener('mouseout', stopDrawing);
     
+    // Mask history variables (declared early for use in drawing functions)
+    let maskHistory = [];
+    let maskHistoryIndex = -1;
+    const maxMaskHistory = 20;
+    
+    // Save current mask state to history
+    function saveMaskHistory() {
+        // Remove any states after current index
+        maskHistory = maskHistory.slice(0, maskHistoryIndex + 1);
+        
+        // Save current mask state
+        const maskData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+        maskHistory.push(maskData);
+        
+        // Limit history size
+        if (maskHistory.length > maxMaskHistory) {
+            maskHistory.shift();
+        } else {
+            maskHistoryIndex++;
+        }
+        
+        console.log('💾 Mask history saved, index:', maskHistoryIndex, 'total:', maskHistory.length);
+    }
+    
     function startDrawing(e) {
         if (!currentTool) return;
         isDrawing = true;
         const rect = canvas.getBoundingClientRect();
         lastX = (e.clientX - rect.left) * (canvas.width / rect.width);
         lastY = (e.clientY - rect.top) * (canvas.height / rect.height);
+        
+        // Save mask history when starting to draw on mask
+        const isMaskTool = currentTool === 'mask-brush' || currentTool === 'mask-eraser';
+        if (isMaskTool) {
+            saveMaskHistory();
+        }
     }
     
     function draw(e) {
@@ -445,7 +480,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const x = (e.clientX - rect.left) * (canvas.width / rect.width);
         const y = (e.clientY - rect.top) * (canvas.height / rect.height);
         
-        if (maskMode) {
+        // Check if using mask tools
+        const isMaskTool = currentTool === 'mask-brush' || currentTool === 'mask-eraser';
+        
+        if (isMaskTool) {
             drawMask(lastX, lastY, x, y);
         } else {
             drawOnCanvas(lastX, lastY, x, y);
@@ -483,9 +521,11 @@ document.addEventListener('DOMContentLoaded', () => {
         maskCtx.lineWidth = maskBrushSize;
         
         if (currentTool === 'mask-brush') {
+            // Brush: paint blue overlay (product area)
             maskCtx.globalCompositeOperation = 'source-over';
             maskCtx.strokeStyle = 'rgba(0, 100, 255, 0.5)';
         } else if (currentTool === 'mask-eraser') {
+            // Eraser: remove blue overlay (background area)
             maskCtx.globalCompositeOperation = 'destination-out';
         }
         
@@ -494,11 +534,16 @@ document.addEventListener('DOMContentLoaded', () => {
         maskCtx.lineTo(x2, y2);
         maskCtx.stroke();
         
-        // Overlay mask on main canvas
-        ctx.save();
-        ctx.globalAlpha = 0.5;
-        ctx.drawImage(maskCanvas, 0, 0);
-        ctx.restore();
+        // Redraw the entire canvas with mask overlay
+        ctx.drawImage(img, 0, 0);
+        applyCurrentAdjustments();
+        
+        // Apply mask overlay if visible
+        if (maskVisible) {
+            ctx.save();
+            ctx.drawImage(maskCanvas, 0, 0);
+            ctx.restore();
+        }
     }
     
     // ==================== MASK MODE ====================
@@ -585,6 +630,175 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             button.disabled = false;
             button.innerHTML = '<i class="fas fa-save mr-2"></i>保存';
+        }
+    };
+    
+    // ==================== MASK EDITING FUNCTIONS ====================
+    
+    // Set mask mode (brush or eraser)
+    window.setMaskMode = function(mode) {
+        const maskBrushBtn = document.getElementById('mask-mode-brush');
+        const maskEraserBtn = document.getElementById('mask-mode-eraser');
+        
+        if (mode === 'brush') {
+            currentTool = 'mask-brush';
+            if (maskBrushBtn) {
+                maskBrushBtn.classList.add('bg-blue-100', 'border-blue-400');
+                maskBrushBtn.classList.remove('bg-white', 'border-gray-200');
+            }
+            if (maskEraserBtn) {
+                maskEraserBtn.classList.remove('bg-blue-100', 'border-blue-400');
+                maskEraserBtn.classList.add('bg-white', 'border-gray-200');
+            }
+        } else if (mode === 'eraser') {
+            currentTool = 'mask-eraser';
+            if (maskEraserBtn) {
+                maskEraserBtn.classList.add('bg-blue-100', 'border-blue-400');
+                maskEraserBtn.classList.remove('bg-white', 'border-gray-200');
+            }
+            if (maskBrushBtn) {
+                maskBrushBtn.classList.remove('bg-blue-100', 'border-blue-400');
+                maskBrushBtn.classList.add('bg-white', 'border-gray-200');
+            }
+        }
+        
+        console.log('🎨 Mask mode set to:', mode);
+    };
+    
+    // Undo mask edit
+    window.undoMask = function() {
+        if (maskHistoryIndex > 0) {
+            maskHistoryIndex--;
+            const maskData = maskHistory[maskHistoryIndex];
+            maskCtx.putImageData(maskData, 0, 0);
+            applyMaskOverlay();
+            console.log('↶ Mask undo, index:', maskHistoryIndex);
+        } else {
+            console.log('⚠️ No more undo history');
+        }
+    };
+    
+    // Redo mask edit
+    window.redoMask = function() {
+        if (maskHistoryIndex < maskHistory.length - 1) {
+            maskHistoryIndex++;
+            const maskData = maskHistory[maskHistoryIndex];
+            maskCtx.putImageData(maskData, 0, 0);
+            applyMaskOverlay();
+            console.log('↷ Mask redo, index:', maskHistoryIndex);
+        } else {
+            console.log('⚠️ No more redo history');
+        }
+    };
+    
+    // Preview mask (show final result without mask overlay)
+    window.previewMask = function() {
+        if (!maskImageData) {
+            alert('マスクデータがありません');
+            return;
+        }
+        
+        // Temporarily hide mask overlay
+        maskVisible = false;
+        ctx.drawImage(img, 0, 0);
+        applyCurrentAdjustments();
+        
+        alert('プレビュー表示中（マスクタブに戻ると編集を続けられます）');
+        
+        console.log('👁️ Mask preview shown');
+    };
+    
+    // Reset mask to initial state (full blue overlay)
+    window.resetMask = function() {
+        if (!confirm('マスクをリセットしますか？（元に戻せません）')) {
+            return;
+        }
+        
+        // Clear mask history
+        maskHistory = [];
+        maskHistoryIndex = -1;
+        
+        // Reset mask to full blue overlay
+        maskCtx.fillStyle = 'rgba(0, 100, 255, 0.5)';
+        maskCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
+        
+        // Save to history
+        saveMaskHistory();
+        
+        // Redraw overlay
+        applyMaskOverlay();
+        
+        console.log('🔄 Mask reset');
+    };
+    
+    // Save mask
+    window.saveMask = async function(productSku) {
+        const saveBtn = document.getElementById('mask-save');
+        if (!saveBtn) return;
+        
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>保存中...';
+        
+        try {
+            // Create a temporary canvas for the mask (black and white)
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = maskCanvas.width;
+            tempCanvas.height = maskCanvas.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            // Get current mask data
+            const maskData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+            const data = maskData.data;
+            
+            // Convert mask to black/white (white = keep product, black = remove background)
+            for (let i = 0; i < data.length; i += 4) {
+                const alpha = data[i + 3]; // Blue overlay alpha
+                
+                // If overlay is present (blue), make it white (product area)
+                // If no overlay, make it black (background area)
+                if (alpha > 128) {
+                    data[i] = 255;     // R
+                    data[i + 1] = 255; // G
+                    data[i + 2] = 255; // B
+                    data[i + 3] = 255; // A
+                } else {
+                    data[i] = 0;       // R
+                    data[i + 1] = 0;   // G
+                    data[i + 2] = 0;   // B
+                    data[i + 3] = 255; // A
+                }
+            }
+            
+            tempCtx.putImageData(maskData, 0, 0);
+            
+            // Convert to blob
+            const blob = await new Promise(resolve => tempCanvas.toBlob(resolve, 'image/png'));
+            
+            // Create FormData
+            const formData = new FormData();
+            formData.append('mask', blob, productSku + '_mask.png');
+            formData.append('sku', productSku);
+            
+            // Send to server
+            const response = await window.authenticatedFetch('/api/save-mask', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                alert('マスクを保存しました');
+                window.location.reload();
+            } else {
+                throw new Error(result.error || 'Failed to save mask');
+            }
+        } catch (error) {
+            console.error('❌ Mask save error:', error);
+            alert('マスクの保存に失敗しました: ' + error.message);
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="fas fa-save mr-2"></i>マスクを保存';
         }
     };
     
