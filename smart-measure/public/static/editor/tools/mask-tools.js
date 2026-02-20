@@ -204,15 +204,28 @@
     /** 調整タブに切り替える際：処理済み画像に変更 */
     window.switchToProcessedImage = function () {
         const S = window.EditorState;
-        if (!S || !S.showingOriginal) return;
+        if (!S) return;
 
         S.showingOriginal = false;
-        S.img.src = S.processedSrc;
+        S.maskVisible     = false;
+
+        // originalImage キャッシュが存在する場合はそこから再描画する。
+        // これにより img.src の変更を介さず、image-processing.js の img.onload が
+        // originalImage を上書きするのを防ぐ。
+        if (S.originalImage) {
+            const { canvas, ctx } = S;
+            canvas.width  = S.originalImage.width;
+            canvas.height = S.originalImage.height;
+            ctx.putImageData(S.originalImage, 0, 0);
+            console.log('✅ Switched to processed image (from originalImage cache)');
+        } else {
+            // フォールバック: img.src で再描画（saveMask前など）
+            S.img.src = S.processedSrc;
+            console.log('✅ Switched to processed image (via img.src)');
+        }
 
         const btn = document.getElementById('btn-toggle-original');
         if (btn) btn.innerHTML = '<i class="fas fa-image mr-2"></i> 元画像を確認';
-
-        console.log('✅ Switched to processed image');
     };
 
     /** マスクオーバーレイを表示する */
@@ -245,7 +258,13 @@
         if (!S || !S.maskVisible) return;
 
         S.maskVisible = false;
-        S.ctx.drawImage(S.img, 0, 0);
+
+        // originalImage キャッシュがあればそこから再描画（img.src依存を避ける）
+        if (S.originalImage && !S.showingOriginal) {
+            S.ctx.putImageData(S.originalImage, 0, 0);
+        } else {
+            S.ctx.drawImage(S.img, 0, 0);
+        }
         window.ImageAdjust && window.ImageAdjust.applyCurrentAdjustments();
         console.log('✅ Mask overlay hidden');
     };
@@ -257,8 +276,16 @@
         const btn = document.getElementById('btn-toggle-original');
 
         if (S.showingOriginal) {
-            S.img.src         = S.processedSrc;
+            // 処理済み画像に戻す: originalImage キャッシュがあればそこから再描画
             S.showingOriginal = false;
+            if (S.originalImage) {
+                const { canvas, ctx } = S;
+                canvas.width  = S.originalImage.width;
+                canvas.height = S.originalImage.height;
+                ctx.putImageData(S.originalImage, 0, 0);
+            } else {
+                S.img.src = S.processedSrc;
+            }
             if (btn) btn.innerHTML = '<i class="fas fa-image mr-2"></i> 元画像を確認';
         } else {
             S.img.src         = S.originalSrc;
@@ -398,10 +425,18 @@
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(comp, 0, 0);
 
+            // originalImage キャッシュを合成済み画像で更新
+            // （switchToProcessedImage・hideMaskOverlay がここから再描画する）
             S.originalImage   = ctx.getImageData(0, 0, canvas.width, canvas.height);
             S.showingOriginal = false;
             S.maskVisible     = false;
-            console.log('✅ Step3: canvas updated (display only)');
+
+            // processedSrc も合成画像 URL で更新（フォールバック用）
+            // ※ compositeDataUrl はメモリ内 data URL なので、
+            //   img.src には設定せず EditorState の参照だけ更新する
+            S.processedSrc = compositeDataUrl;
+
+            console.log('✅ Step3: canvas updated (display only), originalImage & processedSrc updated');
 
             // Step 4: 画像調整タブへ切替
             if (window.switchTab) window.switchTab('adjust');

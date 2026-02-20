@@ -28,7 +28,21 @@ document.addEventListener('DOMContentLoaded', function () {
     // ────────────────────────────────────────────────────────────────
     // 1. メイン画像のロード
     // ────────────────────────────────────────────────────────────────
+    // 初回ロードフラグ（saveMask後の img.src 変更で originalImage を上書きしないようにする）
+    let _initialLoadDone = false;
+
     img.onload = function () {
+        if (_initialLoadDone) {
+            // 2回目以降（switchToProcessedImage 等による img.src 変更）は
+            // canvas への再描画のみ行い、originalImage は更新しない
+            console.log('🔄 img.onload (secondary): redraw only, originalImage preserved');
+            canvas.width  = img.naturalWidth  || img.width;
+            canvas.height = img.naturalHeight || img.height;
+            ctx.drawImage(img, 0, 0);
+            return;
+        }
+        _initialLoadDone = true;
+
         // キャンバスサイズを画像に合わせる
         canvas.width      = img.width;
         canvas.height     = img.height;
@@ -36,7 +50,7 @@ document.addEventListener('DOMContentLoaded', function () {
         maskCanvas.height = img.height;
 
         ctx.drawImage(img, 0, 0);
-        window.logger && window.logger.debug('✅ Image loaded:', img.width, 'x', img.height);
+        window.logger && window.logger.debug('✅ Image loaded (initial):', img.width, 'x', img.height);
 
         // originalImage キャッシュを保存（調整のベース）
         if (!S.originalImage) {

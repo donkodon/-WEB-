@@ -13,7 +13,7 @@
         return;
     }
 
-    const processedSrc  = editorData.dataset.imageSrc;
+    let processedSrc    = editorData.dataset.imageSrc;   // saveMask後に更新可能
     const originalSrc   = editorData.dataset.originalSrc;
     const isProcessed   = editorData.dataset.isProcessed === 'true';
     const imageId       = editorData.dataset.imageId;
@@ -78,9 +78,10 @@
         get maskCanvas() { return maskCanvas; },
         get maskCtx()    { return maskCtx; },
 
-        // 設定値（読み取り専用）
-        get processedSrc()  { return processedSrc; },
-        get originalSrc()   { return originalSrc; },
+        // 設定値
+        get processedSrc()      { return processedSrc; },
+        set processedSrc(v)     { processedSrc = v; },  // saveMask後に更新可能
+        get originalSrc()       { return originalSrc; },
         get isProcessed()   { return isProcessed; },
         get imageId()       { return imageId; },
         get maskImageUrl()  { return maskImageUrl; },
@@ -138,11 +139,11 @@
         /**
          * processedSrc を新しい URL に差し替える
          * （saveMask 後に合成画像 URL に切り替える際に使用）
+         * ※ img.src は変更しない（image-processing.js の img.onload が
+         *    originalImage を上書きするのを防ぐため）
          */
         updateProcessedSrc(newUrl) {
-            // クロージャ変数は変えられないため img.src を直接更新し
-            // 参照先 URL を変えたとみなす代替手段
-            img.src = newUrl;
+            processedSrc    = newUrl;   // クロージャ変数を直接更新（setter経由でも可）
             showingOriginal = false;
         }
     };
