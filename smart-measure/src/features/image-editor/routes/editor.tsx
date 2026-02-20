@@ -230,6 +230,11 @@ editor.get('/edit/:id', async (c) => {
   const productSku = imageResult.sku || 'Unknown';
   const productName = imageResult.product_name || '';
   const hasMask = true; // マスクURLの有無に関わらず常にマスク編集タブを表示
+
+  // マスクURLにもキャッシュバスターを付与（保存後の古いマスクが表示されないように）
+  const maskImageUrlWithCache = maskImageUrl
+    ? `${maskImageUrl}?_cb=${Date.now()}`
+    : '';
   
   logger.debug(`📤 Sending to browser - imageSrc: ${imageSrc}, originalSrc: ${originalSrc}`);
 
@@ -462,7 +467,7 @@ editor.get('/edit/:id', async (c) => {
              data-has-mask={String(hasMask)}
 
         
-             data-mask-image-url={maskImageUrl || ''}
+             data-mask-image-url={maskImageUrlWithCache}
 
         
              data-product-sku={productSku}

@@ -38,38 +38,70 @@
         const S = window.EditorState;
         if (!S || !S.maskImageUrl) return;
 
-        console.log('🎭 loadMaskImage:', S.maskImageUrl);
+        // キャッシュバスターを付与（ブラウザキャッシュで古いマスクが出ないようにする）
+        const rawUrl  = S.maskImageUrl;
+        const maskUrl = rawUrl + (rawUrl.includes('?') ? '&' : '?') + '_cb=' + Date.now();
+        console.log('🎭 loadMaskImage (cache-busted):', maskUrl);
 
-        const mi       = new Image();
-        mi.crossOrigin = 'anonymous';
-        S.maskImage    = mi;
+        // /api/images/proxy 経由で読み込む（R2直URLのCORSを回避）
+        const proxyUrl = `/api/images/proxy?url=${encodeURIComponent(rawUrl)}&_cb=${Date.now()}`;
 
-        mi.onload = function () {
-            const { canvas, maskCanvas, maskCtx } = S;
+        function doLoad(src) {
+            const mi       = new Image();
+            mi.crossOrigin = 'anonymous';
+            S.maskImage    = mi;
 
-            const tmp    = document.createElement('canvas');
-            tmp.width    = canvas.width;
-            tmp.height   = canvas.height;
-            const tmpCtx = tmp.getContext('2d');
-            tmpCtx.drawImage(mi, 0, 0, canvas.width, canvas.height);
+            mi.onload = function () {
+                const { canvas, maskCanvas, maskCtx } = S;
 
-            S.maskImageData = tmpCtx.getImageData(0, 0, canvas.width, canvas.height);
-            maskCtx.putImageData(S.maskImageData, 0, 0);
+                // canvas がまだ 0 サイズの場合は待つ
+                if (canvas.width === 0 || canvas.height === 0) {
+                    console.warn('⚠️ canvas not ready, retrying in 200ms');
+                    setTimeout(() => doLoad(src), 200);
+                    return;
+                }
 
-            console.log('✅ Mask loaded, size:', canvas.width, 'x', canvas.height);
+                console.log('🎭 Mask image natural size:', mi.naturalWidth, 'x', mi.naturalHeight);
+                console.log('🎭 Canvas size:', canvas.width, 'x', canvas.height);
 
-            saveMaskHistory();
+                // maskCanvas をメインキャンバスと同サイズに揃えてからマスクを描画
+                maskCanvas.width  = canvas.width;
+                maskCanvas.height = canvas.height;
 
-            if (S.maskVisible) {
-                window.ImageAdjust && window.ImageAdjust.applyMaskOverlay();
-            }
-        };
+                // マスク画像をキャンバスサイズにフィットさせて描画
+                // （マスク保存時のサイズ != 現在のキャンバスサイズの場合もスケールで合わせる）
+                const tmp    = document.createElement('canvas');
+                tmp.width    = canvas.width;
+                tmp.height   = canvas.height;
+                const tmpCtx = tmp.getContext('2d');
+                tmpCtx.drawImage(mi, 0, 0, canvas.width, canvas.height);
 
-        mi.onerror = function () {
-            console.error('❌ loadMaskImage failed:', S.maskImageUrl);
-        };
+                S.maskImageData = tmpCtx.getImageData(0, 0, canvas.width, canvas.height);
+                maskCtx.putImageData(S.maskImageData, 0, 0);
 
-        mi.src = S.maskImageUrl;
+                console.log('✅ Mask loaded & synced to canvas size:', canvas.width, 'x', canvas.height);
+
+                saveMaskHistory();
+
+                if (S.maskVisible) {
+                    window.ImageAdjust && window.ImageAdjust.applyMaskOverlay();
+                }
+            };
+
+            mi.onerror = function () {
+                if (src !== proxyUrl) {
+                    console.warn('⚠️ Direct load failed, retrying via proxy:', proxyUrl);
+                    doLoad(proxyUrl);
+                } else {
+                    console.error('❌ loadMaskImage failed (both direct and proxy):', rawUrl);
+                }
+            };
+
+            mi.src = src;
+        }
+
+        // まずプロキシ経由で試みる（CORSとキャッシュ両方を解決）
+        doLoad(proxyUrl);
     }
 
     // ── マスク描画（maskCanvas への書き込み） ────────────────────────
@@ -131,6 +163,14 @@
         origImg.crossOrigin = 'anonymous';
 
         origImg.onload = function () {
+            // canvas をオリジナル画像サイズに合わせる
+            if (canvas.width !== origImg.naturalWidth || canvas.height !== origImg.naturalHeight) {
+                console.log(`📐 Resizing canvas: ${canvas.width}x${canvas.height} → ${origImg.naturalWidth}x${origImg.naturalHeight}`);
+                canvas.width  = origImg.naturalWidth;
+                canvas.height = origImg.naturalHeight;
+                // maskCanvas も同じサイズにリサイズ（内容はスケール）
+                _resizeMaskCanvas(origImg.naturalWidth, origImg.naturalHeight);
+            }
             img.src = originalSrc;
             ctx.drawImage(origImg, 0, 0);
             console.log('✅ Switched to original for mask');
@@ -142,6 +182,11 @@
             console.warn('⚠️ CORS failed, retrying via proxy');
             const proxy   = new Image();
             proxy.onload  = function () {
+                if (canvas.width !== proxy.naturalWidth || canvas.height !== proxy.naturalHeight) {
+                    canvas.width  = proxy.naturalWidth;
+                    canvas.height = proxy.naturalHeight;
+                    _resizeMaskCanvas(proxy.naturalWidth, proxy.naturalHeight);
+                }
                 img.src = `/api/images/proxy?url=${encodeURIComponent(originalSrc)}`;
                 ctx.drawImage(proxy, 0, 0);
                 if (callback) callback();
@@ -409,6 +454,40 @@
             };
             i.src = src;
         });
+    }
+
+    // ── maskCanvas をリサイズ（内容をスケーリングして保持） ──────────
+
+    /**
+     * maskCanvas を新しいサイズにリサイズする。
+     * 既存のマスク内容は新サイズにスケールして引き継ぐ。
+     * @param {number} newW - 新しい幅
+     * @param {number} newH - 新しい高さ
+     */
+    function _resizeMaskCanvas(newW, newH) {
+        const S = window.EditorState;
+        if (!S) return;
+        const { maskCanvas, maskCtx } = S;
+
+        // 現在の内容を一時 canvas に保存
+        const tmp    = document.createElement('canvas');
+        tmp.width    = maskCanvas.width;
+        tmp.height   = maskCanvas.height;
+        const tmpCtx = tmp.getContext('2d');
+        if (S.maskImageData) {
+            tmpCtx.putImageData(S.maskImageData, 0, 0);
+        }
+
+        // maskCanvas を新サイズにリサイズ
+        maskCanvas.width  = newW;
+        maskCanvas.height = newH;
+
+        // 内容をスケーリングして再描画
+        maskCtx.drawImage(tmp, 0, 0, newW, newH);
+
+        // maskImageData を更新
+        S.maskImageData = maskCtx.getImageData(0, 0, newW, newH);
+        console.log(`📐 maskCanvas resized to ${newW}x${newH}`);
     }
 
     // ── 初期化（image-processing.js の init() から呼ばれる） ─────────

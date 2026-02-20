@@ -92,10 +92,36 @@
             return;
         }
 
-        const { canvas, ctx, img, maskImageData } = S;
+        const { canvas, ctx, img, maskCanvas, maskCtx } = S;
+        let { maskImageData } = S;
 
         // ベース画像を再描画
         ctx.drawImage(img, 0, 0);
+
+        // ── サイズ不一致チェック ──────────────────────────────────────
+        // maskImageData のサイズが canvas と違う場合はスケールし直す
+        const maskW = maskImageData.width;
+        const maskH = maskImageData.height;
+
+        if (maskW !== canvas.width || maskH !== canvas.height) {
+            console.warn(`⚠️ Mask size (${maskW}x${maskH}) != canvas (${canvas.width}x${canvas.height}). Re-scaling mask.`);
+
+            // maskCanvas を canvas サイズにリサイズして再描画
+            const tmp    = document.createElement('canvas');
+            tmp.width    = canvas.width;
+            tmp.height   = canvas.height;
+            const tmpCtx = tmp.getContext('2d');
+
+            // maskCanvas の現在内容を新サイズに引き伸ばす
+            tmpCtx.drawImage(maskCanvas, 0, 0, canvas.width, canvas.height);
+            maskImageData = tmpCtx.getImageData(0, 0, canvas.width, canvas.height);
+
+            // 以後の操作のために state も更新
+            maskCanvas.width  = canvas.width;
+            maskCanvas.height = canvas.height;
+            maskCtx.putImageData(maskImageData, 0, 0);
+            S.maskImageData = maskImageData;
+        }
 
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const mData     = maskImageData.data;
@@ -116,7 +142,7 @@
         }
 
         ctx.putImageData(imageData, 0, 0);
-        console.log(`🎭 Mask overlay: bright=${bright} dark=${dark}`);
+        console.log(`🎭 Mask overlay: bright=${bright} dark=${dark} | canvas=${canvas.width}x${canvas.height} mask=${maskImageData.width}x${maskImageData.height}`);
     }
 
     // ── スライダー UI ────────────────────────────────────────────────
