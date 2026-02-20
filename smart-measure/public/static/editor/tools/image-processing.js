@@ -342,8 +342,8 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('🎭 Mask data length:', maskImageData.data.length);
         
         // Apply blue overlay based on RGB brightness
-        // Dark (RGB sum <= 3) = background area → show blue overlay
-        // Bright (RGB sum > 3) = product area → no overlay
+        // Bright (RGB sum > 3) = product area → show blue overlay
+        // Dark (RGB sum <= 3) = background area → no overlay
         let darkPixelCount = 0;
         let brightPixelCount = 0;
         
@@ -353,23 +353,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const b = maskImageData.data[i + 2]; // Blue channel (0-255)
             const brightness = r + g + b;         // Total brightness (0-765)
             
-            // Check if pixel is dark (background area)
-            // RGB (1,1,1) has brightness = 3, so use threshold of 3
-            if (brightness <= 3) {
-                darkPixelCount++;
-                // Apply blue overlay to background area (50% opacity)
+            // Check if pixel is bright (product area)
+            // RGB (255,255,255) has brightness = 765
+            // RGB (1,1,1) has brightness = 3
+            if (brightness > 3) {
+                brightPixelCount++;
+                // Apply blue overlay to product area (50% opacity)
                 imageData.data[i] = imageData.data[i] * 0.5 + 0 * 0.5;         // R
                 imageData.data[i + 1] = imageData.data[i + 1] * 0.5 + 100 * 0.5; // G
                 imageData.data[i + 2] = imageData.data[i + 2] * 0.5 + 255 * 0.5; // B
                 // Alpha remains unchanged
             } else {
-                brightPixelCount++;
-                // No overlay on product area (bright pixels)
+                darkPixelCount++;
+                // No overlay on background area (dark pixels)
             }
         }
         
-        console.log('🎭 Dark pixels (background with blue overlay):', darkPixelCount);
-        console.log('🎭 Bright pixels (product, no overlay):', brightPixelCount);
+        console.log('🎭 Bright pixels (product with blue overlay):', brightPixelCount);
+        console.log('🎭 Dark pixels (background, no overlay):', darkPixelCount);
         
         // Draw the overlaid image
         ctx.putImageData(imageData, 0, 0);
