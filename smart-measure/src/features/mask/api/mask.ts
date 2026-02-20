@@ -88,8 +88,10 @@ maskApi.post('/api/save-mask/:sku', async (c) => {
         const base64Data = maskDataUrl.replace(/^data:image\/png;base64,/, '');
         const buffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
         
-        // Generate R2 key: {company_id}/{sku}/{filenamePart}_mask.png (overwrite existing)
-        const r2Key = `${companyId}/${sku}/${filenamePart}_mask.png`;
+        // Generate R2 key: {company_id}/{sku}/{filenamePart}.png (overwrite existing)
+        // NOTE: filenamePart already contains "_mask" suffix if it came from an existing mask URL
+        // e.g. "abc123_mask" → saved as "abc123_mask.png" (same filename, overwrite)
+        const r2Key = `${companyId}/${sku}/${filenamePart}.png`;
         
         if (c.env.PRODUCT_IMAGES) {
             // Upload to R2
