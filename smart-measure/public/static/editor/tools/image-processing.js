@@ -881,7 +881,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 setTimeout(() => {
                     // 画像調整画面へ遷移（現在の編集画面をリロード）
-                    window.location.href = '/edit/' + imageId;
+                    window.location.href = '/dashboard';
                 }, 1000);
             } else {
                 throw new Error(result.error || 'Failed to save');
@@ -894,7 +894,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 button.disabled = false;
                 // 失敗時のみ元のテキストに戻す
                 if (!button.classList.contains('bg-green-600')) {
-                    button.innerHTML = '<i class="fas fa-save mr-2"></i> 保存して次へ';
+                    button.innerHTML = '<i class="fas fa-save mr-2"></i> 保存してダッシュボードへ';
                 }
             }
         }
@@ -1147,7 +1147,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // ボタンを元に戻す
             if (saveBtn) {
                 saveBtn.disabled = false;
-                saveBtn.innerHTML = '<i class="fas fa-save mr-2"></i> 保存して次へ';
+                saveBtn.innerHTML = '<i class="fas fa-save mr-2"></i> 保存';
             }
         }
     };

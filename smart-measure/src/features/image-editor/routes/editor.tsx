@@ -344,7 +344,7 @@ editor.get('/edit/:id', async (c) => {
                  <div class="mt-auto pt-4 border-t border-gray-100">
                      <div class="space-y-2">
                          <button id="btn-save" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg shadow-md shadow-blue-200 transition-all flex items-center justify-center text-sm">
-                             <i class="fas fa-save mr-2"></i> 保存して次へ
+                             <i class="fas fa-save mr-2"></i> 保存してダッシュボードへ
                          </button>
                          <button class="w-full bg-white hover:bg-gray-50 text-gray-500 font-medium py-2 rounded-lg transition-colors text-sm border border-transparent hover:border-gray-200">
                              キャンセル
@@ -412,7 +412,7 @@ editor.get('/edit/:id', async (c) => {
                     <div class="mt-auto pt-4 border-t border-gray-100">
                         <div class="space-y-2">
                             <button onclick={`saveMask('${productSku}')`} class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg shadow-md shadow-blue-200 transition-all flex items-center justify-center text-sm">
-                                <i class="fas fa-save mr-2"></i> 保存して次へ
+                                <i class="fas fa-save mr-2"></i> 保存
                             </button>
                         </div>
                     </div>
