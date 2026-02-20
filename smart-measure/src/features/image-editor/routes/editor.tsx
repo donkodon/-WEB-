@@ -330,7 +330,7 @@ editor.get('/edit/:id', async (c) => {
                 {/* Manual Tools */}
                 <div class="mb-4">
                      <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">手動修正</div>
-                     <div class="grid grid-cols-2 gap-2">
+                     <div class="grid grid-cols-3 gap-2">
                          <button id="btn-crop" class="tool-btn flex flex-col items-center justify-center p-2 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600">
                              <i class="fas fa-crop-alt mb-1 text-sm"></i>
                              <span class="text-[10px]">切り抜き</span>
@@ -343,13 +343,6 @@ editor.get('/edit/:id', async (c) => {
                              <i class="fas fa-eraser mb-1 text-sm"></i>
                              <span class="text-[10px]">消しゴム</span>
                          </button>
-                         <button id="btn-mask" class="tool-btn flex flex-col items-center justify-center p-2 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600" onclick="enableMaskMode()">
-                             <i class="fas fa-mask mb-1 text-sm"></i>
-                             <span class="text-[10px]">マスク</span>
-                         </button>
-                     </div>
-                     <div id="mask-mode-indicator" class="mt-2 text-xs text-center text-blue-600 font-medium hidden">
-                         <i class="fas fa-info-circle mr-1"></i> 青い部分が商品として保持されます
                      </div>
                 </div>
 
@@ -362,74 +355,7 @@ editor.get('/edit/:id', async (c) => {
                     <input type="range" id="range-size" min="1" max="100" value="24" class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600" />
                 </div>
 
-                {/* Mask Editing Panel (Hidden by default) */}
-                <div id="mask-panel" class="mb-4 border-2 border-blue-200 rounded-lg p-3 bg-blue-50 hidden">
-                    <div class="text-xs font-bold text-blue-700 mb-3 flex items-center">
-                        <i class="fas fa-mask mr-2"></i>
-                        マスク編集モード
-                    </div>
-                    
-                    {/* Brush/Eraser Toggle */}
-                    <div class="grid grid-cols-2 gap-2 mb-3">
-                        <button id="mask-brush-btn" class="flex flex-col items-center justify-center p-2 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50">
-                            <i class="fas fa-paint-brush mb-1"></i>
-                            商品指定
-                        </button>
-                        <button id="mask-eraser-btn" class="flex flex-col items-center justify-center p-2 bg-white border-2 border-blue-400 rounded-lg text-xs font-medium text-blue-600">
-                            <i class="fas fa-eraser mb-1"></i>
-                            背景指定
-                        </button>
-                    </div>
-                    
-                    {/* Mask Edit Hint */}
-                    <div class="mb-3 text-[10px] text-gray-500 bg-white border border-gray-200 rounded-lg p-2">
-                        <i class="fas fa-lightbulb text-yellow-500 mr-1"></i>
-                        最初は全体が<strong class="text-blue-600">青（商品）</strong>。消しゴムで背景を指定
-                    </div>
-                    
-                    {/* Mask Brush Size */}
-                    <div class="mb-3">
-                        <div class="flex justify-between text-[10px] text-gray-600 mb-1">
-                            <span>ブラシサイズ</span>
-                            <span id="mask-size-val" class="font-bold text-blue-600">20px</span>
-                        </div>
-                        <input type="range" id="mask-size" min="5" max="100" value="20" class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600" />
-                    </div>
-                    
-                    {/* Undo/Redo */}
-                    <div class="grid grid-cols-2 gap-2 mb-3">
-                        <button id="mask-undo" class="py-1.5 text-xs bg-white border border-gray-200 rounded hover:bg-gray-50 text-gray-700 font-medium">
-                            <i class="fas fa-undo mr-1"></i> 元に戻す
-                        </button>
-                        <button id="mask-redo" class="py-1.5 text-xs bg-white border border-gray-200 rounded hover:bg-gray-50 text-gray-700 font-medium">
-                            <i class="fas fa-redo mr-1"></i> やり直す
-                        </button>
-                    </div>
-                    
-                    {/* Mask Visibility Toggle */}
-                    <div class="mb-3">
-                        <label class="flex items-center space-x-2 p-2 bg-white border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
-                            <input type="checkbox" id="mask-visibility-toggle" checked class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-gray-300" />
-                            <span class="text-xs font-medium text-gray-700">
-                                <i class="fas fa-eye text-blue-600 mr-1"></i>
-                                青いマスクを表示
-                            </span>
-                        </label>
-                    </div>
-                    
-                    {/* Mask Actions */}
-                    <div class="space-y-2">
-                        <button id="mask-preview" class="w-full py-2 text-xs bg-white border border-blue-300 rounded-lg hover:bg-blue-50 text-blue-600 font-bold">
-                            <i class="fas fa-eye mr-1"></i> プレビュー
-                        </button>
-                        <button id="mask-save" class="w-full py-2 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold shadow">
-                            <i class="fas fa-save mr-1"></i> マスクを保存
-                        </button>
-                        <button id="mask-cancel" class="w-full py-1.5 text-xs bg-white border border-gray-200 rounded hover:bg-gray-50 text-gray-600">
-                            <i class="fas fa-times mr-1"></i> キャンセル
-                        </button>
-                    </div>
-                </div>
+
 
                 {/* Options & Actions */}
                  <div class="mt-auto pt-4 border-t border-gray-100">
