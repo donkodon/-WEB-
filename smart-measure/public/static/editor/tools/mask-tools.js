@@ -202,7 +202,7 @@
         drawOriginal(originalSrc);
     };
 
-    /** 調整タブに切り替える際：合成済み画像（adjustedImage）または オリジナル をキャンバスに再描画 */
+    /** 調整タブに切り替える際：常にオリジナル画像をキャンバスに再描画 */
     window.switchToProcessedImage = function () {
         const S = window.EditorState;
         if (!S) return;
@@ -210,23 +210,17 @@
         S.showingOriginal = false;
         S.maskVisible     = false;
 
-        // saveMask後は adjustedImage（合成済み白抜き画像）が存在するのでそちらを優先。
-        // saveMask前は adjustedImage が null なので originalImage（オリジナル）を使う。
+        // 常にオリジナル画像をベースとして表示する。
+        // adjustedImage（白抜き合成）は保存用データであり、表示には使わない。
         // img.src は変更しない（img.onload を再発火させないため）。
-        if (S.adjustedImage) {
-            const { canvas, ctx } = S;
-            canvas.width  = S.adjustedImage.width;
-            canvas.height = S.adjustedImage.height;
-            ctx.putImageData(S.adjustedImage, 0, 0);
-            window.logger && window.logger.debug('✅ Switched to adjusted image (from adjustedImage cache)');
-        } else if (S.originalImage) {
+        if (S.originalImage) {
             const { canvas, ctx } = S;
             canvas.width  = S.originalImage.width;
             canvas.height = S.originalImage.height;
             ctx.putImageData(S.originalImage, 0, 0);
-            window.logger && window.logger.debug('✅ Switched to original image (adjustedImage not yet set)');
+            window.logger && window.logger.debug('✅ Switched to adjust tab (showing original image)');
         } else {
-            // どちらもない場合のフォールバック（初期ロード前）
+            // originalImage がない場合のフォールバック（初期ロード前）
             S.img.src = S.originalSrc;
             window.logger && window.logger.debug('✅ Switched to original image (fallback via img.src)');
         }
@@ -267,13 +261,12 @@
         S.maskVisible = false;
 
         // キャンバスを再描画する（img.src 依存を完全排除）
-        // 調整タブ復帰時: adjustedImage（saveMask後）または originalImage（未保存）
-        // マスクタブ内: originalForMask（オリジナルキャッシュ）
-        if (S.showingOriginal && S.originalForMask) {
+        // 常にオリジナル画像をベースとして再描画する
+        // マスクタブ内: originalForMask（オリジナルのキャッシュ）を優先
+        // 調整タブ復帰時: originalImage（オリジナル）
+        if (S.originalForMask) {
             S.ctx.putImageData(S.originalForMask, 0, 0);
-        } else if (!S.showingOriginal && S.adjustedImage) {
-            S.ctx.putImageData(S.adjustedImage, 0, 0);
-        } else if (!S.showingOriginal && S.originalImage) {
+        } else if (S.originalImage) {
             S.ctx.putImageData(S.originalImage, 0, 0);
         } else {
             S.ctx.drawImage(S.img, 0, 0); // フォールバック
@@ -289,14 +282,9 @@
         const btn = document.getElementById('btn-toggle-original');
 
         if (S.showingOriginal) {
-            // 調整タブ表示に戻す: adjustedImage（saveMask後）または originalImage
+            // 調整タブ表示に戻す: 常にオリジナル画像
             S.showingOriginal = false;
-            if (S.adjustedImage) {
-                const { canvas, ctx } = S;
-                canvas.width  = S.adjustedImage.width;
-                canvas.height = S.adjustedImage.height;
-                ctx.putImageData(S.adjustedImage, 0, 0);
-            } else if (S.originalImage) {
+            if (S.originalImage) {
                 const { canvas, ctx } = S;
                 canvas.width  = S.originalImage.width;
                 canvas.height = S.originalImage.height;

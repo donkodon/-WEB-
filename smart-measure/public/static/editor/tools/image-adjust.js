@@ -20,10 +20,9 @@
 
         const { canvas, ctx, brightness, wb, hue, maskVisible } = S;
 
-        // saveMask後は adjustedImage（白抜き合成画像）をベースとして使う
-        // saveMask前は originalImage（オリジナル画像）をベースとして使う
-        const baseImage = S.adjustedImage || S.originalImage;
-        ctx.putImageData(baseImage, 0, 0);
+        // 常にオリジナル画像をベースとして使う（saveMask後も変わらない）
+        // ※ adjustedImage（白抜き合成）は保存用データであり、表示ベースには使わない
+        ctx.putImageData(S.originalImage, 0, 0);
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const data      = imageData.data;
 
@@ -76,7 +75,7 @@
      */
     function applyCurrentAdjustments() {
         const S = window.EditorState;
-        if (!S || !(S.adjustedImage || S.originalImage)) return;
+        if (!S || !S.originalImage) return;
         if (S.brightness !== 0 || S.wb !== 5500 || S.hue !== 0) {
             applyAllAdjustments();
         }
