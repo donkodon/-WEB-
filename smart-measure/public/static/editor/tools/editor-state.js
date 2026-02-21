@@ -62,12 +62,16 @@
     let lastX       = 0;
     let lastY       = 0;
 
-    // originalImage キャッシュ（調整タブの基準となる ImageData = 合成済み画像）
+    // originalImage キャッシュ（常にオリジナル画像のImageData。上書きしない）
     let originalImage = null;
 
     // originalForMask キャッシュ（マスクタブで使うオリジナル画像の ImageData）
     // switchToOriginalForMask でセット。drawMask / applyMaskOverlay の再描画に使用。
     let originalForMask = null;
+
+    // adjustedImage キャッシュ（saveMask後の合成済み画像 ImageData）
+    // adjustタブでの再描画ベースとして使用。saveMaskのStep3でセット。
+    let adjustedImage = null;
 
     // 最終保存まで保留するデータ（マスク保存時にセット、保存してダッシュボードへで使用）
     let pendingMaskDataUrl      = null; // マスク画像 base64 PNG
@@ -130,13 +134,17 @@
         get lastY()                     { return lastY; },
         set lastY(v)                    { lastY = v; },
 
-        // originalImage キャッシュ（調整タブ用・読み書き）
+        // originalImage キャッシュ（常にオリジナル画像・読み書き）
         get originalImage()             { return originalImage; },
         set originalImage(v)            { originalImage = v; },
 
         // originalForMask キャッシュ（マスクタブ用・読み書き）
         get originalForMask()           { return originalForMask; },
         set originalForMask(v)          { originalForMask = v; },
+
+        // adjustedImage キャッシュ（saveMask後の合成済み画像・読み書き）
+        get adjustedImage()             { return adjustedImage; },
+        set adjustedImage(v)            { adjustedImage = v; },
 
         // 保留中データ（マスク保存時にセット → 最終保存時にR2へ）
         get pendingMaskDataUrl()             { return pendingMaskDataUrl; },

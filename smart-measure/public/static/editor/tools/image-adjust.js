@@ -9,7 +9,9 @@
     // ── ピクセル調整コア ─────────────────────────────────────────────
 
     /**
-     * originalImage キャッシュを使ってキャンバスに調整結果を描画する。
+     * 調整ベース画像をキャンバスに適用して調整結果を描画する。
+     * saveMask後は adjustedImage（白抜き合成済み）を、
+     * それ以前は originalImage（オリジナル）をベースとして使う。
      * maskVisible が true の場合はオーバーレイも再適用する。
      */
     function applyAllAdjustments() {
@@ -18,8 +20,10 @@
 
         const { canvas, ctx, brightness, wb, hue, maskVisible } = S;
 
-        // originalImage を一度書き戻してから取得
-        ctx.putImageData(S.originalImage, 0, 0);
+        // saveMask後は adjustedImage（白抜き合成画像）をベースとして使う
+        // saveMask前は originalImage（オリジナル画像）をベースとして使う
+        const baseImage = S.adjustedImage || S.originalImage;
+        ctx.putImageData(baseImage, 0, 0);
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const data      = imageData.data;
 
@@ -72,7 +76,7 @@
      */
     function applyCurrentAdjustments() {
         const S = window.EditorState;
-        if (!S) return;
+        if (!S || !(S.adjustedImage || S.originalImage)) return;
         if (S.brightness !== 0 || S.wb !== 5500 || S.hue !== 0) {
             applyAllAdjustments();
         }
@@ -95,12 +99,14 @@
         const { canvas, ctx, maskCanvas, maskCtx } = S;
         let { maskImageData } = S;
 
-        // ベース画像を再描画（img.src 依存を完全排除）
-        // マスクタブ（showingOriginal=true）: originalForMask キャッシュから
-        // 調整タブ（showingOriginal=false）: originalImage キャッシュから
-        if (S.showingOriginal && S.originalForMask) {
+        // ベース画像を再描画（常にオリジナル画像を使う）
+        // originalForMask（マスクタブ切替時にセット）があればそれを優先。
+        // なければ originalImage（初回ロード時のオリジナル画像）を使う。
+        // ※ saveMask後の合成画像（adjustedImage）はここでは使わない。
+        //   マスクオーバーレイは常にオリジナル画像の上に描画する。
+        if (S.originalForMask) {
             ctx.putImageData(S.originalForMask, 0, 0);
-        } else if (!S.showingOriginal && S.originalImage) {
+        } else if (S.originalImage) {
             ctx.putImageData(S.originalImage, 0, 0);
         } else {
             // どちらのキャッシュもない場合のフォールバック（初期ロード直後など）

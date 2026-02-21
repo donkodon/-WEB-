@@ -202,7 +202,7 @@
         drawOriginal(originalSrc);
     };
 
-    /** 調整タブに切り替える際：処理済み画像（合成済みキャッシュ）をキャンバスに再描画 */
+    /** 調整タブに切り替える際：合成済み画像（adjustedImage）または オリジナル をキャンバスに再描画 */
     window.switchToProcessedImage = function () {
         const S = window.EditorState;
         if (!S) return;
@@ -210,20 +210,25 @@
         S.showingOriginal = false;
         S.maskVisible     = false;
 
-        // originalImage キャッシュが存在する場合は必ずそこから再描画する。
-        // saveMask後はキャッシュが合成済み画像になっているため正しい状態を返せる。
+        // saveMask後は adjustedImage（合成済み白抜き画像）が存在するのでそちらを優先。
+        // saveMask前は adjustedImage が null なので originalImage（オリジナル）を使う。
         // img.src は変更しない（img.onload を再発火させないため）。
-        if (S.originalImage) {
+        if (S.adjustedImage) {
+            const { canvas, ctx } = S;
+            canvas.width  = S.adjustedImage.width;
+            canvas.height = S.adjustedImage.height;
+            ctx.putImageData(S.adjustedImage, 0, 0);
+            window.logger && window.logger.debug('✅ Switched to adjusted image (from adjustedImage cache)');
+        } else if (S.originalImage) {
             const { canvas, ctx } = S;
             canvas.width  = S.originalImage.width;
             canvas.height = S.originalImage.height;
             ctx.putImageData(S.originalImage, 0, 0);
-            window.logger && window.logger.debug('✅ Switched to processed image (from originalImage cache)');
+            window.logger && window.logger.debug('✅ Switched to original image (adjustedImage not yet set)');
         } else {
-            // 初回ロード前など originalImage がない場合のフォールバック
-            // この場合のみ img.src を触る（onInitialImageLoad がまだ呼ばれていない状態）
-            S.img.src = S.processedSrc;
-            window.logger && window.logger.debug('✅ Switched to processed image (fallback via img.src)');
+            // どちらもない場合のフォールバック（初期ロード前）
+            S.img.src = S.originalSrc;
+            window.logger && window.logger.debug('✅ Switched to original image (fallback via img.src)');
         }
 
         const btn = document.getElementById('btn-toggle-original');
@@ -262,10 +267,12 @@
         S.maskVisible = false;
 
         // キャンバスを再描画する（img.src 依存を完全排除）
-        // マスクタブ（showingOriginal=true）: originalForMask キャッシュから
-        // 調整タブ（showingOriginal=false）: originalImage キャッシュから
+        // 調整タブ復帰時: adjustedImage（saveMask後）または originalImage（未保存）
+        // マスクタブ内: originalForMask（オリジナルキャッシュ）
         if (S.showingOriginal && S.originalForMask) {
             S.ctx.putImageData(S.originalForMask, 0, 0);
+        } else if (!S.showingOriginal && S.adjustedImage) {
+            S.ctx.putImageData(S.adjustedImage, 0, 0);
         } else if (!S.showingOriginal && S.originalImage) {
             S.ctx.putImageData(S.originalImage, 0, 0);
         } else {
@@ -282,15 +289,20 @@
         const btn = document.getElementById('btn-toggle-original');
 
         if (S.showingOriginal) {
-            // 処理済み（合成）画像に戻す: originalImage キャッシュから
+            // 調整タブ表示に戻す: adjustedImage（saveMask後）または originalImage
             S.showingOriginal = false;
-            if (S.originalImage) {
+            if (S.adjustedImage) {
+                const { canvas, ctx } = S;
+                canvas.width  = S.adjustedImage.width;
+                canvas.height = S.adjustedImage.height;
+                ctx.putImageData(S.adjustedImage, 0, 0);
+            } else if (S.originalImage) {
                 const { canvas, ctx } = S;
                 canvas.width  = S.originalImage.width;
                 canvas.height = S.originalImage.height;
                 ctx.putImageData(S.originalImage, 0, 0);
             } else {
-                S.img.src = S.processedSrc; // フォールバック
+                S.img.src = S.originalSrc; // フォールバック
             }
             if (btn) btn.innerHTML = '<i class="fas fa-image mr-2"></i> 元画像を確認';
         } else {
@@ -451,9 +463,10 @@
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(comp, 0, 0);
 
-            // originalImage キャッシュを合成済み画像で更新
+            // adjustedImage キャッシュを合成済み画像で更新
             // （switchToProcessedImage・hideMaskOverlay がここから再描画する）
-            S.originalImage   = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            // ※ originalImage は常にオリジナル画像のまま保持する（上書きしない）
+            S.adjustedImage   = ctx.getImageData(0, 0, canvas.width, canvas.height);
             S.showingOriginal = false;
             S.maskVisible     = false;
 
