@@ -1,0 +1,190 @@
+/**
+ * MaskService - マスク操作のビジネスロジック
+ *
+ * 責務:
+ *   - ファイル名の解決ロジック（filenamePart → maskBasename）
+ *   - base64 → Uint8Array 変換
+ *   - R2保存 + DB更新の調整（オーケストレーション）
+ *
+ * 依存: IMaskRepository（インターフェース経由 → テストで差し替え可能）
+ * 非依存: Hono の Context（c）, c.env → ルート層から切り離し済み
+ */
+
+import type { R2Bucket } from '@cloudflare/workers-types'
+import type { IMaskRepository } from '../../../shared/interfaces/mask-repository.interface'
+import { logger } from '../../../shared/helpers/logger'
+
+// ─────────────────────────────────────────────
+// 型定義
+// ─────────────────────────────────────────────
+
+export interface SaveMaskInput {
+  sku: string
+  companyId: string
+  maskDataUrl: string       // "data:image/png;base64,..." 形式
+  filenamePart?: string     // クライアントから指定された場合（任意）
+}
+
+export interface SaveMaskResult {
+  maskUrl: string
+  r2Key: string
+  maskBasename: string
+}
+
+export interface MaskInfoResult {
+  maskImageUrl: string | null
+}
+
+export interface RegenerateResult {
+  originalUrl: string
+  maskUrl: string
+}
+
+// ─────────────────────────────────────────────
+// MaskService
+// ─────────────────────────────────────────────
+
+export class MaskService {
+  constructor(private readonly maskRepo: IMaskRepository) {}
+
+  // ── マスク情報取得 ──────────────────────────────────────────────────────────
+  async getMaskInfo(
+    db: D1Database,
+    sku: string,
+    companyId: string
+  ): Promise<MaskInfoResult> {
+    const record = await this.maskRepo.findMaskUrl(db, sku, companyId)
+    return { maskImageUrl: record.maskImageUrl }
+  }
+
+  // ── マスク保存 ──────────────────────────────────────────────────────────────
+  async saveMask(
+    db: D1Database,
+    bucket: R2Bucket,
+    r2PublicUrl: string,
+    input: SaveMaskInput
+  ): Promise<SaveMaskResult> {
+    const { sku, companyId, maskDataUrl, filenamePart } = input
+
+    // ① ファイル名を解決する（純粋ロジック）
+    const maskBasename = await this.resolveMaskBasename(
+      db,
+      sku,
+      companyId,
+      filenamePart
+    )
+
+    const r2Key = `${companyId}/${sku}/${maskBasename}.png`
+    logger.debug(`🎭 Saving mask: company=${companyId}, sku=${sku}`)
+    logger.debug(`📦 R2 key: ${r2Key}`)
+
+    // ② base64 → バイナリ変換
+    const buffer = this.decodeBase64(maskDataUrl)
+
+    // ③ R2 に保存
+    await bucket.put(r2Key, buffer, {
+      httpMetadata: { contentType: 'image/png' },
+    })
+    logger.debug(`✅ Mask uploaded to R2: ${r2Key}`)
+
+    // ④ DB 更新
+    const maskUrl = `${r2PublicUrl}/${r2Key}`
+    await this.maskRepo.updateMaskUrl(db, sku, companyId, maskUrl)
+    logger.debug(`✅ DB updated: mask_image_url_r2=${maskUrl}`)
+
+    return { maskUrl, r2Key, maskBasename }
+  }
+
+  // ── 再生成用データ取得 ──────────────────────────────────────────────────────
+  async getRegenerateData(
+    db: D1Database,
+    sku: string,
+    companyId: string
+  ): Promise<RegenerateResult | null> {
+    const record = await this.maskRepo.findForRegenerate(db, sku, companyId)
+    if (!record) return null
+    return {
+      originalUrl: record.imageUrl,
+      maskUrl: record.maskImageUrl,
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // private: 純粋ロジック（テストしやすい部分）
+  // ─────────────────────────────────────────────
+
+  /**
+   * マスクのベースファイル名を解決する
+   *
+   * 優先順位:
+   *   1. クライアントから filenamePart が来た → {filenamePart}_mask
+   *   2. DBの image_urls から最初の画像のベース名 → {basename}_mask
+   *   3. フォールバック → {sku}_mask
+   */
+  async resolveMaskBasename(
+    db: D1Database,
+    sku: string,
+    companyId: string,
+    filenamePart?: string
+  ): Promise<string> {
+    if (filenamePart && filenamePart.trim()) {
+      const result = `${filenamePart.trim()}_mask`
+      logger.debug(`🎯 Using filenamePart from client: ${result}`)
+      return result
+    }
+
+    try {
+      const { imageUrls } = await this.maskRepo.findImageUrls(
+        db,
+        sku,
+        companyId
+      )
+      const firstUrl = imageUrls[0] ?? null
+
+      if (firstUrl) {
+        const basename = this.extractBasenameFromUrl(firstUrl)
+        const result = basename ? `${basename}_mask` : `${sku}_mask`
+        logger.debug(
+          `🎯 Using basename from image_urls: ${result} (from ${firstUrl})`
+        )
+        return result
+      }
+    } catch (e) {
+      logger.warn(`⚠️ Failed to get image_urls, fallback to sku_mask`, e)
+    }
+
+    const result = `${sku}_mask`
+    logger.debug(`🎯 Fallback to sku_mask: ${result}`)
+    return result
+  }
+
+  /**
+   * URLからファイル名のベース部分を抽出する（拡張子なし）
+   * 例: https://xxx.r2.dev/company/sku/abc123.jpg → "abc123"
+   */
+  extractBasenameFromUrl(url: string): string | null {
+    try {
+      const pathname = new URL(url).pathname
+      const filename = pathname.split('/').pop() || ''
+      const dotIndex = filename.lastIndexOf('.')
+      return dotIndex > 0 ? filename.substring(0, dotIndex) : filename || null
+    } catch {
+      const filename = url.split('/').pop() || ''
+      const dotIndex = filename.lastIndexOf('.')
+      return dotIndex > 0 ? filename.substring(0, dotIndex) : filename || null
+    }
+  }
+
+  /**
+   * "data:image/png;base64,..." 形式を Uint8Array に変換する
+   */
+  decodeBase64(dataUrl: string): Uint8Array {
+    const base64Data = dataUrl.replace(/^data:image\/png;base64,/, '')
+    const binary = atob(base64Data)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i)
+    }
+    return bytes
+  }
+}
