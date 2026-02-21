@@ -405,10 +405,12 @@
             window.logger && window.logger.debug('✅ Step1: mask data stored in memory (pending upload)');
 
             // Step 2: ベース画像 × マスク → 透過 PNG 合成
-            // f画像 > p画像 > オリジナルの優先順位で使用
-            // processedSrc は editor-state で f>p>original 優先に設定されている
-            const baseSrc = S.processedSrc || S.originalSrc;
-            window.logger && window.logger.debug('🖼️ saveMask base image:', baseSrc);
+            // ★ 必ずオリジナル画像（背景あり）を使う
+            // processedSrc（p画像）は背景削除済み透過PNGのため、
+            // 背景部分のRGBが(0,0,0)になっており、マスク白で alpha=255 を付けると
+            // 床など背景ピクセルが真っ黒になる。originalSrc なら木目等の色が保持される。
+            const baseSrc = S.originalSrc;
+            window.logger && window.logger.debug('🖼️ saveMask base image (original):', baseSrc);
             const origImg = await _loadImage(baseSrc);
 
             const comp    = document.createElement('canvas');
