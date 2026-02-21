@@ -49,6 +49,14 @@
             adjustTools.classList.add('hidden');
             maskTools.classList.remove('hidden');
             toolTitle.textContent = 'マスク編集';
+
+            // ★ 必ずマスクブラシに切り替える
+            // 調整タブで 'brush'/'eraser'/'crop' が選ばれたままだと
+            // drawOnCanvas() が呼ばれて main-canvas に黒色が直接描画されてしまうため。
+            if (window.setMaskMode) {
+                window.setMaskMode('brush');
+                window.logger && window.logger.debug('🖌️ currentTool forced to mask-brush on tab switch');
+            }
             
             // Switch to original image, then show mask overlay in callback
             window.logger && window.logger.debug('🎭 Switching to original image for mask editing');
