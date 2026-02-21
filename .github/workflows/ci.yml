@@ -10,6 +10,20 @@ defaults:
   run:
     working-directory: smart-measure
 
+lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: smart-measure/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+
+
 jobs:
   build:
     name: Build
