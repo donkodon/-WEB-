@@ -103,9 +103,6 @@ editor.get('/edit/:id', async (c) => {
                 <span class="text-gray-800 font-medium">画像処理プレビュー</span>
             </div>
             <div class="flex space-x-3">
-                 <button id="btn-toggle-original" onclick="window.toggleOriginal()" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg flex items-center hover:bg-gray-50 transition-colors text-sm font-medium">
-                    <i class="fas fa-image mr-2"></i> 元画像を確認
-                 </button>
                  <button onclick="window.location.reload()" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg flex items-center hover:bg-gray-50 transition-colors text-sm font-medium">
                     <i class="fas fa-history mr-2"></i> リセット
                  </button>
