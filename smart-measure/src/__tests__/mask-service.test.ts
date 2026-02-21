@@ -5,7 +5,7 @@
  * MockMaskRepository を差し込むことで、DBなしでビジネスロジックを検証。
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { MaskService } from '../features/mask/services/mask-service'
 import type { IMaskRepository } from '../shared/interfaces/mask-repository.interface'
 
