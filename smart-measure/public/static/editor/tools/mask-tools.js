@@ -444,6 +444,9 @@
             canvas.width  = comp.width;
             canvas.height = comp.height;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // 白背景を先に敷く（透明ピクセルが黒く見えるのを防ぐ）
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(comp, 0, 0);
 
             // originalImage キャッシュを合成済み画像で更新
