@@ -40,7 +40,7 @@ export async function verifyFirebaseToken(
       return null
     }
 
-    const [headerB64, payloadB64, signatureB64] = parts
+    const [_headerB64, payloadB64, _signatureB64] = parts
 
     // Decode payload
     const payload: DecodedToken = JSON.parse(

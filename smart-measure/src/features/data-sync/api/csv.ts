@@ -3,7 +3,7 @@ import type { AppEnv } from '../../../types/bindings'
 import type { CsvExportRow } from '../../../types/database'
 import { getCompanyId } from '../../auth/helpers/auth'
 import { requireFirebaseAuth } from '../../auth/middleware/auth'
-import { ImageUrlHelper, getImageUploadApiUrl } from '../../image-editor/helpers/image-url'
+import { getImageUploadApiUrl } from '../../image-editor/helpers/image-url'
 import { createSafeErrorResponse, ErrorCode, logError } from '../../../shared/helpers/error-handler'
 import { logger } from '../../../shared/helpers/logger'
 
@@ -84,8 +84,8 @@ csv.post('/api/import-csv', async (c) => {
             encoding = 'Shift-JIS';
             logger.debug('✅ Shift-JIS decoding successful');
             logger.debug('📝 First line after Shift-JIS:', text.split(/\r\n|\n|\r/)[0].substring(0, 100));
-        } catch (e) {
-            logger.warn('⚠️ Shift-JIS decoding failed, keeping UTF-8:', e);
+        } catch {
+            logger.warn('⚠️ Shift-JIS decoding failed, keeping UTF-8');
             encoding = 'UTF-8 (fallback)';
         }
     } else {
@@ -227,8 +227,8 @@ csv.post('/api/import-csv', async (c) => {
     }
 
     let count = 0;
-    let skippedRows: { row: number; reason: string; data: string }[] = [];
-    let problemRows: { row: number; sku: string; reason: string; rawData: string[] }[] = [];
+    const skippedRows: { row: number; reason: string; data: string }[] = [];
+    const problemRows: { row: number; sku: string; reason: string; rawData: string[] }[] = [];
     
     // Debug: Log index mapping
     logger.debug('📋 CSV Index Mapping:', JSON.stringify(idx, null, 2));
@@ -357,7 +357,7 @@ csv.post('/api/import-csv', async (c) => {
 
 
 // --- API: Download CSV Template ---
-csv.get('/api/download-csv-template', async (c) => {
+csv.get('/api/download-csv-template', async (_c) => {
     const csvTemplate = `sku,barcode,name,brand,category,size,color,price,status
 SAMPLE-001,4901234567890,サンプル商品A,ブランドA,カテゴリA,M,ブルー,5000,Active
 SAMPLE-002,4901234567891,サンプル商品B,ブランドB,カテゴリB,L,レッド,8000,Active
@@ -758,7 +758,7 @@ csv.get('/api/download-product-data/:imageId', async (c) => {
                 status = 'final';
                 logger.debug(' Found FINAL edited image:', finalKey);
             }
-        } catch (error) {
+        } catch {
             logger.warn(' No final edited image found');
         }
         
@@ -774,7 +774,7 @@ csv.get('/api/download-product-data/:imageId', async (c) => {
                     status = 'processed';
                     logger.debug(' Found processed image:', processedKey);
                 }
-            } catch (error) {
+            } catch {
                 logger.warn(' No processed image found');
             }
         }
@@ -796,7 +796,7 @@ csv.get('/api/download-product-data/:imageId', async (c) => {
                         logger.debug(' Found original image in WEB R2:', originalKey);
                         break;
                     }
-                } catch (error) {
+                } catch {
                     // 次の拡張子を試す
                 }
             }
@@ -824,7 +824,7 @@ csv.get('/api/download-product-data/:imageId', async (c) => {
                         logger.debug(' Found original image in image-upload-api:', testUrl);
                         break;
                     }
-                } catch (error) {
+                } catch {
                     // 次の拡張子を試す
                 }
             }
@@ -858,7 +858,7 @@ csv.get('/api/download-product-data/:imageId', async (c) => {
                         sku: sku,
                         status: status
                     });
-                } catch (error) {
+                } catch {
                     logger.error(' Error fetching from image-upload-api:', error);
                     // Continue to check if there's an R2 object
                 }

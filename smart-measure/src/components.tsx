@@ -1,5 +1,3 @@
-import { html } from 'hono/html'
-import { jsx } from 'hono/jsx'
 
 export const Sidebar = ({ active }: { active: string }) => (
   <aside class="w-64 bg-white border-r border-gray-200 h-screen fixed left-0 top-0 flex flex-col z-10">

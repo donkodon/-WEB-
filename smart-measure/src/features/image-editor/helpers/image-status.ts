@@ -5,7 +5,6 @@
  */
 
 import type { D1Database } from '@cloudflare/workers-types'
-import { getImageUploadApiUrl } from './image-url'
 import { logger } from '../../../shared/helpers/logger'
 
 /**

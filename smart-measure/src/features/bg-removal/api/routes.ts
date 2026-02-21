@@ -22,7 +22,7 @@ import { removeProductImageBackground } from '../services/bg-removal-service'
 
 // Helpers
 import { parseImageId, resolveR2ImageUrl } from '../helpers/image-resolver'
-import { base64ToBuffer, uploadAndUpdateDatabase, saveMaskToR2AndDb } from '../helpers/r2-uploader'
+import { base64ToBuffer, _uploadAndUpdateDatabase, saveMaskToR2AndDb } from '../helpers/r2-uploader'
 import { markImageAsProcessed } from '../../image-editor/helpers/image-status'
 
 const bgRemoval = new Hono<AppEnv>()

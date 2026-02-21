@@ -3,7 +3,7 @@ import { getR2PublicUrl } from '../../image-editor/helpers/r2-url'
 import type { AppEnv } from '../../../types/bindings'
 import type { SyncProduct } from '../../../types/database'
 import { getCompanyId } from '../../auth/helpers/auth'
-import { ImageUrlHelper } from '../../image-editor/helpers/image-url'
+import { } from '../../image-editor/helpers/image-url'
 import { createSafeErrorResponse, ErrorCode, logError } from '../../../shared/helpers/error-handler'
 import { logger } from '../../../shared/helpers/logger'
 
@@ -13,7 +13,7 @@ const sync = new Hono<AppEnv>()
 sync.post('/api/sync-from-mobile', async (c) => {
     try {
         const MOBILE_API_URL = c.env.MOBILE_API_URL || 'https://measure-master-api.jinkedon2.workers.dev';
-        const R2_PUBLIC_URL = getR2PublicUrl(c.env);
+        const _R2_PUBLIC_URL = getR2PublicUrl(c.env);
         
         logger.debug('🔄 Syncing product data from mobile app API and R2 bucket...');
         

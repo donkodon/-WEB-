@@ -7,7 +7,7 @@ const landmarks = new Hono<AppEnv>()
 
 landmarks.get('/landmarks/:sku', async (c) => {
   const sku = c.req.param('sku');
-  const companyId = getCompanyId(c);
+  const _companyId = getCompanyId(c);
   
   return c.render(
     <Layout active="dashboard" title={`ランドマーク表示 - ${sku}`}>

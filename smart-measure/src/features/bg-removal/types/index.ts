@@ -1,7 +1,7 @@
 /**
  * Background Removal Types
  */
-import type { CloudflareAI } from '../../../types/bindings'
+import type { _CloudflareAI } from '../../../types/bindings'
 
 /**
  * Background removal result

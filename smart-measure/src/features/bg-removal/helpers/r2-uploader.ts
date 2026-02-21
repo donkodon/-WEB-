@@ -4,7 +4,6 @@
 import type { R2Bucket } from '@cloudflare/workers-types'
 import type { R2UploadOptions } from '../types'
 import { logger } from '../../../shared/helpers/logger'
-import { getR2PublicUrl } from '../../image-editor/helpers/r2-url'
 import { markImageAsProcessed } from '../../image-editor/helpers/image-status'
 
 /**

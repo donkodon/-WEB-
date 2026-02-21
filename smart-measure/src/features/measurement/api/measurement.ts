@@ -29,7 +29,7 @@ measurement.post('/api/auto-measure', async (c) => {
     return c.json({ success: false, error: 'Product not found' }, 404);
   }
   
-  const category = productResult.category || '不明';
+  const _category = productResult.category || '不明';
   // Use environment variable or fallback to default
   const garmentClass = c.env.DEFAULT_GARMENT_CLASS || 'long sleeve top';
   

@@ -23,7 +23,7 @@ upload.post('/api/upload-image', async (c) => {
     const buffer = await file.arrayBuffer();
     const base64String = Buffer.from(buffer).toString('base64');
     const mimeType = file.type;
-    const dataUrl = `data:${mimeType};base64,${base64String}`;
+    const _dataUrl = `data:${mimeType};base64,${base64String}`;
 
     // images table removed
     return c.json({ success: true });

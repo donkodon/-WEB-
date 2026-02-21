@@ -5,8 +5,8 @@
  */
 
 import { cors } from 'hono/cors'
-import type { Context } from 'hono'
-import type { AppEnv } from '../../types/bindings'
+import type { _Context } from 'hono'
+import type { _AppEnv } from '../../types/bindings'
 import { logger } from '../helpers/logger'
 
 /**

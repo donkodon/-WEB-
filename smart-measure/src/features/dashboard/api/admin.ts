@@ -3,7 +3,7 @@ import { getR2PublicUrl } from '../../image-editor/helpers/r2-url'
 import type { AppEnv } from '../../../types/bindings'
 import { getCompanyId } from '../../auth/helpers/auth'
 import { createSafeErrorResponse, ErrorCode, logError } from '../../../shared/helpers/error-handler'
-import { requireAdmin, requireDebugAccess, preventGetMethod } from '../../auth/middleware/auth'
+import { requireAdmin, requireDebugAccess, _preventGetMethod } from '../../auth/middleware/auth'
 import { logger } from '../../../shared/helpers/logger'
 
 const admin = new Hono<AppEnv>()

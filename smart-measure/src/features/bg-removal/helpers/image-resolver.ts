@@ -4,7 +4,6 @@
  */
 import type { R2Bucket } from '@cloudflare/workers-types'
 import type { ImageResolverResult } from '../types'
-import { logger } from '../../../shared/helpers/logger'
 
 const EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp']
 
@@ -88,7 +87,7 @@ export async function resolveR2ImageUrl(
               filenamePart
             }
           }
-        } catch (e) {
+        } catch {
           // Continue to next attempt
         }
       }
@@ -107,7 +106,7 @@ export async function resolveR2ImageUrl(
             filenamePart
           }
         }
-      } catch (e) {
+      } catch {
         // Ignore fetch errors
       }
     }

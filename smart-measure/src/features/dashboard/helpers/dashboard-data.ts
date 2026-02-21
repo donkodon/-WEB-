@@ -205,7 +205,7 @@ export async function fetchDashboardData(options: DashboardDataOptions): Promise
         r2Key = `${companyId}/${r2Path}`
       }
       
-      const proxyUrl = `${IMAGE_UPLOAD_API_URL}/${r2Key}`
+      const _proxyUrl = `${IMAGE_UPLOAD_API_URL}/${r2Key}`
       const imageId = `r2_${sku}_${filename.replace(/\.[^/.]+$/, '')}`
       
       const filenameWithoutExt = filename.replace(/\.[^/.]+$/, '')

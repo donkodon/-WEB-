@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
-import { getImageUploadApiUrl } from '../helpers/image-url'
+import { } from '../helpers/image-url'
 import type { AppEnv } from '../../../types/bindings'
 import { Layout } from '../../../components'
-import { getCompanyId } from '../../auth/helpers/auth'
+import { } from '../../auth/helpers/auth'
 import { getImageDisplayUrl } from '../helpers/image-status'
 import { logger } from '../../../shared/helpers/logger'
 
@@ -26,7 +26,7 @@ editor.post('/api/upload-image', async (c) => {
     // Safe Base64 conversion using Buffer
     const base64String = Buffer.from(buffer).toString('base64');
     const mimeType = file.type;
-    const dataUrl = `data:${mimeType};base64,${base64String}`;
+    const _dataUrl = `data:${mimeType};base64,${base64String}`;
 
     // images table removed
 
@@ -40,7 +40,7 @@ editor.get('/edit/:id', async (c) => {
   // Priority 1: Get company_id from authenticated user
   const user = c.get('user') as { companyId?: string } | undefined;
   let companyId = user?.companyId;
-  let isAuthenticated = !!companyId;
+  const _isAuthenticated = !!companyId;
   
   if (companyId) {
     logger.debug(`✅ Editor accessed by authenticated user with companyId: ${companyId}`);
@@ -232,7 +232,7 @@ editor.get('/edit/:id', async (c) => {
   const originalSrc = baseOriginalSrc.includes('?v=') ? baseOriginalSrc : `${baseOriginalSrc}?v=${Date.now()}`;
   const isProcessed = !!imageResult.processed_url;
   const productSku = imageResult.sku || 'Unknown';
-  const productName = imageResult.product_name || '';
+  const _productName = imageResult.product_name || '';
   const hasMask = true; // マスクURLの有無に関わらず常にマスク編集タブを表示
 
   // マスクURLにもキャッシュバスターを付与（保存後の古いマスクが表示されないように）

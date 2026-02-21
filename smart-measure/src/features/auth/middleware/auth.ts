@@ -8,7 +8,7 @@
 import { Context, Next } from 'hono'
 import type { AppEnv } from '../../../types/bindings'
 import { logger } from '../../../shared/helpers/logger'
-import { getUserFromAuthHeader, type FirebaseUser } from '../lib/firebase-auth'
+import { getUserFromAuthHeader, type _FirebaseUser } from '../lib/firebase-auth'
 
 // Extend Context to include user information
 export interface AuthContext {

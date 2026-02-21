@@ -6,7 +6,6 @@
  * - Logs full error details server-side for debugging
  * - Returns generic error messages to clients in production
  */
-import { logger } from './logger'
 
 export interface SafeErrorResponse {
   success: false;

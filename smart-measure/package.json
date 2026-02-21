@@ -8,7 +8,11 @@
     "deploy": "npm run build && wrangler pages deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
     "db:migrate:local": "wrangler d1 migrations apply measure-master-db --local",
-    "db:migrate:prod": "wrangler d1 migrations apply measure-master-db"
+    "db:migrate:prod": "wrangler d1 migrations apply measure-master-db",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "format": "prettier --write src",
+    "format:check": "prettier --check src"
   },
   "dependencies": {
     "hono": "^4.11.1"
@@ -16,6 +20,12 @@
   "devDependencies": {
     "@hono/vite-build": "^1.2.0",
     "@hono/vite-dev-server": "^0.18.2",
+    "@typescript-eslint/eslint-plugin": "^8.56.0",
+    "@typescript-eslint/parser": "^8.56.0",
+    "eslint": "^9.39.3",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-hono": "^0.0.0",
+    "prettier": "^3.8.1",
     "vite": "^6.3.5",
     "wrangler": "^4.4.0"
   }

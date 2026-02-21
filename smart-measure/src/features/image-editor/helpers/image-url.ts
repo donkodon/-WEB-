@@ -1,7 +1,6 @@
 // ==========================================
 // ImageUrlHelper: Utility for converting between R2 paths and full URLs
 // ==========================================
-import { logger } from '../../../shared/helpers/logger'
 
 /**
  * Get IMAGE_UPLOAD_API_URL from environment or fallback

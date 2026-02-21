@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { AppEnv } from '../../../types/bindings'
 import { Layout } from '../../../components'
-import { FIXED_COMPANY_ID } from '../helpers/auth'
+import { } from '../helpers/auth'
 import { logger } from '../../../shared/helpers/logger'
 
 const auth = new Hono<AppEnv>()
