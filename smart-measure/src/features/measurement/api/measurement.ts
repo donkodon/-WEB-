@@ -14,9 +14,8 @@ import { MeasurementService } from '../services/measurement-service'
 const measurement = new Hono<AppEnv>()
 measurement.use('*', requireFirebaseAuth)
 
-function createMeasurementService(): MeasurementService {
-  return new MeasurementService(new MeasurementRepository(), new ReplicateService())
-}
+// Composition Root: モジュールスコープで一度だけ生成（per-request生成を排除）
+const measurementService = new MeasurementService(new MeasurementRepository(), new ReplicateService())
 
 measurement.post('/api/auto-measure', async (c) => {
   try {
@@ -28,14 +27,13 @@ measurement.post('/api/auto-measure', async (c) => {
       return c.json({ success: false, error: 'REPLICATE_API_KEY is not configured.' }, 500)
     }
 
-    const service = createMeasurementService()
     const garmentClass = c.env.DEFAULT_GARMENT_CLASS || 'long sleeve top'
 
-    if (!(await service.verifyProductExists(c.env.DB, sku, companyId))) {
+    if (!(await measurementService.verifyProductExists(c.env.DB, sku, companyId))) {
       return c.json({ success: false, error: 'Product not found' }, 404)
     }
 
-    const result = await service.autoMeasure(c.env.DB, {
+    const result = await measurementService.autoMeasure(c.env.DB, {
       imageId, imageUrl, sku, companyId, garmentClass,
       apiKey: c.env.REPLICATE_API_KEY,
       r2Bucket: c.env.PRODUCT_IMAGES,
@@ -58,8 +56,7 @@ measurement.get('/api/measurements/:sku', async (c) => {
     const companyId = getCompanyId(c)
     logger.debug(`📊 Get measurement: SKU=${sku}, company_id=${companyId}`)
 
-    const service = createMeasurementService()
-    const data = await service.getMeasurementData(c.env.DB, sku, companyId)
+    const data = await measurementService.getMeasurementData(c.env.DB, sku, companyId)
     if (!data) return c.json({ success: false, error: 'No measurement data found for this SKU' }, 404)
     return c.json({ success: true, data })
 
@@ -76,8 +73,7 @@ measurement.patch('/api/measurements/:sku', async (c) => {
     const { manual_landmarks, measurements } = await c.req.json()
     logger.debug(`💾 Update landmarks: SKU=${sku}`)
 
-    const service = createMeasurementService()
-    const result = await service.updateManualLandmarks(c.env.DB, sku, companyId, manual_landmarks, measurements)
+    const result = await measurementService.updateManualLandmarks(c.env.DB, sku, companyId, manual_landmarks, measurements)
     if (!result.success) return c.json({ success: false, error: result.error }, 404)
     return c.json({ success: true, message: 'Landmarks updated successfully' })
 

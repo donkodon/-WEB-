@@ -1,3 +1,6 @@
+import type { Context } from 'hono'
+import type { AppEnv } from '../../../types/bindings'
+
 const FIXED_COMPANY_ID = 'test_company';
 
 /**
@@ -6,7 +9,7 @@ const FIXED_COMPANY_ID = 'test_company';
  *   2. Cookie の company_id（SSRページ向けフォールバック）
  *   3. FIXED_COMPANY_ID（最終フォールバック）
  */
-export function getCompanyId(c: any): string {
+export function getCompanyId(c: Context<AppEnv>): string {
   // 1. Firebase 認証後のユーザーコンテキストから取得（最優先）
   const user = c.get?.('user') as { companyId?: string } | undefined;
   if (user?.companyId) {

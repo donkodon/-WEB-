@@ -15,13 +15,14 @@ import {
   logError,
   ErrorCode,
 } from '../shared/helpers/error-handler'
+import { logger } from '../shared/helpers/logger'
 
 // ─────────────────────────────────────────────
 // createSafeErrorResponse
 // ─────────────────────────────────────────────
 describe('createSafeErrorResponse()', () => {
   beforeEach(() => {
-    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(logger, 'error').mockImplementation(() => {})
   })
 
   afterEach(() => {
@@ -68,9 +69,9 @@ describe('createSafeErrorResponse()', () => {
     expect(res.errorCode).toBe(ErrorCode.INTERNAL_ERROR)
   })
 
-  it('呼ばれると console.error でサーバーログを出力する', () => {
+  it('呼ばれると logger.error でサーバーログを出力する', () => {
     createSafeErrorResponse(new Error('log test'))
-    expect(console.error).toHaveBeenCalled()
+    expect(logger.error).toHaveBeenCalled()
   })
 })
 
@@ -108,21 +109,21 @@ describe('sanitizeErrorMessage()', () => {
 // ─────────────────────────────────────────────
 describe('logError()', () => {
   beforeEach(() => {
-    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(logger, 'error').mockImplementation(() => {})
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  it('console.error が呼ばれること', () => {
+  it('logger.error が呼ばれること', () => {
     logError('TestContext', new Error('test error'))
-    expect(console.error).toHaveBeenCalled()
+    expect(logger.error).toHaveBeenCalled()
   })
 
   it('コンテキスト名がログに含まれること', () => {
     logError('MaskSave', new Error('mask error'))
-    const call = (console.error as ReturnType<typeof vi.fn>).mock.calls[0]
+    const call = (logger.error as ReturnType<typeof vi.fn>).mock.calls[0]
     expect(call[0]).toContain('MaskSave')
   })
 

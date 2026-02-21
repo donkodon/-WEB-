@@ -17,10 +17,8 @@ const productsRouter = new Hono<AppEnv>()
 // Apply Firebase authentication to all dashboard API endpoints
 productsRouter.use('*', requireFirebaseAuth)
 
-// Composition root: manual DI
-function createDashboardService(): DashboardService {
-  return new DashboardService(new DashboardRepository())
-}
+// Composition Root: モジュールスコープで一度だけ生成（per-request生成を排除）
+const dashboardService = new DashboardService(new DashboardRepository())
 
 // --- API: Dashboard Products with Pagination ---
 productsRouter.get('/api/dashboard/products', async (c) => {
@@ -35,8 +33,7 @@ productsRouter.get('/api/dashboard/products', async (c) => {
     page = parseInt(c.req.query('page') || '1', 10)
     perPage = parseInt(c.req.query('perPage') || '12', 10)
 
-    const svc = createDashboardService()
-    const validationError = svc.validatePagination(page, perPage)
+    const validationError = dashboardService.validatePagination(page, perPage)
     if (validationError) {
       return c.json({ success: false, error: validationError }, 400)
     }
@@ -44,7 +41,7 @@ productsRouter.get('/api/dashboard/products', async (c) => {
     logger.debug(`📊 API Dashboard request: company_id=${companyId}, page=${page}, perPage=${perPage}`)
 
     const r2PublicUrl = getR2PublicUrl(c.env)
-    const result = await svc.getDashboardProducts(c.env.DB, companyId, page, perPage, r2PublicUrl)
+    const result = await dashboardService.getDashboardProducts(c.env.DB, companyId, page, perPage, r2PublicUrl)
 
     return c.json({ success: true, ...result })
 
@@ -67,10 +64,9 @@ productsRouter.post('/api/products/bulk-import', async (c) => {
     const companyId = getCompanyId(c)
     logger.debug(`📦 CSV Import: company_id=${companyId}, products=${products.length}`)
 
-    const svc = createDashboardService()
     const MOBILE_API_URL = c.env.MOBILE_API_URL || 'https://measure-master-api.jinkedon2.workers.dev'
 
-    const result = await svc.bulkImportWithMobileSync(
+    const result = await dashboardService.bulkImportWithMobileSync(
       c.env.DB, companyId,
       products as import('../../../shared/interfaces/dashboard-repository.interface').ImportProduct[],
       MOBILE_API_URL
@@ -119,9 +115,7 @@ productsRouter.get('/api/products/search', async (c) => {
 
     const companyId = getCompanyId(c)
     const r2PublicUrl = getR2PublicUrl(c.env)
-    const svc = createDashboardService()
-
-    const searchResult = await svc.searchProductBySku(c.env.DB, sku, companyId, r2PublicUrl)
+    const searchResult = await dashboardService.searchProductBySku(c.env.DB, sku, companyId, r2PublicUrl)
     if (!searchResult) {
       return c.json({ success: false, error: 'Product not found' }, 404)
     }

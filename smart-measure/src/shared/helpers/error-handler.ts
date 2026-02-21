@@ -6,6 +6,7 @@
  * - Logs full error details server-side for debugging
  * - Returns generic error messages to clients in production
  */
+import { logger } from './logger'
 
 export interface SafeErrorResponse {
   success: false;
@@ -89,7 +90,7 @@ export function createSafeErrorResponse(
   customMessage?: string
 ): SafeErrorResponse {
   // Log full error details server-side (visible in Cloudflare logs)
-  console.error('❌ Error occurred:', {
+  logger.error('❌ Error occurred:', {
     errorCode,
     message: error instanceof Error ? error.message : String(error),
     stack: error instanceof Error ? error.stack : undefined,
@@ -133,9 +134,9 @@ export function sanitizeErrorMessage(message: string): string {
 export function logError(
   context: string,
   error: unknown,
-  additionalInfo?: Record<string, any>
+  additionalInfo?: Record<string, unknown>
 ): void {
-  console.error(`❌ [${context}] Error:`, {
+  logger.error(`❌ [${context}] Error:`, {
     message: error instanceof Error ? error.message : String(error),
     stack: error instanceof Error ? error.stack : undefined,
     ...additionalInfo,

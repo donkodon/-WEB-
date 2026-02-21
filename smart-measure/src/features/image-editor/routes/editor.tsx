@@ -14,10 +14,8 @@ import { EditorService } from '../services/editor-service'
 
 const editor = new Hono<AppEnv>()
 
-// ── Composition Root: 依存を組み立てる（手動DI） ──────────────────────────────
-function createEditorService(): EditorService {
-  return new EditorService(new EditorRepository())
-}
+// ── Composition Root: モジュールスコープで一度だけ生成（per-request生成を排除）──
+const editorService = new EditorService(new EditorRepository())
 
 // ─────────────────────────────────────────────
 // POST /api/upload-image
@@ -46,8 +44,6 @@ editor.post('/api/upload-image', async (c) => {
 // ─────────────────────────────────────────────
 editor.get('/edit/:id', async (c) => {
   const id = c.req.param('id')
-  const service = createEditorService()
-
   // ── 認証ユーザーからcompany_id取得 ──
   const user = c.get('user') as { companyId?: string } | undefined
   const authenticatedCompanyId = user?.companyId
@@ -59,13 +55,13 @@ editor.get('/edit/:id', async (c) => {
   }
 
   // ── imageId をパース ──
-  const parsed = service.parseImageId(id)
+  const parsed = editorService.parseImageId(id)
   if (parsed.type === 'unknown') {
     return c.redirect('/dashboard')
   }
 
   // ── company_id を解決 ──
-  const companyId = await service.resolveCompanyId(
+  const companyId = await editorService.resolveCompanyId(
     c.env.DB,
     parsed.sku,
     authenticatedCompanyId
@@ -75,11 +71,11 @@ editor.get('/edit/:id', async (c) => {
   // ── エディタデータを取得 ──
   let editorData = null
   if (parsed.type === 'measurement') {
-    editorData = await service.getMeasurementEditorData(
+    editorData = await editorService.getMeasurementEditorData(
       c.env.DB, id, parsed.sku, companyId
     )
   } else if (parsed.type === 'r2') {
-    editorData = await service.getR2EditorData(
+    editorData = await editorService.getR2EditorData(
       c.env.DB, id, parsed.sku, parsed.filenamePart, companyId
     )
   }

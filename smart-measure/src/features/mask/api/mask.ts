@@ -23,12 +23,9 @@ const maskApi = new Hono<AppEnv>()
 // Firebase認証ミドルウェアを全エンドポイントに適用
 maskApi.use('*', requireFirebaseAuth)
 
-// ── Composition Root: 依存を組み立てる ────────────────────────────────────────
-// ルート層でのみ「具体的な実装」を差し込む（手動DI）
+// ── Composition Root: モジュールスコープで一度だけ生成（per-request生成を排除）──
 // テストでは MaskService(mockRepo) に差し替えてテスト可能
-function createMaskService(): MaskService {
-  return new MaskService(new MaskRepository())
-}
+const maskService = new MaskService(new MaskRepository())
 
 // ─────────────────────────────────────────────
 // GET /api/mask-info/:sku
@@ -38,9 +35,7 @@ maskApi.get('/api/mask-info/:sku', async (c) => {
   const sku = c.req.param('sku')
   try {
     const companyId = getCompanyId(c)
-    const service = createMaskService()
-
-    const { maskImageUrl } = await service.getMaskInfo(
+    const { maskImageUrl } = await maskService.getMaskInfo(
       c.env.DB,
       sku,
       companyId
@@ -76,8 +71,7 @@ maskApi.post('/api/save-mask/:sku', async (c) => {
     }
 
     // ── ビジネスロジックはServiceに委譲 ──
-    const service = createMaskService()
-    const result = await service.saveMask(
+    const result = await maskService.saveMask(
       c.env.DB,
       c.env.PRODUCT_IMAGES,
       getR2PublicUrl(c.env),
@@ -108,9 +102,7 @@ maskApi.post('/api/regenerate-with-mask/:sku', async (c) => {
   const sku = c.req.param('sku')
   try {
     const companyId = getCompanyId(c)
-    const service = createMaskService()
-
-    const data = await service.getRegenerateData(c.env.DB, sku, companyId)
+    const data = await maskService.getRegenerateData(c.env.DB, sku, companyId)
 
     if (!data) {
       return c.json({ error: 'Image or mask not found for this SKU' }, 404)
