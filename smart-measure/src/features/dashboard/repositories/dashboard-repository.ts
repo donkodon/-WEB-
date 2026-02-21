@@ -1,23 +1,17 @@
 /**
  * DashboardRepository - ダッシュボードのDB操作実装クラス
  */
-import type { IDashboardRepository } from '../../../shared/interfaces/dashboard-repository.interface'
-import type { DashboardProduct } from '../../../types/database'
+import type {
+  IDashboardRepository,
+  DashboardDataResult,
+  DashboardProductRecord,
+  ImportProduct,
+  BulkImportResult,
+  ProductWithImages,
+} from '../../../shared/interfaces/dashboard-repository.interface'
 import { ImageUrlHelper, getImageUploadApiUrl } from '../../image-editor/helpers/image-url'
 import { getImageDisplayUrl } from '../../image-editor/helpers/image-status'
 import { logger } from '../../../shared/helpers/logger'
-
-export interface DashboardDataResult {
-  products: DashboardProduct[]
-  pagination: { page: number; perPage: number; total: number; totalPages: number; hasNext: boolean; hasPrev: boolean }
-}
-
-export interface ImportProduct {
-  sku: string; barcode?: string | null; name?: string; brand?: string | null
-  category?: string | null; size?: string | null; color?: string | null; price?: number
-}
-
-export interface BulkImportResult { inserted: number; updated: number; total: number }
 
 export class DashboardRepository implements IDashboardRepository {
   async fetchDashboardProducts(
@@ -43,7 +37,7 @@ export class DashboardRepository implements IDashboardRepository {
       ORDER BY pi.sku LIMIT ? OFFSET ?
     `).bind(companyId, perPage, offset).all<{ sku: string }>()
 
-    const skuList = paginatedSkus.results.map(r => r.sku)
+    const skuList = paginatedSkus.results.map((r: { sku: string }) => r.sku)
     if (skuList.length === 0) {
       return { products: [], pagination: { page, perPage, total, totalPages, hasNext: false, hasPrev: page > 1 } }
     }
@@ -71,7 +65,7 @@ export class DashboardRepository implements IDashboardRepository {
     `).bind(companyId, ...skuList).all()
 
     const imageUploadApiUrl = getImageUploadApiUrl({ IMAGE_UPLOAD_API_URL: r2PublicUrl })
-    const skuMap = new Map<string, DashboardProduct>()
+    const skuMap = new Map<string, DashboardProductRecord>()
 
     for (const item of itemsResult.results) {
       const pi = item as Record<string, unknown>
@@ -96,7 +90,7 @@ export class DashboardRepository implements IDashboardRepository {
           category: pm?.category as string | null ?? null,
           rank: pm?.rank as string | null ?? null,
           images: [], has_measurement: false,
-        })
+        } satisfies DashboardProductRecord)
       }
 
       const productData = skuMap.get(sku)!
@@ -147,7 +141,7 @@ export class DashboardRepository implements IDashboardRepository {
       }
     }
 
-    const products: DashboardProduct[] = []
+    const products: DashboardProductRecord[] = []
     for (const sku of skuList) {
       const product = skuMap.get(sku)
       if (product && product.images.length > 0) products.push(product)
@@ -186,7 +180,7 @@ export class DashboardRepository implements IDashboardRepository {
 
   async findProductWithImages(
     db: D1Database, sku: string, companyId: string
-  ): Promise<{ product: Record<string, unknown> | null; imageUrls: string[]; updatedAt: string | null }> {
+  ): Promise<ProductWithImages> {
     const product = await db.prepare(`
       SELECT sku, barcode, name, brand, category, size, color,
              price_sale as price, status, created_at, created_at as updated_at

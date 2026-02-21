@@ -1,11 +1,15 @@
 /**
- * Background Removal API Routes
+ * Background Removal API Routes - HTTP層（ルーティングのみ）
  *
- * POST /api/remove-bg                         Basic BG removal (Cloudflare AI, returns dataURL)
- * POST /api/remove-bg-image/:imageId          R2画像の背景削除（通常画像）
- * POST /api/remove-bg-measurement/:sku        採寸画像の背景削除
+ * POST /api/remove-bg                         Basic BG removal（dataURL返却・R2保存なし）
+ * POST /api/remove-bg-image/:imageId          R2画像の背景削除（R2保存あり）
+ * POST /api/remove-bg-measurement/:sku        採寸画像の背景削除（dataURL返却・R2保存なし）
  * POST /api/upload-processed-measurement/:sku 採寸画像リサイズ後アップロード
  * POST /api/upload-processed-image/:sku       通常画像の処理済みアップロード
+ *
+ * ── アーキテクチャ方針 ────────────────────────────────────────────────────────
+ * R2保存あり → removeProductImageBackground (Orchestrator経由)
+ * dataURL返却のみ → Provider クラス経由（旧サービス関数への直接依存なし）
  */
 import { Hono } from 'hono'
 import type { AppEnv } from '../../../types/bindings'
@@ -15,21 +19,23 @@ import { getR2PublicUrl } from '../../image-editor/helpers/r2-url'
 import { createSafeErrorResponse, ErrorCode, logError } from '../../../shared/helpers/error-handler'
 import { logger } from '../../../shared/helpers/logger'
 
-// Services
-import { removeBackgroundWithCloudflareAI } from '../services/cloudflare-ai'
-import { removeBackgroundWithWithoutBG } from '../services/withoutbg'
+// Orchestrator経由 (R2保存あり)
 import { removeProductImageBackground } from '../services/bg-removal-service'
+
+// Providerクラス (dataURL返却のみ・R2保存なし)
+import { CloudflareAIProvider } from '../providers/cloudflare-ai-provider'
+import { WithoutBGProvider } from '../providers/withoutbg-provider'
 
 // Helpers
 import { parseImageId, resolveR2ImageUrl } from '../helpers/image-resolver'
-import { base64ToBuffer, _uploadAndUpdateDatabase, saveMaskToR2AndDb } from '../helpers/r2-uploader'
+import { base64ToBuffer, saveMaskToR2AndDb } from '../helpers/r2-uploader'
 import { markImageAsProcessed } from '../../image-editor/helpers/image-status'
 
 const bgRemoval = new Hono<AppEnv>()
 bgRemoval.use('*', requireFirebaseAuth)
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/remove-bg — 基本背景削除（Cloudflare AI、dataURLを返す）
+// POST /api/remove-bg — 基本背景削除（Cloudflare AI、dataURLを返す・R2保存なし）
 // ─────────────────────────────────────────────────────────────────────────────
 bgRemoval.post('/api/remove-bg', async (c) => {
   try {
@@ -37,27 +43,35 @@ bgRemoval.post('/api/remove-bg', async (c) => {
     const imageUrl = body['imageUrl'] as string
     if (!imageUrl) return c.json({ error: 'imageUrl is required' }, 400)
 
-    const result = await removeBackgroundWithCloudflareAI(c.env.AI, imageUrl)
-    if (!result.success || !result.imageBuffer) {
-      throw new Error(result.error || 'Cloudflare AI processing failed')
+    // CloudflareAIProvider 経由で背景削除（旧関数への直接依存なし）
+    const provider = new CloudflareAIProvider(c.env.AI)
+    if (!provider.isAvailable()) {
+      return c.json({ error: 'Cloudflare AI binding is not configured' }, 500)
+    }
+
+    const result = await provider.removeBackground({ imageUrl })
+    if (!result.success) {
+      throw new Error(result.error)
     }
 
     const base64 = btoa(
-      new Uint8Array(result.imageBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+      new Uint8Array(result.imageBuffer as ArrayBuffer).reduce(
+        (data, byte) => data + String.fromCharCode(byte), ''
+      )
     )
     return c.json({
       success: true,
       processedUrl: `data:image/png;base64,${base64}`,
-      message: 'Background removed using Cloudflare AI (Free)'
+      message: 'Background removed using Cloudflare AI (Free)',
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     logError('Background removal (basic)', error)
     return c.json(createSafeErrorResponse(error, ErrorCode.EXTERNAL_API_ERROR), 500)
   }
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/remove-bg-image/:imageId — R2画像の背景削除（通常画像）
+// POST /api/remove-bg-image/:imageId — R2画像の背景削除（Orchestrator経由・R2保存あり）
 // ─────────────────────────────────────────────────────────────────────────────
 bgRemoval.post('/api/remove-bg-image/:imageId', async (c) => {
   try {
@@ -65,7 +79,7 @@ bgRemoval.post('/api/remove-bg-image/:imageId', async (c) => {
     let model = 'cloudflare-ai'
     let useBriaApi = false
     try {
-      const body = await c.req.json()
+      const body = await c.req.json() as { model?: string; useBriaApi?: boolean }
       if (body?.model) model = body.model
       if (body?.useBriaApi) useBriaApi = body.useBriaApi
     } catch { /* body省略可 */ }
@@ -85,20 +99,28 @@ bgRemoval.post('/api/remove-bg-image/:imageId', async (c) => {
       return c.json({ error: `Image not found: ${imageId}`, details: `company: ${userCompanyId}, SKU: ${sku}` }, 404)
     }
 
+    // Orchestrator経由（R2保存・DB更新あり）
     const result = await removeProductImageBackground(
-      c, resolved.originalUrl, resolved.companyId, sku, filenamePart, { model, useBriaApi }
+      c.env, resolved.originalUrl, resolved.companyId, sku, filenamePart, { model, useBriaApi }
     )
     if (!result.success) throw new Error(result.error)
 
-    return c.json({ success: true, imageId, processedUrl: result.processedUrl, maskUrl: result.maskUrl ?? null, message: result.message })
-  } catch (error: any) {
+    return c.json({
+      success: true,
+      imageId,
+      processedUrl: result.processedUrl,
+      maskUrl: result.maskUrl ?? null,
+      message: result.message,
+    })
+  } catch (error: unknown) {
     logError('Background removal (image ID)', error)
     return c.json(createSafeErrorResponse(error, ErrorCode.EXTERNAL_API_ERROR), 500)
   }
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/remove-bg-measurement/:sku — 採寸画像の背景削除
+// POST /api/remove-bg-measurement/:sku — 採寸画像の背景削除（dataURL返却・R2保存なし）
+// クライアントでリサイズ後に /api/upload-processed-measurement/:sku で保存する2段階フロー
 // ─────────────────────────────────────────────────────────────────────────────
 bgRemoval.post('/api/remove-bg-measurement/:sku', async (c) => {
   try {
@@ -112,20 +134,32 @@ bgRemoval.post('/api/remove-bg-measurement/:sku', async (c) => {
 
     if (!row?.image_url) return c.json({ error: 'Measurement image not found for this SKU' }, 404)
 
-    const bgResult = await removeBackgroundWithWithoutBG(row.image_url as string)
-    if (!bgResult.success || !bgResult.imageDataUrl) {
-      throw new Error(bgResult.error || 'withoutBG processing failed')
+    // WithoutBGProvider 経由（旧関数への直接依存なし）
+    // dataURLを返すだけでR2保存はしない（クライアントでリサイズ後に別エンドポイントへ）
+    const provider = new WithoutBGProvider()
+    const result = await provider.removeBackground({ imageUrl: row.image_url as string })
+
+    if (!result.success) {
+      throw new Error(result.error)
     }
 
-    logger.debug(`🎭 Mask data available: ${!!bgResult.maskDataUrl}`)
+    // imageBuffer → dataURL に変換（クライアントがキャンバス処理するために必要）
+    const base64 = btoa(
+      new Uint8Array(result.imageBuffer as Uint8Array).reduce(
+        (data, byte) => data + String.fromCharCode(byte), ''
+      )
+    )
+    const imageDataUrl = `data:image/png;base64,${base64}`
+
+    logger.debug(`🎭 Mask data available: ${!!result.maskDataUrl}`)
     return c.json({
       success: true,
       sku,
-      processedDataUrl: bgResult.imageDataUrl,
-      maskDataUrl: bgResult.maskDataUrl,
-      message: 'Measurement image background removed, ready for resize'
+      processedDataUrl: imageDataUrl,
+      maskDataUrl: result.maskDataUrl ?? null,
+      message: 'Measurement image background removed, ready for resize',
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     logError('Measurement image BG removal', error, { sku: c.req.param('sku') })
     return c.json(createSafeErrorResponse(error, ErrorCode.EXTERNAL_API_ERROR), 500)
   }
@@ -138,20 +172,19 @@ bgRemoval.post('/api/upload-processed-measurement/:sku', async (c) => {
   try {
     const sku = c.req.param('sku')
     const companyId = getCompanyId(c)
-    const body = await c.req.json()
+    const body = await c.req.json() as { imageDataUrl?: string; maskDataUrl?: string }
 
     if (!body.imageDataUrl) return c.json({ error: 'imageDataUrl is required' }, 400)
 
     // 採寸画像は固定キー measurement_p.png
     const r2Key = `${companyId}/${sku}/measurement_p.png`
     await c.env.PRODUCT_IMAGES.put(r2Key, base64ToBuffer(body.imageDataUrl), {
-      httpMetadata: { contentType: 'image/png' }
+      httpMetadata: { contentType: 'image/png' },
     })
     logger.debug(`✅ Uploaded resized measurement image: ${r2Key}`)
 
     await markImageAsProcessed(c.env.DB, sku, companyId, 'measurement')
 
-    // マスク画像（通常画像と同じ命名規則: {filenamePart}_mask.png）
     let maskUrl: string | null = null
     if (body.maskDataUrl) {
       try {
@@ -159,8 +192,8 @@ bgRemoval.post('/api/upload-processed-measurement/:sku', async (c) => {
           c.env.PRODUCT_IMAGES, c.env.DB, getR2PublicUrl(c.env),
           { companyId, sku, filenamePart: 'measurement', maskBytes: base64ToBuffer(body.maskDataUrl) }
         )
-      } catch (maskErr: any) {
-        logger.error('❌ Failed to save measurement mask:', maskErr.message)
+      } catch (maskErr: unknown) {
+        logger.error('❌ Failed to save measurement mask:', maskErr instanceof Error ? maskErr.message : String(maskErr))
       }
     }
 
@@ -169,9 +202,9 @@ bgRemoval.post('/api/upload-processed-measurement/:sku', async (c) => {
       sku,
       processedUrl: `/api/image-proxy/${sku}/measurement_p.png`,
       maskUrl,
-      message: 'Resized measurement image uploaded successfully'
+      message: 'Resized measurement image uploaded successfully',
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     logError('Measurement image upload', error, { sku: c.req.param('sku') })
     return c.json(createSafeErrorResponse(error, ErrorCode.UPLOAD_FAILED), 500)
   }
@@ -185,25 +218,30 @@ bgRemoval.post('/api/upload-processed-image/:sku', async (c) => {
     const sku = c.req.param('sku')
     const user = c.get('user') as { companyId?: string } | undefined
     const companyId = user?.companyId || getCompanyId(c)
-    const { imageDataUrl, filenamePart } = await c.req.json()
+    const { imageDataUrl, filenamePart } = await c.req.json() as { imageDataUrl?: string; filenamePart?: string }
 
     if (!imageDataUrl?.startsWith('data:image/png;base64,')) return c.json({ error: 'Invalid image data' }, 400)
     if (!filenamePart) return c.json({ error: 'filenamePart is required' }, 400)
 
-    // R2にアップロード
     const r2Key = `${companyId}/${sku}/${filenamePart}_p.png`
     await c.env.PRODUCT_IMAGES.put(r2Key, base64ToBuffer(imageDataUrl), {
-      httpMetadata: { contentType: 'image/png' }
+      httpMetadata: { contentType: 'image/png' },
     })
     logger.debug(`✅ Uploaded processed image: ${r2Key}`)
 
-    // DBのprocessed_imagesを更新（image-proxy経由で表示されるようにする）
     await markImageAsProcessed(c.env.DB, sku, companyId, filenamePart)
     logger.debug(`✅ DB updated: processed_images for ${sku}/${filenamePart}`)
 
     const processedUrl = `${getR2PublicUrl(c.env)}/${r2Key}`
-    return c.json({ success: true, sku, processedUrl, r2Key, filenamePart, message: 'Processed image uploaded successfully' })
-  } catch (error: any) {
+    return c.json({
+      success: true,
+      sku,
+      processedUrl,
+      r2Key,
+      filenamePart,
+      message: 'Processed image uploaded successfully',
+    })
+  } catch (error: unknown) {
     logError('Upload processed image', error, { sku: c.req.param('sku') })
     return c.json(createSafeErrorResponse(error, ErrorCode.UPLOAD_FAILED), 500)
   }
