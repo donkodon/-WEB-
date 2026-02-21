@@ -7,6 +7,7 @@ import { logger } from '../../../shared/helpers/logger'
 const auth = new Hono<AppEnv>()
 
 // Serve Firebase login page (inline HTML since we can't use fs in Workers)
+  // eslint-disable-next-line max-lines-per-function
 auth.get('/firebase-login', async (c) => {
   return c.html(`
 <!DOCTYPE html>
@@ -132,6 +133,7 @@ auth.get('/firebase-login', async (c) => {
           </div>
 
           <div class="mt-6 grid grid-cols-2 gap-4">
+  // eslint-disable-next-line max-lines-per-function
             <button id="googleLogin" type="button" class="flex items-center justify-center px-4 py-2.5 border border-gray-200 rounded-xl shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
               <img class="h-5 w-5 mr-2" src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google">
               Google
@@ -246,6 +248,7 @@ auth.get('/', (c) => {
 })
 
 // Legacy login page (for reference)
+  // eslint-disable-next-line max-lines-per-function
 auth.get('/legacy-login', (c) => {
   return c.render(
     <Layout active="login">

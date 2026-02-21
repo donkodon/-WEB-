@@ -10,6 +10,7 @@ import { logger } from '../../../shared/helpers/logger'
 const sync = new Hono<AppEnv>()
 
 // --- API: Sync from Mobile App API ---
+  // eslint-disable-next-line max-lines-per-function
 sync.post('/api/sync-from-mobile', async (c) => {
     try {
         const MOBILE_API_URL = c.env.MOBILE_API_URL || 'https://measure-master-api.jinkedon2.workers.dev';

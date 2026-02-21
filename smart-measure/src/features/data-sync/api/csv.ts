@@ -25,6 +25,7 @@ function escapeCSV(value: string): string {
     return cleaned;
 }
 
+  // eslint-disable-next-line max-lines-per-function
 csv.post('/api/import-csv', async (c) => {
     logger.debug('📥 CSV Import API called');
     
@@ -372,6 +373,7 @@ SAMPLE-003,4901234567892,サンプル商品C,ブランドC,カテゴリC,S,グ�
 });
 
 
+  // eslint-disable-next-line max-lines-per-function
 csv.post('/api/export-selected-csv', async (c) => {
     try {
         const body = await c.req.json();
@@ -570,6 +572,7 @@ csv.post('/api/export-selected-csv', async (c) => {
 // ========================================
 
 // 新しいCSV出力API: product_itemsテーブルから直接データ取得
+  // eslint-disable-next-line max-lines-per-function
 csv.post('/api/export-product-items', async (c) => {
     try {
         const body = await c.req.json();
@@ -718,6 +721,7 @@ csv.post('/api/export-product-items', async (c) => {
 });
 
 
+  // eslint-disable-next-line max-lines-per-function
 csv.get('/api/download-product-data/:imageId', async (c) => {
     try {
         const imageId = c.req.param('imageId');

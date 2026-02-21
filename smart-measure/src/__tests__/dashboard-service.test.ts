@@ -1,3 +1,4 @@
+/* eslint-disable max-lines-per-function */
 /**
  * DashboardService ユニットテスト
  * IDashboardRepository をモックして、ビジネスロジックのみを検証

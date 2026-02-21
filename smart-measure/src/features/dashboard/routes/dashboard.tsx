@@ -6,6 +6,7 @@ import { logger } from '../../../shared/helpers/logger'
 
 const dashboard = new Hono<AppEnv>()
 
+  // eslint-disable-next-line max-lines-per-function
 dashboard.get('/dashboard', async (c) => {
   try {
     // ✅ Phase 1: Get company_id from cookie

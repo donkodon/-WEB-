@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 /**
  * Logger utility with environment-based log levels
  * 

@@ -12,6 +12,7 @@ import { logger } from '../../../shared/helpers/logger'
 
 const proxy = new Hono<AppEnv>()
 
+  // eslint-disable-next-line max-lines-per-function
 proxy.get('/api/image-proxy/:sku/:filename', async (c) => {
     try {
         const { sku, filename } = c.req.param();

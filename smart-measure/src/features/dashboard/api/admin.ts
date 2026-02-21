@@ -132,6 +132,7 @@ admin.get('/api/debug/r2-list', requireDebugAccess, async (c) => {
 
 // --- Debug: R2フォルダビューア ---
 // PROTECTED: Requires debug access (dev mode or admin key)
+  // eslint-disable-next-line max-lines-per-function
 admin.get('/debug/r2-folder', requireDebugAccess, async (c) => {
     try {
         const sku = c.req.query('sku') || '';

@@ -1,3 +1,5 @@
+import { logger } from '../../../shared/helpers/logger'
+
 /**
  * Billing Calculator - Usage-based pricing logic
  * 
@@ -216,7 +218,7 @@ export async function logUsage(
     throw new Error('Failed to log usage');
   }
 
-  console.log(`✅ Usage logged: ${actionType} - ¥${result.unit_price} (${result.tier_name}プラン) [${isFree ? '無料' : '課金'}]`);
+  logger.info(`✅ Usage logged: ${actionType} - ¥${result.unit_price} (${result.tier_name}プラン) [${isFree ? '無料' : '課金'}]`);
 
   return result;
 }

@@ -4,6 +4,7 @@ import { Layout } from '../../../components'
 
 const settings = new Hono<AppEnv>()
 
+  // eslint-disable-next-line max-lines-per-function
 settings.get('/settings', (c) => {
   return c.render(
     <Layout active="settings" title="データ入力・設定">

@@ -3,6 +3,7 @@
  * Resolves R2 image URLs and parses image IDs
  */
 import type { R2Bucket } from '@cloudflare/workers-types'
+import { logger } from '../../../shared/helpers/logger'
 import type { ImageResolverResult } from '../types'
 
 const EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp']
@@ -51,14 +52,14 @@ export async function resolveR2ImageUrl(
       `).bind(sku, companyId).first();
       
       if (!dbResult) {
-        console.error('❌ SKU not found in user company:', { sku, companyId });
+        logger.warn('❌ SKU not found in user company:', { sku, companyId });
         return null;
       }
       
       companyIdFromDb = dbResult.company_id as string;
-      console.log('✅ SKU verified for user company:', companyIdFromDb);
+      logger.debug('✅ SKU verified for user company:', companyIdFromDb);
     } catch (error) {
-      console.error('❌ DB query failed:', error);
+      logger.error('❌ DB query failed:', error instanceof Error ? error.message : String(error));
       return null;
     }
   }
@@ -66,7 +67,7 @@ export async function resolveR2ImageUrl(
   // Only search in user's company
   const companyIds = [companyId];
   
-  console.log('🔍 Resolving image:', { companyId, sku, filenamePart })
+  logger.debug('🔍 Resolving image:', { companyId, sku, filenamePart })
   
   // Try each company ID and extension combination
   for (const tryCompanyId of companyIds) {
@@ -79,7 +80,7 @@ export async function resolveR2ImageUrl(
           const obj = await bucket.head(testKey)
           if (obj) {
             const originalUrl = `${r2PublicUrl}/${testKey}`
-            console.log(`✅ Found R2 image via R2 API: ${testKey}`)
+            logger.debug(`✅ Found R2 image via R2 API: ${testKey}`)
             return {
               originalUrl,
               companyId: tryCompanyId,
@@ -98,7 +99,7 @@ export async function resolveR2ImageUrl(
         const testUrl = `${r2PublicUrl}/${testKey}`
         const headResponse = await fetch(testUrl, { method: 'HEAD' })
         if (headResponse.ok) {
-          console.log(`✅ Found R2 image via HTTP HEAD: ${testKey}`)
+          logger.debug(`✅ Found R2 image via HTTP HEAD: ${testKey}`)
           return {
             originalUrl: testUrl,
             companyId: tryCompanyId,
@@ -113,7 +114,7 @@ export async function resolveR2ImageUrl(
   }
   
   // Image not found
-  console.error(`❌ Image not found in R2 after trying multiple company IDs`)
+  logger.warn(`❌ Image not found in R2 after trying multiple company IDs`)
   return null
 }
 

@@ -3,6 +3,7 @@
  */
 
 import { Context, Next } from 'hono';
+import { logger } from '../../../shared/helpers/logger';
 import { Bindings } from '../../../types/bindings';
 import { logUsage, getCurrentBillingMonth } from '../lib/billing-calculator';
 
@@ -57,7 +58,7 @@ export async function trackSKUDownload(c: Context<{ Bindings: Bindings }>, next:
         .bind(existingDownload.id)
         .run();
 
-      console.log(`ℹ️ Duplicate SKU download (no charge): ${sku} [${company_id}] - Already downloaded ${existingDownload.download_count} time(s) this month`);
+      logger.info(`ℹ️ Duplicate SKU download (no charge): ${sku} [${company_id}] - Already downloaded ${existingDownload.download_count} time(s) this month`);
       
       // Continue to next handler (allow download)
       await next();
@@ -76,12 +77,12 @@ export async function trackSKUDownload(c: Context<{ Bindings: Bindings }>, next:
       .bind(company_id, sku, billingMonth)
       .run();
 
-    console.log(`✅ SKU download tracked: ${sku} [${company_id}]`);
+    logger.info(`✅ SKU download tracked: ${sku} [${company_id}]`);
     
     // Continue to next handler
     await next();
   } catch (error) {
-    console.error('❌ Error tracking SKU download:', error);
+    logger.error('❌ Error tracking SKU download:', error instanceof Error ? error.message : String(error));
     // Don't block the download on billing errors
     await next();
   }
@@ -115,7 +116,7 @@ export async function trackBulkSKUDownload(c: Context<{ Bindings: Bindings }>, n
       return c.json({ error: 'SKUs array is required' }, 400);
     }
 
-    console.log(`📦 Tracking bulk download: ${skus.length} SKUs [${company_id}]`);
+    logger.info(`📦 Tracking bulk download: ${skus.length} SKUs [${company_id}]`);
 
     let chargedCount = 0;
     let freeCount = 0;
@@ -145,7 +146,7 @@ export async function trackBulkSKUDownload(c: Context<{ Bindings: Bindings }>, n
           .run();
 
         freeCount++;
-        console.log(`  ℹ️ Duplicate: ${sku} (no charge)`);
+        logger.info(`  ℹ️ Duplicate: ${sku} (no charge)`);
       } else {
         // First download this month - log usage
         await logUsage(c.env.DB, company_id, userId, 'sku_download', sku);
@@ -160,11 +161,11 @@ export async function trackBulkSKUDownload(c: Context<{ Bindings: Bindings }>, n
           .run();
 
         chargedCount++;
-        console.log(`  ✅ Charged: ${sku}`);
+        logger.info(`  ✅ Charged: ${sku}`);
       }
     }
 
-    console.log(`📊 Bulk download summary: ${chargedCount} charged, ${freeCount} free [${company_id}]`);
+    logger.info(`📊 Bulk download summary: ${chargedCount} charged, ${freeCount} free [${company_id}]`);
     
     // Store summary in context for response
     c.set('billingResult', {
@@ -176,7 +177,7 @@ export async function trackBulkSKUDownload(c: Context<{ Bindings: Bindings }>, n
     // Continue to next handler
     await next();
   } catch (error) {
-    console.error('❌ Error tracking bulk SKU download:', error);
+    logger.error('❌ Error tracking bulk SKU download:', error instanceof Error ? error.message : String(error));
     // Don't block the download on billing errors
     await next();
   }
@@ -232,12 +233,12 @@ export async function trackAIGeneration(c: Context<{ Bindings: Bindings }>, next
     // Log usage BEFORE generation (ensures billing even if generation fails)
     await logUsage(c.env.DB, company_id, userId, 'ai_generation', sku);
 
-    console.log(`✅ AI generation tracked: ${sku} [${company_id}]`);
+    logger.info(`✅ AI generation tracked: ${sku} [${company_id}]`);
     
     // Continue to generation handler
     await next();
   } catch (error) {
-    console.error('❌ Error tracking AI generation:', error);
+    logger.error('❌ Error tracking AI generation:', error instanceof Error ? error.message : String(error));
     return c.json({ error: 'Failed to track usage' }, 500);
   }
 }

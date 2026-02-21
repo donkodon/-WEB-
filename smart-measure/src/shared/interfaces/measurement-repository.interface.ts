@@ -39,6 +39,25 @@ export interface SaveMeasurementParams {
   maskImageUrl: string | null
 }
 
+/**
+ * MeasurementData - 採寸取得結果の共有型
+ * measurement-service の getMeasurementData() が返す型
+ */
+export interface MeasurementData {
+  id: number
+  sku: string
+  item_code: string
+  image_url: string | null
+  annotated_image_url: string | null
+  measurement_image_url: string | null
+  landmarks: Record<string, unknown>
+  pixel_per_cm: number
+  measurements: Record<string, unknown>
+  measurement_status: string | null
+  measurement_category: string | null
+  measured_at: string | null
+}
+
 export interface IMeasurementRepository {
   findProductMaster(db: D1Database, sku: string, companyId: string): Promise<ProductMasterRecord | null>
   findMeasurementBySku(db: D1Database, sku: string, companyId: string): Promise<MeasurementRecord | null>

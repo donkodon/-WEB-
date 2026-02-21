@@ -2,7 +2,7 @@
  * MeasurementService - 採寸のビジネスロジック
  * 非依存: HonoContext (c.env) → HTTP層から完全分離
  */
-import type { IMeasurementRepository } from '../../../shared/interfaces/measurement-repository.interface'
+import type { IMeasurementRepository, MeasurementData } from '../../../shared/interfaces/measurement-repository.interface'
 import type { IReplicateService } from '../../../shared/interfaces/replicate-service.interface'
 import type { R2Bucket } from '@cloudflare/workers-types'
 import { logger } from '../../../shared/helpers/logger'
@@ -14,12 +14,8 @@ export interface AutoMeasureSuccess {
 export interface AutoMeasureFailure { success: false; error: string }
 export type AutoMeasureResult = AutoMeasureSuccess | AutoMeasureFailure
 
-export interface MeasurementData {
-  id: number; sku: string; item_code: string
-  image_url: string | null; annotated_image_url: string | null; measurement_image_url: string | null
-  landmarks: Record<string, unknown>; pixel_per_cm: number; measurements: Record<string, unknown>
-  measurement_status: string | null; measurement_category: string | null; measured_at: string | null
-}
+// MeasurementData は shared/interfaces/measurement-repository.interface に移動済み
+export type { MeasurementData } from '../../../shared/interfaces/measurement-repository.interface'
 
 export interface AutoMeasureParams {
   imageId: string; imageUrl: string; sku: string; companyId: string

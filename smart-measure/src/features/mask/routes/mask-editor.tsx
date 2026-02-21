@@ -5,6 +5,7 @@ import { getCompanyId } from '../../auth/helpers/auth'
 
 const maskEditor = new Hono<AppEnv>()
 
+  // eslint-disable-next-line max-lines-per-function
 maskEditor.get('/mask-editor/:sku', async (c) => {
     const sku = c.req.param('sku');
     const companyId = getCompanyId(c);

@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 /**
  * logger.ts の単体テスト
  *

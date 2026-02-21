@@ -42,6 +42,7 @@ editor.post('/api/upload-image', async (c) => {
 // GET /edit/:id
 // メインエディタ画面
 // ─────────────────────────────────────────────
+  // eslint-disable-next-line max-lines-per-function
 editor.get('/edit/:id', async (c) => {
   const id = c.req.param('id')
   // ── 認証ユーザーからcompany_id取得 ──

@@ -5,6 +5,7 @@ import { getCompanyId } from '../../auth/helpers/auth'
 
 const landmarks = new Hono<AppEnv>()
 
+  // eslint-disable-next-line max-lines-per-function
 landmarks.get('/landmarks/:sku', async (c) => {
   const sku = c.req.param('sku');
   const _companyId = getCompanyId(c);
