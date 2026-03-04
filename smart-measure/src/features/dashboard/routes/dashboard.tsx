@@ -7,7 +7,7 @@ import { logger } from '../../../shared/helpers/logger'
 const dashboard = new Hono<AppEnv>()
 
 // Cache buster version for static JS files - bump this when JS files change
-const JS_VERSION = '20250304-06'
+const JS_VERSION = '20250304-07'
 
   // eslint-disable-next-line max-lines-per-function
 dashboard.get('/dashboard', async (c) => {
@@ -92,6 +92,21 @@ dashboard.get('/dashboard', async (c) => {
         </div>
       </div>
       
+      {/* Hover button CSS - group-hover doesn't work with Tailwind CDN JIT */}
+      <style>{`
+        .image-hover-btn {
+          opacity: 0;
+          transition: opacity 0.15s ease;
+        }
+        .relative.group:hover .image-hover-btn {
+          opacity: 1;
+        }
+        .image-card-overlay:hover ~ * .image-hover-btn,
+        .relative.group:focus-within .image-hover-btn {
+          opacity: 1;
+        }
+      `}</style>
+
       {/* Resize Helper - must load FIRST before any bg-removal scripts */}
       <script src={`/static/shared/resize-helper.js?v=${JS_VERSION}`}></script>
 

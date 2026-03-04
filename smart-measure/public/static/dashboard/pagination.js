@@ -237,7 +237,7 @@ function createImageHTML(img, product) {
                 />
                 
                 ${!isMeasurement ? `
-                    <div class="drag-handle absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 rounded px-1.5 py-1 shadow-sm cursor-grab active:cursor-grabbing">
+                    <div class="drag-handle image-hover-btn absolute top-2 right-2 z-10 bg-white/90 rounded px-1.5 py-1 shadow-sm cursor-grab active:cursor-grabbing">
                         <i class="fas fa-grip-vertical text-gray-500 text-sm"></i>
                     </div>
                 ` : ''}
@@ -268,7 +268,7 @@ function createImageHTML(img, product) {
                         data-sku="${escapeHtml(product.sku)}"
                         data-is-measurement="${isMeasurement ? 'true' : 'false'}"
                         onclick="event.stopPropagation(); handleRemoveBg(this)"
-                        class="absolute bottom-2 right-2 bg-blue-600 text-white px-2 py-1 rounded text-xs font-bold hover:bg-blue-700 opacity-0 group-hover:opacity-100 transition-opacity flex items-center shadow-lg z-10"
+                        class="image-hover-btn absolute bottom-2 right-2 bg-blue-600 text-white px-2 py-1 rounded text-xs font-bold hover:bg-blue-700 flex items-center shadow-lg z-10"
                     >
                         <i class="fas fa-magic mr-1"></i>白抜き
                     </button>
@@ -281,7 +281,7 @@ function createImageHTML(img, product) {
                         data-filename-part="${escapeHtml(img.filenamePart || img.id.replace(/^r2_[^_]+_/, ''))}"
                         data-original-url="${img.original_url}"
                         onclick="event.stopPropagation(); handleCropOpen(this)"
-                        class="absolute bottom-2 left-2 bg-orange-500 text-white px-2 py-1 rounded text-xs font-bold hover:bg-orange-600 opacity-0 group-hover:opacity-100 transition-opacity flex items-center shadow-lg z-10"
+                        class="image-hover-btn absolute bottom-2 left-2 bg-orange-500 text-white px-2 py-1 rounded text-xs font-bold hover:bg-orange-600 flex items-center shadow-lg z-10"
                     >
                         <i class="fas fa-crop-alt mr-1"></i>クロップ
                     </button>
@@ -295,7 +295,7 @@ function createImageHTML(img, product) {
                 ` : ''}
                 
                 ${img.processed_url ? `
-                    <div class="absolute bottom-2 right-2 bg-green-500 text-white px-2 py-1 rounded-full text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-10">
+                    <div class="image-hover-btn absolute bottom-2 right-2 bg-green-500 text-white px-2 py-1 rounded-full text-[10px] font-bold shadow-lg z-10">
                         <i class="fas fa-check mr-1"></i>完了
                     </div>
                 ` : ''}
@@ -303,13 +303,13 @@ function createImageHTML(img, product) {
                 ${isMeasurement && img.mask_url ? `
                     <button 
                         onclick="event.stopPropagation(); window.location.href='/mask-editor/${encodeURIComponent(product.sku)}'"
-                        class="absolute top-2 right-2 bg-purple-600 text-white px-2 py-1 rounded text-xs font-bold hover:bg-purple-700 opacity-0 group-hover:opacity-100 transition-opacity flex items-center shadow-lg z-10"
+                        class="image-hover-btn absolute top-2 right-2 bg-purple-600 text-white px-2 py-1 rounded text-xs font-bold hover:bg-purple-700 flex items-center shadow-lg z-10"
                     >
                         <i class="fas fa-edit mr-1"></i>マスク編集
                     </button>
                 ` : ''}
             </div>
-            <div class="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors cursor-pointer z-0" onclick="${isMeasurement ? `window.location.href='/landmarks/${encodeURIComponent(product.sku)}'` : `window.location.href='/edit/${img.id}'`}" data-image-id="${img.id}"></div>
+            <div class="image-card-overlay absolute inset-0 bg-transparent cursor-pointer z-0" onclick="${isMeasurement ? `window.location.href='/landmarks/${encodeURIComponent(product.sku)}'` : `window.location.href='/edit/${img.id}'`}" data-image-id="${img.id}"></div>
         </div>
     `;
 }
