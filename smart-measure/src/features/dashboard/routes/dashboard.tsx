@@ -7,7 +7,7 @@ import { logger } from '../../../shared/helpers/logger'
 const dashboard = new Hono<AppEnv>()
 
 // Cache buster version for static JS files - bump this when JS files change
-const JS_VERSION = '20250304-04'
+const JS_VERSION = '20250304-05'
 
   // eslint-disable-next-line max-lines-per-function
 dashboard.get('/dashboard', async (c) => {
@@ -96,19 +96,19 @@ dashboard.get('/dashboard', async (c) => {
       <script src={`/static/shared/resize-helper.js?v=${JS_VERSION}`}></script>
 
       {/* Dashboard Core Scripts (SKU Checkboxes, CSV Export, Image Download) */}
-      <script src="/static/dashboard/dashboard.js"></script>
+      <script src={`/static/dashboard/dashboard.js?v=${JS_VERSION}`}></script>
       
       {/* Pagination Script (loads products via API on DOMContentLoaded) */}
-      <script src="/static/dashboard/pagination.js"></script>
+      <script src={`/static/dashboard/pagination.js?v=${JS_VERSION}`}></script>
       
       {/* Background Removal Scripts */}
       <script src={`/static/dashboard/bg-removal.js?v=${JS_VERSION}`}></script>
       
       {/* Auto-Measurement Scripts */}
-      <script src="/static/dashboard/auto-measure.js"></script>
+      <script src={`/static/dashboard/auto-measure.js?v=${JS_VERSION}`}></script>
       
       {/* Mobile App Sync Scripts */}
-      <script src="/static/dashboard/mobile-sync.js"></script>
+      <script src={`/static/dashboard/mobile-sync.js?v=${JS_VERSION}`}></script>
 
       {/* Filter Bar */}
       <div class="bg-white p-4 rounded-xl border border-gray-200 mb-6 flex flex-wrap items-center justify-between gap-4">
@@ -128,7 +128,7 @@ dashboard.get('/dashboard', async (c) => {
             </div>
           </div>
         </div>
-        <script src="/static/dashboard/filter-init.js"></script>
+        <script src={`/static/dashboard/filter-init.js?v=${JS_VERSION}`}></script>
         <div class="flex items-center space-x-2">
             <span class="text-gray-500 text-sm">表示切替:</span>
             <button class="p-2 bg-gray-100 rounded text-gray-700"><i class="fas fa-th-large"></i></button>
@@ -160,17 +160,14 @@ dashboard.get('/dashboard', async (c) => {
         ))}
       </div>
       
-      {/* Single Image Background Removal */}
-      <script src={`/static/dashboard/single-bg-removal.js?v=${JS_VERSION}`}></script>
-      
       {/* Upload Script */}
-      <script src="/static/dashboard/upload.js"></script>
+      <script src={`/static/dashboard/upload.js?v=${JS_VERSION}`}></script>
       
       {/* Sortable.js for Drag & Drop */}
       <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
       
       {/* Initialize Sortable for each image grid */}
-      <script src="/static/dashboard/sortable.js"></script>
+      <script src={`/static/dashboard/sortable.js?v=${JS_VERSION}`}></script>
       
       {/* CSS for Sortable animations */}
       <link rel="stylesheet" href="/static/css/dashboard-sortable.css" />

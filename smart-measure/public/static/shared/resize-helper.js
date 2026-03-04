@@ -6,7 +6,7 @@
  * @param {string} imageDataUrl - Base64 data URL of the image (transparent PNG)
  * @param {number} targetWidth  - Target canvas width  (default: 1200)
  * @param {number} targetHeight - Target canvas height (default: 1200)
- * @returns {Promise<string>}   - Centered and resized image as base64 data URL
+ * @returns {Promise<string>}   - Centered and resized image as base64 PNG data URL
  */
 window.resizeAndCenterImage = async function(imageDataUrl, targetWidth = 1200, targetHeight = 1200) {
     return new Promise((resolve, reject) => {
@@ -18,24 +18,33 @@ window.resizeAndCenterImage = async function(imageDataUrl, targetWidth = 1200, t
                 const imgH = img.height;
 
                 // ── Step 1: Draw to temp canvas to read pixel data ──
+                // For large images, cap working canvas size to avoid slow pixel scanning
+                const MAX_WORK_SIZE = 1600;
+                let workW = imgW, workH = imgH;
+                if (imgW > MAX_WORK_SIZE || imgH > MAX_WORK_SIZE) {
+                    const ratio = Math.min(MAX_WORK_SIZE / imgW, MAX_WORK_SIZE / imgH);
+                    workW = Math.round(imgW * ratio);
+                    workH = Math.round(imgH * ratio);
+                }
+
                 const srcCanvas = document.createElement('canvas');
-                srcCanvas.width  = imgW;
-                srcCanvas.height = imgH;
+                srcCanvas.width  = workW;
+                srcCanvas.height = workH;
                 const srcCtx = srcCanvas.getContext('2d');
-                srcCtx.drawImage(img, 0, 0);
+                srcCtx.drawImage(img, 0, 0, workW, workH);
 
                 let imageData;
                 try {
-                    imageData = srcCtx.getImageData(0, 0, imgW, imgH);
+                    imageData = srcCtx.getImageData(0, 0, workW, workH);
                 } catch (secErr) {
                     // CORS taint: fallback to full-image centering
-                    _centerFull(srcCanvas, imgW, imgH, targetWidth, targetHeight, resolve);
+                    _centerFull(srcCanvas, workW, workH, targetWidth, targetHeight, resolve);
                     return;
                 }
 
                 // ── Step 2: Detect bounding box from alpha channel ──
                 const data = imageData.data;
-                const W = imgW, H = imgH;
+                const W = workW, H = workH;
                 const ALPHA_THRESHOLD = 10; // ignore near-invisible antialiasing pixels
 
                 let minX = W, minY = H, maxX = 0, maxY = 0;
@@ -55,7 +64,7 @@ window.resizeAndCenterImage = async function(imageDataUrl, targetWidth = 1200, t
 
                 // No transparent pixels → JPEG or opaque image → center full image
                 if (!hasContent) {
-                    _centerFull(srcCanvas, imgW, imgH, targetWidth, targetHeight, resolve);
+                    _centerFull(srcCanvas, workW, workH, targetWidth, targetHeight, resolve);
                     return;
                 }
 

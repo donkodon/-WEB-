@@ -306,7 +306,7 @@ bgRemoval.post('/api/upload-processed-image/:sku', async (c) => {
       }
     }
 
-    const processedUrl = `${getR2PublicUrl(c.env)}/${r2Key}`
+    const processedUrl = `/api/image-proxy/${sku}/${filenamePart}_p.png`
     return c.json({
       success: true,
       sku,
