@@ -70,9 +70,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
     img.onload  = onInitialImageLoad;
     img.onerror = function () {
-        window.logger && window.logger.error('❌ Failed to load initial image:', S.originalSrc);
+        window.logger && window.logger.error('❌ Failed to load initial image:', S.processedSrc || S.originalSrc);
     };
-    img.src = S.originalSrc;
+    // 優先順位: processedSrc (f画像 or p画像) > originalSrc
+    img.src = S.processedSrc || S.originalSrc;
 
     // ────────────────────────────────────────────────────────────────
     // 2. 描画イベント（mousedown / mousemove / mouseup / mouseout）

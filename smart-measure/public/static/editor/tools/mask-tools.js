@@ -202,7 +202,7 @@
         drawOriginal(originalSrc);
     };
 
-    /** 調整タブに切り替える際：常にオリジナル画像をキャンバスに再描画 */
+    /** 調整タブに切り替える際：初回ロード時の画像（処理済み優先）をキャンバスに再描画 */
     window.switchToProcessedImage = function () {
         const S = window.EditorState;
         if (!S) return;
@@ -210,19 +210,17 @@
         S.showingOriginal = false;
         S.maskVisible     = false;
 
-        // 常にオリジナル画像をベースとして表示する。
-        // adjustedImage（白抜き合成）は保存用データであり、表示には使わない。
-        // img.src は変更しない（img.onload を再発火させないため）。
+        // originalImage キャッシュ（初回ロード時の画像、processedSrc 優先）を再描画
         if (S.originalImage) {
             const { canvas, ctx } = S;
             canvas.width  = S.originalImage.width;
             canvas.height = S.originalImage.height;
             ctx.putImageData(S.originalImage, 0, 0);
-            window.logger && window.logger.debug('✅ Switched to adjust tab (showing original image)');
+            window.logger && window.logger.debug('✅ Switched to adjust tab (showing initial loaded image)');
         } else {
-            // originalImage がない場合のフォールバック（初期ロード前）
-            S.img.src = S.originalSrc;
-            window.logger && window.logger.debug('✅ Switched to original image (fallback via img.src)');
+            // フォールバック：processedSrc 優先で再ロード
+            S.img.src = S.processedSrc || S.originalSrc;
+            window.logger && window.logger.debug('✅ Switched via img.src fallback (processedSrc priority)');
         }
 
         const btn = document.getElementById('btn-toggle-original');
