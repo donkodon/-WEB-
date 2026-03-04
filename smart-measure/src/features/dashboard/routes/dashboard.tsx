@@ -6,6 +6,9 @@ import { logger } from '../../../shared/helpers/logger'
 
 const dashboard = new Hono<AppEnv>()
 
+// Cache buster version for static JS files - bump this when JS files change
+const JS_VERSION = '20250304-01'
+
   // eslint-disable-next-line max-lines-per-function
 dashboard.get('/dashboard', async (c) => {
   try {
@@ -96,7 +99,7 @@ dashboard.get('/dashboard', async (c) => {
       <script src="/static/dashboard/pagination.js"></script>
       
       {/* Background Removal Scripts */}
-      <script src="/static/dashboard/bg-removal.js"></script>
+      <script src={`/static/dashboard/bg-removal.js?v=${JS_VERSION}`}></script>
       
       {/* Auto-Measurement Scripts */}
       <script src="/static/dashboard/auto-measure.js"></script>
@@ -155,7 +158,7 @@ dashboard.get('/dashboard', async (c) => {
       </div>
       
       {/* Single Image Background Removal */}
-      <script src="/static/dashboard/single-bg-removal.js"></script>
+      <script src={`/static/dashboard/single-bg-removal.js?v=${JS_VERSION}`}></script>
       
       {/* Upload Script */}
       <script src="/static/dashboard/upload.js"></script>
@@ -164,7 +167,7 @@ dashboard.get('/dashboard', async (c) => {
       <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
       
       {/* Resize Helper for image processing */}
-      <script src="/static/shared/resize-helper.js"></script>
+      <script src={`/static/shared/resize-helper.js?v=${JS_VERSION}`}></script>
       
       {/* Initialize Sortable for each image grid */}
       <script src="/static/dashboard/sortable.js"></script>
