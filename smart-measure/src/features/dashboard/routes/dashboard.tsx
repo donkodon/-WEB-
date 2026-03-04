@@ -7,7 +7,7 @@ import { logger } from '../../../shared/helpers/logger'
 const dashboard = new Hono<AppEnv>()
 
 // Cache buster version for static JS files - bump this when JS files change
-const JS_VERSION = '20250304-03'
+const JS_VERSION = '20250304-04'
 
   // eslint-disable-next-line max-lines-per-function
 dashboard.get('/dashboard', async (c) => {
@@ -92,6 +92,9 @@ dashboard.get('/dashboard', async (c) => {
         </div>
       </div>
       
+      {/* Resize Helper - must load FIRST before any bg-removal scripts */}
+      <script src={`/static/shared/resize-helper.js?v=${JS_VERSION}`}></script>
+
       {/* Dashboard Core Scripts (SKU Checkboxes, CSV Export, Image Download) */}
       <script src="/static/dashboard/dashboard.js"></script>
       
@@ -165,9 +168,6 @@ dashboard.get('/dashboard', async (c) => {
       
       {/* Sortable.js for Drag & Drop */}
       <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
-      
-      {/* Resize Helper for image processing */}
-      <script src={`/static/shared/resize-helper.js?v=${JS_VERSION}`}></script>
       
       {/* Initialize Sortable for each image grid */}
       <script src="/static/dashboard/sortable.js"></script>

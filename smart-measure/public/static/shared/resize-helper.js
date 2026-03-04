@@ -17,7 +17,7 @@ window.resizeAndCenterImage = async function(imageDataUrl, targetWidth = 1200, t
                 const imgW = img.width;
                 const imgH = img.height;
 
-                // ── Step 1: Draw source image to a temporary canvas to read pixels ──
+                // ── Step 1: Draw to temp canvas to read pixel data ──
                 const srcCanvas = document.createElement('canvas');
                 srcCanvas.width  = imgW;
                 srcCanvas.height = imgH;
@@ -28,26 +28,22 @@ window.resizeAndCenterImage = async function(imageDataUrl, targetWidth = 1200, t
                 try {
                     imageData = srcCtx.getImageData(0, 0, imgW, imgH);
                 } catch (secErr) {
-                    // CORS taint: cannot read pixels → fallback to full-image centering
-                    console.warn('[resize-helper] getImageData blocked (CORS taint), using full image:', secErr.message);
-                    _drawFullImageCentered(srcCanvas, imgW, imgH, targetWidth, targetHeight, resolve);
+                    // CORS taint: fallback to full-image centering
+                    _centerFull(srcCanvas, imgW, imgH, targetWidth, targetHeight, resolve);
                     return;
                 }
 
-                const { data } = imageData;
-                const W = imgW;
-                const H = imgH;
+                // ── Step 2: Detect bounding box from alpha channel ──
+                const data = imageData.data;
+                const W = imgW, H = imgH;
+                const ALPHA_THRESHOLD = 10; // ignore near-invisible antialiasing pixels
 
-                // ── Step 2: Detect bounding box of non-transparent pixels (alpha > 10) ──
-                // threshold=10 to ignore near-invisible edge pixels from antialiasing
                 let minX = W, minY = H, maxX = 0, maxY = 0;
                 let hasContent = false;
-                const ALPHA_THRESHOLD = 10;
 
                 for (let y = 0; y < H; y++) {
                     for (let x = 0; x < W; x++) {
-                        const alpha = data[(y * W + x) * 4 + 3];
-                        if (alpha > ALPHA_THRESHOLD) {
+                        if (data[(y * W + x) * 4 + 3] > ALPHA_THRESHOLD) {
                             if (x < minX) minX = x;
                             if (x > maxX) maxX = x;
                             if (y < minY) minY = y;
@@ -57,102 +53,64 @@ window.resizeAndCenterImage = async function(imageDataUrl, targetWidth = 1200, t
                     }
                 }
 
-                console.log('[resize-helper] img size:', imgW, 'x', imgH,
-                    '| hasContent:', hasContent,
-                    '| bbox:', minX, minY, '-', maxX, maxY);
-
-                // Fallback: if no transparent pixels detected (e.g. JPEG input), use full image
+                // No transparent pixels → JPEG or opaque image → center full image
                 if (!hasContent) {
-                    console.warn('[resize-helper] ⚠️ No transparent pixels found (alpha all ≤ ' + ALPHA_THRESHOLD + '). Input may be JPEG/opaque. Falling back to full-image centering.');
-                    _drawFullImageCentered(srcCanvas, imgW, imgH, targetWidth, targetHeight, resolve);
+                    _centerFull(srcCanvas, imgW, imgH, targetWidth, targetHeight, resolve);
                     return;
-                }
-
-                // Check if bbox covers nearly the entire image (>95%) → likely opaque fallback needed
-                const bboxCoverage = ((maxX - minX) * (maxY - minY)) / (W * H);
-                if (bboxCoverage > 0.95) {
-                    console.warn('[resize-helper] ⚠️ BBox covers ' + (bboxCoverage * 100).toFixed(1) + '% of image — likely opaque/no-alpha. Centering anyway.');
                 }
 
                 const cropW = maxX - minX + 1;
                 const cropH = maxY - minY + 1;
 
-                // ── Step 3: Calculate target size for product (85% of canvas) ──
+                // ── Step 3: Scale product to 85% of canvas ──
                 const PRODUCT_RATIO = 0.85;
-                const productMaxSize = Math.min(targetWidth, targetHeight) * PRODUCT_RATIO;
-
-                const scaleToFit = Math.min(productMaxSize / cropW, productMaxSize / cropH);
-                const scaledW = Math.round(cropW * scaleToFit);
-                const scaledH = Math.round(cropH * scaleToFit);
-
+                const productMaxPx = Math.min(targetWidth, targetHeight) * PRODUCT_RATIO;
+                const scale = Math.min(productMaxPx / cropW, productMaxPx / cropH);
+                const scaledW = Math.round(cropW * scale);
+                const scaledH = Math.round(cropH * scale);
                 const offsetX = Math.round((targetWidth  - scaledW) / 2);
                 const offsetY = Math.round((targetHeight - scaledH) / 2);
 
-                console.log('[resize-helper] crop:', cropW, 'x', cropH,
-                    '| scale:', scaleToFit.toFixed(3),
-                    '| scaled:', scaledW, 'x', scaledH,
-                    '| offset:', offsetX, offsetY);
-
                 // ── Step 4: Draw to output canvas ──
-                const outCanvas = document.createElement('canvas');
-                outCanvas.width  = targetWidth;
-                outCanvas.height = targetHeight;
-                const outCtx = outCanvas.getContext('2d');
-
+                const out = document.createElement('canvas');
+                out.width  = targetWidth;
+                out.height = targetHeight;
+                const outCtx = out.getContext('2d');
                 outCtx.fillStyle = 'white';
                 outCtx.fillRect(0, 0, targetWidth, targetHeight);
-
-                outCtx.drawImage(
-                    srcCanvas,
+                outCtx.drawImage(srcCanvas,
                     minX, minY, cropW, cropH,
                     offsetX, offsetY, scaledW, scaledH
                 );
 
-                const resizedDataUrl = outCanvas.toDataURL('image/png');
-                console.log('[resize-helper] ✅ Done:', targetWidth + 'x' + targetHeight,
-                    'product at (' + offsetX + ',' + offsetY + ') size ' + scaledW + 'x' + scaledH);
-
-                resolve(resizedDataUrl);
-            } catch (error) {
-                console.error('[resize-helper] ❌ Error:', error);
-                window.logger && window.logger.error('❌ Error resizing image:', error);
-                reject(error);
+                resolve(out.toDataURL('image/png'));
+            } catch (err) {
+                reject(err);
             }
         };
 
-        img.onerror = function(error) {
-            console.error('[resize-helper] ❌ Image load error:', error);
-            window.logger && window.logger.error('❌ Error loading image:', error);
-            reject(new Error('Failed to load image'));
-        };
-
+        img.onerror = () => reject(new Error('Failed to load image for centering'));
         img.src = imageDataUrl;
     });
 };
 
-/**
- * Fallback: scale full image to fit 85% of canvas, centered
- */
-function _drawFullImageCentered(srcCanvas, imgW, imgH, targetWidth, targetHeight, resolve) {
-    const PRODUCT_RATIO = 0.85;
-    const productMaxSize = Math.min(targetWidth, targetHeight) * PRODUCT_RATIO;
-    const scale = Math.min(productMaxSize / imgW, productMaxSize / imgH);
-    const scaledW = Math.round(imgW * scale);
-    const scaledH = Math.round(imgH * scale);
-    const offsetX = Math.round((targetWidth  - scaledW) / 2);
-    const offsetY = Math.round((targetHeight - scaledH) / 2);
+/** Fallback: scale full image to 85% of canvas, centered on white background */
+function _centerFull(srcCanvas, imgW, imgH, targetWidth, targetHeight, resolve) {
+    const scale = Math.min(
+        (targetWidth  * 0.85) / imgW,
+        (targetHeight * 0.85) / imgH
+    );
+    const sw = Math.round(imgW * scale);
+    const sh = Math.round(imgH * scale);
+    const ox = Math.round((targetWidth  - sw) / 2);
+    const oy = Math.round((targetHeight - sh) / 2);
 
-    const outCanvas = document.createElement('canvas');
-    outCanvas.width  = targetWidth;
-    outCanvas.height = targetHeight;
-    const outCtx = outCanvas.getContext('2d');
-    outCtx.fillStyle = 'white';
-    outCtx.fillRect(0, 0, targetWidth, targetHeight);
-    outCtx.drawImage(srcCanvas, 0, 0, imgW, imgH, offsetX, offsetY, scaledW, scaledH);
-
-    console.log('[resize-helper] fallback full-image:', scaledW + 'x' + scaledH, 'at (' + offsetX + ',' + offsetY + ')');
-    resolve(outCanvas.toDataURL('image/png'));
+    const out = document.createElement('canvas');
+    out.width  = targetWidth;
+    out.height = targetHeight;
+    const ctx = out.getContext('2d');
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, targetWidth, targetHeight);
+    ctx.drawImage(srcCanvas, 0, 0, imgW, imgH, ox, oy, sw, sh);
+    resolve(out.toDataURL('image/png'));
 }
-
-window.logger && window.logger.debug('📐 Resize helper loaded (bounding-box centering, product:margin=85:15)');
-console.log('[resize-helper] loaded');
