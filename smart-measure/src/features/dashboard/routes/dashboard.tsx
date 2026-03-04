@@ -7,7 +7,7 @@ import { logger } from '../../../shared/helpers/logger'
 const dashboard = new Hono<AppEnv>()
 
 // Cache buster version for static JS files - bump this when JS files change
-const JS_VERSION = '20250304-02'
+const JS_VERSION = '20250304-03'
 
   // eslint-disable-next-line max-lines-per-function
 dashboard.get('/dashboard', async (c) => {

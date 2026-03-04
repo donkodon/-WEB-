@@ -149,10 +149,13 @@ bgRemoval.post('/api/remove-bg-image-data/:imageId', async (c) => {
       throw new Error(result.error)
     }
 
+    const imageBytes = new Uint8Array(result.imageBuffer as Uint8Array)
+    // Log first 4 bytes to identify format: PNG=89504e47, WebP=52494646
+    const header = Array.from(imageBytes.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join(' ')
+    logger.debug(`📸 remove-bg-image-data: imageBuffer size=${imageBytes.length} bytes, header=${header} for ${sku}/${filenamePart}`)
+
     const base64 = btoa(
-      new Uint8Array(result.imageBuffer as Uint8Array).reduce(
-        (data, byte) => data + String.fromCharCode(byte), ''
-      )
+      imageBytes.reduce((data, byte) => data + String.fromCharCode(byte), '')
     )
     const processedDataUrl = `data:image/png;base64,${base64}`
 
@@ -198,10 +201,11 @@ bgRemoval.post('/api/remove-bg-measurement/:sku', async (c) => {
     }
 
     // imageBuffer → dataURL に変換（クライアントがキャンバス処理するために必要）
+    const measureBytes = new Uint8Array(result.imageBuffer as Uint8Array)
+    const measureHeader = Array.from(measureBytes.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join(' ')
+    logger.debug(`📸 remove-bg-measurement: imageBuffer size=${measureBytes.length} bytes, header=${measureHeader} for ${sku}`)
     const base64 = btoa(
-      new Uint8Array(result.imageBuffer as Uint8Array).reduce(
-        (data, byte) => data + String.fromCharCode(byte), ''
-      )
+      measureBytes.reduce((data, byte) => data + String.fromCharCode(byte), '')
     )
     const imageDataUrl = `data:image/png;base64,${base64}`
 
