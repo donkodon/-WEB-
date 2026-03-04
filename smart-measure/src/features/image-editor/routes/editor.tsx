@@ -18,7 +18,7 @@ const editor = new Hono<AppEnv>()
 const editorService = new EditorService(new EditorRepository())
 
 // ── 静的JSのキャッシュバスター（デプロイ毎に更新）──
-const JS_VERSION = '20250304-09'
+const JS_VERSION = '20250304-10'
 
 // ─────────────────────────────────────────────
 // POST /api/upload-image

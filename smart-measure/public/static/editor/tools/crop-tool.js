@@ -3,11 +3,12 @@
  *
  * 機能:
  *   1. 切り抜きボタン押下 → モーダルを開く
- *   2. 元画像を読み込み、短辺基準で自動センタークロップ枠を配置
- *   3. ドラッグで枠を移動（正方形を保ちながら）
- *   4. リアルタイムプレビュー（200×200 縮小表示）
- *   5. 「確定して保存」→ canvas を 1000×1000 に再構成して R2 に保存
- *   6. 「自動センター」ボタンで枠をリセット
+ *   2. processedSrc（右側プレビューに表示中の画像）を読み込む
+ *   3. 短辺基準で自動センタークロップ枠を配置
+ *   4. ドラッグで枠を移動（正方形を保ちながら）
+ *   5. リアルタイムプレビュー（200×200 縮小表示）
+ *   6. 「確定して保存」→ 1000×1000 に書き出して R2 に保存
+ *   7. 「自動センター」ボタンで枠をリセット
  *
  * 依存: editor-state.js (window.EditorState)
  */
@@ -19,7 +20,7 @@
 
     // ── 状態 ──────────────────────────────────────────────────────
     let modal      = null;   // モーダル DOM
-    let srcCanvas  = null;   // 元画像を描画したキャンバス
+    let srcCanvas  = null;   // 対象画像を描画したキャンバス
     let cropX      = 0;      // 枠の左上X（元画像座標）
     let cropY      = 0;      // 枠の左上Y（元画像座標）
     let cropSize   = 0;      // 枠のサイズ（px、正方形）
@@ -33,19 +34,49 @@
         const S = window.EditorState;
         if (!S) return;
 
-        // 元画像（オリジナル or 処理済）を srcCanvas にコピー
-        srcCanvas        = document.createElement('canvas');
-        srcCanvas.width  = S.canvas.width;
-        srcCanvas.height = S.canvas.height;
-        srcCanvas.getContext('2d').drawImage(S.canvas, 0, 0);
+        // processedSrc（右側に表示されている処理済み or 元画像）を優先して読み込む
+        // processedSrc がなければ originalSrc にフォールバック
+        const imgUrl = S.processedSrc || S.originalSrc;
+        if (!imgUrl) {
+            alert('画像URLが取得できません。');
+            return;
+        }
 
-        // 自動センタークロップ計算
-        resetToAutoCenter();
-
-        // モーダル生成
+        // モーダルを先に表示してローディング状態にする
         if (!modal) buildModal();
         modal.style.display = 'flex';
-        renderAll();
+        setStatus('画像を読み込み中...');
+
+        // 画像を Image オブジェクトとして読み込み、srcCanvas に描画
+        const loader       = new Image();
+        loader.crossOrigin = 'anonymous';
+        loader.onload = function () {
+            srcCanvas        = document.createElement('canvas');
+            srcCanvas.width  = loader.naturalWidth;
+            srcCanvas.height = loader.naturalHeight;
+            srcCanvas.getContext('2d').drawImage(loader, 0, 0);
+
+            window.logger && window.logger.debug(
+                '✅ [crop-tool] image loaded for crop:',
+                loader.naturalWidth, 'x', loader.naturalHeight, imgUrl
+            );
+
+            // 自動センタークロップ計算してレンダリング
+            resetToAutoCenter();
+            renderAll();
+        };
+        loader.onerror = function () {
+            setStatus('❌ 画像の読み込みに失敗しました');
+            window.logger && window.logger.error('❌ [crop-tool] failed to load:', imgUrl);
+        };
+        // キャッシュバスターを付与して最新画像を取得
+        loader.src = imgUrl + (imgUrl.includes('?') ? '&' : '?') + '_cb=' + Date.now();
+    }
+
+    // ── ステータス表示ヘルパー ─────────────────────────────────────
+    function setStatus(msg) {
+        const el = document.getElementById('crop-status');
+        if (el) el.textContent = msg;
     }
 
     // ── 自動センタークロップ計算 ───────────────────────────────────
@@ -226,9 +257,8 @@
     }
 
     function updateStatus() {
-        const el = document.getElementById('crop-status');
-        if (!el || !srcCanvas) return;
-        el.textContent = `枠: (${cropX}, ${cropY})  サイズ: ${cropSize}×${cropSize}px  →  出力: ${OUTPUT_SIZE}×${OUTPUT_SIZE}px`;
+        if (!srcCanvas) return;
+        setStatus(`枠: (${cropX}, ${cropY})  サイズ: ${cropSize}×${cropSize}px  →  出力: ${OUTPUT_SIZE}×${OUTPUT_SIZE}px`);
     }
 
     // ── ドラッグ処理 ──────────────────────────────────────────────
@@ -283,9 +313,8 @@
         if (!S || !srcCanvas) return;
 
         const btn = document.getElementById('crop-confirm');
-        const status = document.getElementById('crop-status');
         btn.disabled    = true;
-        btn.textContent = '保存中...';
+        btn.textContent = '保存中...'
 
         // 1000×1000 に描画
         const out    = document.createElement('canvas');
@@ -309,7 +338,7 @@
             return;
         }
 
-        status.textContent = 'R2 に保存中...';
+        setStatus('R2 に保存中...');
 
         window.authenticatedFetch('/api/upload-processed-image/' + sku, {
             method:  'POST',
@@ -324,7 +353,7 @@
             return res.json();
         })
         .then(function (data) {
-            status.textContent = '✅ 保存完了！';
+            setStatus('✅ 保存完了！');
             window.logger && window.logger.debug('✅ Crop saved:', data.processedUrl);
 
             // エディタの main-canvas も更新
@@ -340,7 +369,7 @@
             }, 800);
         })
         .catch(function (err) {
-            status.textContent = '❌ エラー: ' + err.message;
+            setStatus('❌ エラー: ' + err.message);
             btn.disabled    = false;
             btn.textContent = '✓ 確定して保存';
             window.logger && window.logger.error('❌ Crop save error:', err);
