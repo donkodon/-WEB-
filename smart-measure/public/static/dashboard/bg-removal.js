@@ -92,9 +92,9 @@
                         if (!bgData.processedDataUrl) throw new Error('No processedDataUrl in response');
                         
                         // Step 2: Center and resize
-                        window.logger.debug('📐 Centering measurement image to 1200x1200...');
+                        window.logger.debug('📐 Centering measurement image to 1000x1000...');
                         if (typeof window.resizeAndCenterImage !== 'function') throw new Error('resizeAndCenterImage not found');
-                        const centeredDataUrl = await window.resizeAndCenterImage(bgData.processedDataUrl, 1200, 1200);
+                        const centeredDataUrl = await window.resizeAndCenterImage(bgData.processedDataUrl, 1000, 1000);
                         
                         // Step 3: Upload
                         const uploadRes = await window.authenticatedFetch('/api/upload-processed-measurement/' + sku, {
@@ -127,9 +127,9 @@
                         if (!bgData.processedDataUrl) throw new Error('No processedDataUrl in response');
                         
                         // Step 2: Center and resize
-                        window.logger.debug('📐 Centering regular image to 1200x1200...');
+                        window.logger.debug('📐 Centering regular image to 1000x1000...');
                         if (typeof window.resizeAndCenterImage !== 'function') throw new Error('resizeAndCenterImage not found');
-                        const centeredDataUrl = await window.resizeAndCenterImage(bgData.processedDataUrl, 1200, 1200);
+                        const centeredDataUrl = await window.resizeAndCenterImage(bgData.processedDataUrl, 1000, 1000);
                         
                         // Step 3: Upload
                         const uploadRes = await window.authenticatedFetch('/api/upload-processed-image/' + bgData.sku, {
@@ -234,10 +234,10 @@ window.removeBgSingle = async function(imageId, button) {
 
         // Step 2: Center and resize
         button.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>センタリング中';
-        window.logger.debug('📐 Step 2: Centering 1200x1200...');
+        window.logger.debug('📐 Step 2: Centering 1000x1000...');
         
         if (typeof window.resizeAndCenterImage !== 'function') throw new Error('resizeAndCenterImage not found');
-        const centeredDataUrl = await window.resizeAndCenterImage(data.processedDataUrl, 1200, 1200);
+        const centeredDataUrl = await window.resizeAndCenterImage(data.processedDataUrl, 1000, 1000);
         window.logger.debug('✅ Centered');
 
         // Step 3: Upload
@@ -337,10 +337,10 @@ window.removeBgMeasurement = async function(sku, button) {
         
         // Step 2: Center and resize
         button.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>センタリング中';
-        window.logger.debug('📐 Step 2: Centering 1200x1200...');
+        window.logger.debug('📐 Step 2: Centering 1000x1000...');
         
         if (typeof window.resizeAndCenterImage !== 'function') throw new Error('resizeAndCenterImage not found');
-        const centeredDataUrl = await window.resizeAndCenterImage(data.processedDataUrl, 1200, 1200);
+        const centeredDataUrl = await window.resizeAndCenterImage(data.processedDataUrl, 1000, 1000);
         window.logger.debug('✅ Centered');
         
         // Step 3: Upload
