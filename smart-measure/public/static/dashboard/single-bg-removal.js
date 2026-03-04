@@ -11,19 +11,17 @@ window.removeBgSingle = async function(imageId, button) {
     button.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>処理中';
     
     try {
-        window.logger.debug('📡 Sending request to /api/remove-bg-image/' + imageId);
-        const res = await fetch('/api/remove-bg-image/' + imageId, {
+        // Step 1: Remove background → get dataURL (no R2 save yet)
+        window.logger.debug('📡 Step 1: Removing background for imageId:', imageId);
+        button.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>白抜き中';
+
+        const res = await fetch('/api/remove-bg-image-data/' + imageId, {
             method: 'POST'
         });
         
         window.logger.debug('📨 Response received:', res.status, res.statusText);
         
-        if (res.ok) {
-            const data = await res.json();
-            window.logger.debug('✅ Success:', data);
-            alert('背景削除が完了しました！');
-            window.location.reload();
-        } else {
+        if (!res.ok) {
             let errorMsg = 'Unknown error';
             try {
                 const error = await res.json();
@@ -35,7 +33,51 @@ window.removeBgSingle = async function(imageId, button) {
             alert('エラー: ' + errorMsg);
             button.innerHTML = originalContent;
             button.disabled = false;
+            return;
         }
+
+        const data = await res.json();
+        window.logger.debug('✅ BG removed, has processedDataUrl?', !!data.processedDataUrl);
+
+        if (!data.processedDataUrl) {
+            throw new Error('No processedDataUrl in response');
+        }
+
+        // Step 2: Center and resize using Canvas
+        window.logger.debug('📐 Step 2: Centering image 1200x1200...');
+        button.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>センタリング中';
+
+        if (typeof window.resizeAndCenterImage !== 'function') {
+            throw new Error('resizeAndCenterImage function not found');
+        }
+        const centeredDataUrl = await window.resizeAndCenterImage(data.processedDataUrl, 1200, 1200);
+        window.logger.debug('✅ Centered, data URL length:', centeredDataUrl.length);
+
+        // Step 3: Upload centered image
+        window.logger.debug('📤 Step 3: Uploading centered image for sku:', data.sku, 'filenamePart:', data.filenamePart);
+        button.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>保存中';
+
+        const uploadRes = await fetch('/api/upload-processed-image/' + data.sku, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                imageDataUrl: centeredDataUrl,
+                filenamePart: data.filenamePart,
+                maskDataUrl: data.maskDataUrl || null
+            })
+        });
+
+        if (!uploadRes.ok) {
+            const error = await uploadRes.json().catch(() => ({ error: 'Upload failed' }));
+            throw new Error(error.details || error.error || 'Upload failed');
+        }
+
+        const uploadData = await uploadRes.json();
+        window.logger.debug('✅ Upload SUCCESS! URL:', uploadData.processedUrl);
+
+        alert('背景削除が完了しました！');
+        window.location.reload();
+
     } catch (e) {
         window.logger.error('💥 Network error:', e);
         alert('通信エラーが発生しました: ' + e.message);

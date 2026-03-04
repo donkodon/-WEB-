@@ -119,6 +119,60 @@ bgRemoval.post('/api/remove-bg-image/:imageId', async (c) => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
+// POST /api/remove-bg-image-data/:imageId — R2画像の背景削除（dataURL返却のみ・R2保存なし）
+// クライアントでセンタリング後に /api/upload-processed-image/:sku で保存する2段階フロー
+// ─────────────────────────────────────────────────────────────────────────────
+bgRemoval.post('/api/remove-bg-image-data/:imageId', async (c) => {
+  try {
+    const imageId = c.req.param('imageId')
+
+    const parsed = parseImageId(imageId)
+    if (!parsed) return c.json({ error: 'Invalid R2 image ID format. Use r2_{SKU}_{filename}.' }, 400)
+    const { sku, filenamePart } = parsed
+
+    const user = c.get('user') as { companyId?: string } | undefined
+    const userCompanyId = user?.companyId
+    if (!userCompanyId) return c.json({ error: 'Authentication required.', errorCode: 'AUTH_REQUIRED' }, 401)
+
+    const resolved = await resolveR2ImageUrl(
+      c.env.PRODUCT_IMAGES, getR2PublicUrl(c.env), userCompanyId, sku, filenamePart, c.env.DB
+    )
+    if (!resolved) {
+      return c.json({ error: `Image not found: ${imageId}`, details: `company: ${userCompanyId}, SKU: ${sku}` }, 404)
+    }
+
+    // WithoutBGProvider でdataURL返却のみ（R2保存はクライアントがセンタリング後に行う）
+    const provider = new WithoutBGProvider()
+    const result = await provider.removeBackground({ imageUrl: resolved.originalUrl })
+
+    if (!result.success) {
+      throw new Error(result.error)
+    }
+
+    const base64 = btoa(
+      new Uint8Array(result.imageBuffer as Uint8Array).reduce(
+        (data, byte) => data + String.fromCharCode(byte), ''
+      )
+    )
+    const processedDataUrl = `data:image/png;base64,${base64}`
+
+    logger.debug(`🎭 Mask data available: ${!!result.maskDataUrl} for ${sku}/${filenamePart}`)
+    return c.json({
+      success: true,
+      imageId,
+      sku,
+      filenamePart,
+      processedDataUrl,
+      maskDataUrl: result.maskDataUrl ?? null,
+      message: 'Background removed, ready for client-side centering',
+    })
+  } catch (error: unknown) {
+    logError('Background removal (image data)', error)
+    return c.json(createSafeErrorResponse(error, ErrorCode.EXTERNAL_API_ERROR), 500)
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
 // POST /api/remove-bg-measurement/:sku — 採寸画像の背景削除（dataURL返却・R2保存なし）
 // クライアントでリサイズ後に /api/upload-processed-measurement/:sku で保存する2段階フロー
 // ─────────────────────────────────────────────────────────────────────────────
@@ -218,7 +272,11 @@ bgRemoval.post('/api/upload-processed-image/:sku', async (c) => {
     const sku = c.req.param('sku')
     const user = c.get('user') as { companyId?: string } | undefined
     const companyId = user?.companyId || getCompanyId(c)
-    const { imageDataUrl, filenamePart } = await c.req.json() as { imageDataUrl?: string; filenamePart?: string }
+    const { imageDataUrl, filenamePart, maskDataUrl } = await c.req.json() as {
+      imageDataUrl?: string
+      filenamePart?: string
+      maskDataUrl?: string | null
+    }
 
     if (!imageDataUrl?.startsWith('data:image/png;base64,')) return c.json({ error: 'Invalid image data' }, 400)
     if (!filenamePart) return c.json({ error: 'filenamePart is required' }, 400)
@@ -232,11 +290,26 @@ bgRemoval.post('/api/upload-processed-image/:sku', async (c) => {
     await markImageAsProcessed(c.env.DB, sku, companyId, filenamePart)
     logger.debug(`✅ DB updated: processed_images for ${sku}/${filenamePart}`)
 
+    // マスク画像も保存（ある場合）
+    let maskUrl: string | null = null
+    if (maskDataUrl) {
+      try {
+        maskUrl = await saveMaskToR2AndDb(
+          c.env.PRODUCT_IMAGES, c.env.DB, getR2PublicUrl(c.env),
+          { companyId, sku, filenamePart, maskBytes: base64ToBuffer(maskDataUrl) }
+        )
+        logger.debug(`🎭 Mask saved: ${maskUrl}`)
+      } catch (maskErr: unknown) {
+        logger.error('❌ Failed to save mask:', maskErr instanceof Error ? maskErr.message : String(maskErr))
+      }
+    }
+
     const processedUrl = `${getR2PublicUrl(c.env)}/${r2Key}`
     return c.json({
       success: true,
       sku,
       processedUrl,
+      maskUrl,
       r2Key,
       filenamePart,
       message: 'Processed image uploaded successfully',
