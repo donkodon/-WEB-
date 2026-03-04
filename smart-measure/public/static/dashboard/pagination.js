@@ -296,7 +296,7 @@ function createImageHTML(img, product) {
                     </button>
                 ` : ''}
             </div>
-            <div class="image-card-overlay absolute inset-0 bg-transparent cursor-pointer z-0" onclick="${isMeasurement ? `window.location.href='/landmarks/${encodeURIComponent(product.sku)}'` : `window.location.href='/edit/${img.id}'`}" data-image-id="${img.id}"></div>
+            <div class="image-card-overlay absolute inset-0 bg-transparent cursor-pointer z-0" onclick="${isMeasurement ? `window.location.href='/landmarks/${encodeURIComponent(product.sku)}'` : `(function(){var src=${JSON.stringify(img.processed_url||'')};window.location.href='/edit/${img.id}'+(src?'?src='+encodeURIComponent(src):'');})()`}" data-image-id="${img.id}"></div>
         </div>
     `;
 }

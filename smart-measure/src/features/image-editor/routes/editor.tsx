@@ -18,7 +18,7 @@ const editor = new Hono<AppEnv>()
 const editorService = new EditorService(new EditorRepository())
 
 // ── 静的JSのキャッシュバスター（デプロイ毎に更新）──
-const JS_VERSION = '20250304-12'
+const JS_VERSION = '20250304-13'
 
 // ─────────────────────────────────────────────
 // POST /api/upload-image
@@ -88,12 +88,21 @@ editor.get('/edit/:id', async (c) => {
 
   const {
     sku: productSku,
-    imageSrc,
     originalSrc,
     isProcessed,
     isMeasurement,
     maskImageUrl: maskImageUrlWithCache,
   } = editorData
+
+  // ── クエリパラメータ ?src= があればダッシュボードの表示URL（p/f画像）を優先使用 ──
+  // ダッシュボードはすでに f>p>original の優先順位で display_url を決定済みなので
+  // そのURLを直接エディタに渡すことで、DBクエリのズレを排除する
+  const srcParam = c.req.query('src')
+  const imageSrc = (srcParam && srcParam.startsWith('/api/image-proxy/'))
+    ? srcParam
+    : editorData.imageSrc
+
+  const finalIsProcessed = isProcessed || (srcParam?.includes('_p.png') || srcParam?.includes('_f.png')) || false
 
   const hasMask = true // マスク編集タブは常に表示
 
@@ -313,7 +322,7 @@ editor.get('/edit/:id', async (c) => {
                 <div id="canvas-container" class="flex-1 bg-gray-50 border border-gray-100 rounded-lg relative overflow-hidden flex items-center justify-center" style="background-image: radial-gradient(#e2e8f0 1px, transparent 1px); background-size: 20px 20px;">
                     <div class="relative shadow-2xl">
                          <canvas id="main-canvas" class="max-h-[600px] max-w-full object-contain cursor-crosshair"></canvas>
-                         {isProcessed ? (
+                         {finalIsProcessed ? (
                              <div class="absolute top-4 left-4 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded shadow-sm pointer-events-none">
                                  <i class="fas fa-check text-[8px] mr-1"></i> 白抜き済み
                              </div>
@@ -337,7 +346,7 @@ editor.get('/edit/:id', async (c) => {
              data-image-id={id}
              data-image-src={imageSrc}
              data-original-src={originalSrc}
-             data-is-processed={String(isProcessed)}
+             data-is-processed={String(finalIsProcessed)}
              style="display: none;">
         </div>
 
