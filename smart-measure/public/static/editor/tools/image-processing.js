@@ -176,9 +176,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (btnCrop) {
         btnCrop.addEventListener('click', () => {
-            S.currentTool       = 'crop';
-            S.maskMode          = false;
-            canvas.style.cursor = 'crosshair';
+            // スクエアクロップモーダルを開く（1000×1000）
+            if (window.CropTool && typeof window.CropTool.openSquareCropModal === 'function') {
+                window.CropTool.openSquareCropModal();
+            } else {
+                alert('クロップ機能が読み込まれていません。ページをリロードしてください。');
+            }
         });
     }
     if (btnBrush) {

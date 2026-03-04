@@ -7,7 +7,7 @@ import { logger } from '../../../shared/helpers/logger'
 const dashboard = new Hono<AppEnv>()
 
 // Cache buster version for static JS files - bump this when JS files change
-const JS_VERSION = '20250304-08'
+const JS_VERSION = '20250304-09'
 
   // eslint-disable-next-line max-lines-per-function
 dashboard.get('/dashboard', async (c) => {
@@ -119,9 +119,6 @@ dashboard.get('/dashboard', async (c) => {
       {/* Background Removal Scripts */}
       <script src={`/static/dashboard/bg-removal.js?v=${JS_VERSION}`}></script>
 
-      {/* Square Crop Helper */}
-      <script src={`/static/dashboard/crop-helper.js?v=${JS_VERSION}`}></script>
-      
       {/* Auto-Measurement Scripts */}
       <script src={`/static/dashboard/auto-measure.js?v=${JS_VERSION}`}></script>
       
