@@ -274,6 +274,19 @@ function createImageHTML(img, product) {
                     </button>
                 ` : ''}
                 
+                ${!isMeasurement ? `
+                    <button
+                        data-image-id="${img.id}"
+                        data-sku="${escapeHtml(product.sku)}"
+                        data-filename-part="${escapeHtml(img.filenamePart || img.id.replace(/^r2_[^_]+_/, ''))}"
+                        data-original-url="${img.original_url}"
+                        onclick="event.stopPropagation(); handleCropOpen(this)"
+                        class="absolute bottom-2 left-2 bg-orange-500 text-white px-2 py-1 rounded text-xs font-bold hover:bg-orange-600 opacity-0 group-hover:opacity-100 transition-opacity flex items-center shadow-lg z-10"
+                    >
+                        <i class="fas fa-crop-alt mr-1"></i>クロップ
+                    </button>
+                ` : ''}
+                
                 ${img.status === 'processing' ? `
                     <div class="absolute inset-0 bg-black/50 flex flex-col items-center justify-center z-20">
                         <div class="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-2"></div>
@@ -425,3 +438,20 @@ function hideLoadingIndicator() {
 
 // Expose loadPage to global scope for onclick handlers
 window.loadPage = loadPage;
+
+/**
+ * クロップモーダルを開く
+ * ボタンの data 属性から imageId / sku / filenamePart / originalUrl を取得
+ */
+window.handleCropOpen = function(button) {
+    const imageId    = button.getAttribute('data-image-id');
+    const sku        = button.getAttribute('data-sku');
+    const fnPart     = button.getAttribute('data-filename-part');
+    const origUrl    = button.getAttribute('data-original-url');
+
+    if (typeof window.openCropModal !== 'function') {
+        alert('クロップ機能が読み込まれていません。ページをリロードしてください。');
+        return;
+    }
+    window.openCropModal(imageId, sku, fnPart, origUrl);
+};
