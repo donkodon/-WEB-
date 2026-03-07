@@ -399,12 +399,19 @@
         try {
             // Step 1: マスクを base64 に変換してR2に保存
             const maskDataUrl = S.maskCanvas.toDataURL('image/png');
-            window.logger && window.logger.debug('✅ Step1: Converting mask to PNG');
+            window.logger && window.logger.debug('✅ Step1: Converting mask to PNG, length:', maskDataUrl.length);
             
             // R2に保存（authenticatedFetchを使用）
             const sku = S.sku;
             const filenamePart = S.filenamePart;
             window.logger && window.logger.info(`💾 Uploading mask to R2: sku=${sku}, filenamePart=${filenamePart}`);
+            window.logger && window.logger.debug(`📊 EditorState values:`, {
+                sku: sku,
+                filenamePart: filenamePart,
+                hasMaskCanvas: !!S.maskCanvas,
+                maskCanvasSize: `${S.maskCanvas.width}x${S.maskCanvas.height}`,
+                hasAuthFetch: typeof window.authenticatedFetch === 'function'
+            });
             
             const fetchFn = (typeof window.authenticatedFetch === 'function')
                 ? window.authenticatedFetch
@@ -416,9 +423,18 @@
                 body: JSON.stringify({ maskDataUrl, filenamePart })
             });
             
+            window.logger && window.logger.debug(`📡 Mask save response status: ${maskRes.status}`);
+            
             if (!maskRes.ok) {
-                const errorData = await maskRes.json().catch(() => ({ error: 'Unknown error' }));
-                throw new Error(errorData.details || errorData.error || `Mask save failed (${maskRes.status})`);
+                const errorText = await maskRes.text();
+                window.logger && window.logger.error(`❌ Mask save failed (${maskRes.status}):`, errorText);
+                let errorData;
+                try {
+                    errorData = JSON.parse(errorText);
+                } catch (e) {
+                    errorData = { error: errorText || 'Unknown error' };
+                }
+                throw new Error(errorData.details || errorData.error || `Mask save failed (${maskRes.status}): ${errorText}`);
             }
             
             const maskResult = await maskRes.json();
@@ -465,22 +481,29 @@
             
             // p画像もR2に保存
             window.logger && window.logger.info(`💾 Uploading processed image (_p.png) to R2`);
-            const processedRes = await fetchFn(`/api/upload-processed-image/${sku}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    imageDataUrl: compositeDataUrl, 
-                    filenamePart: filenamePart 
-                })
-            });
-            
-            if (!processedRes.ok) {
-                const errorData = await processedRes.json().catch(() => ({ error: 'Unknown error' }));
-                window.logger && window.logger.warn(`⚠️ Processed image upload failed: ${errorData.error}`);
+            try {
+                const processedRes = await fetchFn(`/api/upload-processed-image/${sku}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        imageDataUrl: compositeDataUrl, 
+                        filenamePart: filenamePart 
+                    })
+                });
+                
+                window.logger && window.logger.debug(`📡 Processed image response status: ${processedRes.status}`);
+                
+                if (!processedRes.ok) {
+                    const errorText = await processedRes.text();
+                    window.logger && window.logger.warn(`⚠️ Processed image upload failed (${processedRes.status}):`, errorText);
+                    // エラーでも続行（マスクは既に保存済み）
+                } else {
+                    const processedResult = await processedRes.json();
+                    window.logger && window.logger.info(`✅ Processed image saved to R2:`, processedResult.r2Key || processedResult.url);
+                }
+            } catch (procErr) {
+                window.logger && window.logger.warn(`⚠️ Processed image upload error:`, procErr);
                 // エラーでも続行（マスクは既に保存済み）
-            } else {
-                const processedResult = await processedRes.json();
-                window.logger && window.logger.info(`✅ Processed image saved to R2:`, processedResult.r2Key || processedResult.url);
             }
             
             // メモリにも保持
