@@ -231,7 +231,8 @@ function createImageHTML(img, product) {
         clickHandler = `handleImageClick('landmarks', '${escapeHtml(product.sku)}', null, null)`;
     } else {
         const processedUrl = img.processed_url || '';
-        clickHandler = `handleImageClick('edit', null, ${img.id}, '${escapeHtml(processedUrl)}')`;
+        const imageIdSafe = String(img.id).replace(/'/g, "\\'");
+        clickHandler = `handleImageClick('edit', null, '${imageIdSafe}', '${escapeHtml(processedUrl)}')`;
     }
     
     return `
@@ -443,14 +444,24 @@ window.loadPage = loadPage;
  * @param {string|null} processedUrl - Processed URL (for edit)
  */
 window.handleImageClick = function(type, sku, imageId, processedUrl) {
+    window.logger && window.logger.debug('🖼️ Image click:', { type, sku, imageId, processedUrl });
+    
     if (type === 'landmarks') {
         window.location.href = `/landmarks/${encodeURIComponent(sku)}`;
     } else if (type === 'edit') {
+        if (!imageId) {
+            window.logger && window.logger.error('❌ imageId is missing');
+            alert('画像IDが見つかりません');
+            return;
+        }
         let url = `/edit/${imageId}`;
         if (processedUrl && processedUrl.trim() !== '') {
             url += `?src=${encodeURIComponent(processedUrl)}`;
         }
+        window.logger && window.logger.debug('🔗 Navigating to:', url);
         window.location.href = url;
+    } else {
+        window.logger && window.logger.error('❌ Unknown type:', type);
     }
 };
 
