@@ -84,13 +84,19 @@
 
                 saveMaskHistory();
                 
-                // 🎨 マスクロード完了後、自動的にマスクを適用
+                // 🎨 マスクロード完了後、自動的にマスクを適用して画像調整を再適用
                 console.log('🎨 Checking applyMaskToCanvas:', typeof window.applyMaskToCanvas);
                 window.logger && window.logger.debug('🎨 Checking applyMaskToCanvas:', typeof window.applyMaskToCanvas);
                 if (window.applyMaskToCanvas) {
                     console.log('🎨 Calling applyMaskToCanvas...');
                     window.logger && window.logger.debug('🎨 Calling applyMaskToCanvas...');
                     window.applyMaskToCanvas();
+                    
+                    // マスク適用後、画像調整を再適用（初期表示を正しく表示）
+                    console.log('🎨 Applying adjustments after mask...');
+                    if (window.ImageAdjust && window.ImageAdjust.applyAllAdjustments) {
+                        window.ImageAdjust.applyAllAdjustments();
+                    }
                 } else {
                     console.error('❌ applyMaskToCanvas not found!');
                     window.logger && window.logger.error('❌ applyMaskToCanvas not found!');
