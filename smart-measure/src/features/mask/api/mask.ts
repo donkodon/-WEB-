@@ -61,11 +61,20 @@ maskApi.post('/api/save-mask/:sku', async (c) => {
   logger.info(`🔵 === MASK SAVE REQUEST START === SKU: ${sku}`)
   try {
     // Check user context from Firebase auth
-    const user = c.get?.('user') as { companyId?: string; email?: string } | undefined
-    logger.info(`🔐 Firebase user context:`, user)
+    const user = c.get?.('user') as { companyId?: string; email?: string; uid?: string } | undefined
+    logger.info(`🔐 Firebase user context:`, {
+      hasUser: !!user,
+      uid: user?.uid,
+      email: user?.email,
+      companyId: user?.companyId
+    })
     
     const companyId = getCompanyId(c)
     logger.info(`👤 Company ID (final): ${companyId}`)
+    
+    if (!companyId || companyId === 'test_company') {
+      logger.warn(`⚠️ Using fallback company ID: ${companyId}`)
+    }
     
     const body = await c.req.json()
     const { maskDataUrl, filenamePart } = body
@@ -76,11 +85,19 @@ maskApi.post('/api/save-mask/:sku', async (c) => {
       logger.warn(`❌ Invalid mask data: ${maskDataUrl?.substring(0, 50)}...`)
       return c.json({ error: 'Invalid mask data' }, 400)
     }
+    if (!c.env.DB) {
+      logger.error(`❌ DB not configured!`)
+      return c.json({ error: 'Database not configured' }, 500)
+    }
     if (!c.env.PRODUCT_IMAGES) {
       logger.error(`❌ R2 bucket not configured!`)
       return c.json({ error: 'R2 bucket not configured' }, 500)
     }
-    logger.debug(`✅ R2 bucket configured: ${typeof c.env.PRODUCT_IMAGES}`)
+    logger.debug(`✅ Environment check passed:`, {
+      hasDB: !!c.env.DB,
+      hasR2: !!c.env.PRODUCT_IMAGES,
+      r2PublicUrl: getR2PublicUrl(c.env)
+    })
 
     // ── ビジネスロジックはServiceに委譲 ──
     logger.debug(`📥 Saving mask: sku=${sku}, companyId=${companyId}, filenamePart=${filenamePart}`)
@@ -101,8 +118,19 @@ maskApi.post('/api/save-mask/:sku', async (c) => {
     })
   } catch (error) {
     logError('Mask save', error, { sku })
+    logger.error(`❌ Mask save exception:`, {
+      sku,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorStack: error instanceof Error ? error.stack : undefined
+    })
     return c.json(
-      createSafeErrorResponse(error, ErrorCode.UPLOAD_FAILED),
+      {
+        ...createSafeErrorResponse(error, ErrorCode.UPLOAD_FAILED),
+        debug: {
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack?.split('\n').slice(0, 3) : undefined
+        }
+      },
       500
     )
   }
