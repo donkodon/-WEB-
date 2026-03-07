@@ -21,8 +21,7 @@ import { MaskService } from '../services/mask-service'
 const maskApi = new Hono<AppEnv>()
 
 // Firebase認証ミドルウェアを全エンドポイントに適用
-// TEMPORARY: Allow fallback to cookie-based company_id for debugging
-// maskApi.use('*', requireFirebaseAuth)
+maskApi.use('*', requireFirebaseAuth)
 
 // ── Composition Root: モジュールスコープで一度だけ生成（per-request生成を排除）──
 // テストでは MaskService(mockRepo) に差し替えてテスト可能
