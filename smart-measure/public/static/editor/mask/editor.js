@@ -24,7 +24,8 @@ let maskEditorState = {
     offscreenMaskCtx: null,
     isDrawing: false,
     brushSize: 20,
-    mode: 'brush',
+    mode: 'brush',  // 'brush' (削除) or 'eraser' (復元)
+    viewMode: 'mask',  // 'mask' (白黒), 'overlay' (重ね表示), 'result' (結果)
     originalImage: null,
     history: [],
     historyIndex: -1,
@@ -142,6 +143,10 @@ window.initMaskEditor = async function(originalImageUrl, maskImageUrl) {
         renderMaskEditor();
         saveHistory();
         setupEventListeners();
+        
+        // UIの初期状態を設定
+        window.maskEditorSetMode('brush');  // デフォルト: 削除ブラシ
+        window.maskEditorSetViewMode('mask');  // デフォルト: マスク表示
 
         window.logger.debug('✅ Mask editor initialized successfully');
 
@@ -156,24 +161,103 @@ window.initMaskEditor = async function(originalImageUrl, maskImageUrl) {
 // =============================================
 
 function renderMaskEditor() {
-    const { canvas, ctx, originalImage, offscreenMaskCanvas } = maskEditorState;
+    const { canvas, ctx, originalImage, offscreenMaskCanvas, viewMode } = maskEditorState;
     if (!canvas || !ctx || !originalImage) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // オリジナル画像
-    try {
-        ctx.drawImage(originalImage, 0, 0);
-    } catch (e) {
-        window.logger.warn('⚠️ drawImage originalImage failed (tainted?):', e.message);
+    // viewModeに応じて表示を切り替え
+    switch(viewMode) {
+        case 'mask':
+            // マスクモード: 元画像 + マスク（半透明）
+            try {
+                ctx.drawImage(originalImage, 0, 0);
+            } catch (e) {
+                window.logger.warn('⚠️ drawImage originalImage failed (tainted?):', e.message);
+            }
+            if (offscreenMaskCanvas) {
+                ctx.globalAlpha = 0.5;
+                ctx.drawImage(offscreenMaskCanvas, 0, 0);
+                ctx.globalAlpha = 1.0;
+            }
+            break;
+            
+        case 'overlay':
+            // オーバーレイモード: 元画像 + 削除エリアを赤色半透明で表示
+            try {
+                ctx.drawImage(originalImage, 0, 0);
+            } catch (e) {
+                window.logger.warn('⚠️ drawImage originalImage failed (tainted?):', e.message);
+            }
+            if (offscreenMaskCanvas) {
+                // マスクの白いピクセル（削除エリア）だけを赤色で表示
+                const maskData = maskEditorState.offscreenMaskCtx.getImageData(0, 0, canvas.width, canvas.height);
+                const overlayData = ctx.createImageData(canvas.width, canvas.height);
+                
+                for (let i = 0; i < maskData.data.length; i += 4) {
+                    const gray = maskData.data[i];  // グレースケール値
+                    if (gray > 128) {  // 白い部分（削除エリア）
+                        overlayData.data[i] = 255;      // R: 赤色
+                        overlayData.data[i+1] = 0;      // G
+                        overlayData.data[i+2] = 0;      // B
+                        overlayData.data[i+3] = 128;    // A: 半透明
+                    }
+                }
+                ctx.putImageData(overlayData, 0, 0);
+            }
+            break;
+            
+        case 'result':
+            // 結果モード: 背景削除結果を表示
+            try {
+                ctx.drawImage(originalImage, 0, 0);
+            } catch (e) {
+                window.logger.warn('⚠️ drawImage originalImage failed (tainted?):', e.message);
+            }
+            if (offscreenMaskCanvas) {
+                // マスクを適用（白→透明、黒→不透明）
+                ctx.globalCompositeOperation = 'destination-in';
+                
+                // マスクを反転して適用
+                const invertedMask = createInvertedMaskForPreview();
+                ctx.drawImage(invertedMask, 0, 0);
+                
+                ctx.globalCompositeOperation = 'source-over';
+            }
+            break;
     }
+}
 
-    // マスクオーバーレイ（半透明）
-    if (offscreenMaskCanvas) {
-        ctx.globalAlpha = 0.5;
-        ctx.drawImage(offscreenMaskCanvas, 0, 0);
-        ctx.globalAlpha = 1.0;
+/**
+ * マスクを反転（白→透明、黒→不透明）
+ * プレビュー用の一時的なcanvasを生成
+ */
+function createInvertedMaskForPreview() {
+    const { offscreenMaskCanvas } = maskEditorState;
+    if (!offscreenMaskCanvas) return null;
+    
+    const inverted = document.createElement('canvas');
+    inverted.width = offscreenMaskCanvas.width;
+    inverted.height = offscreenMaskCanvas.height;
+    const ctx = inverted.getContext('2d');
+    
+    // マスクを描画
+    ctx.drawImage(offscreenMaskCanvas, 0, 0);
+    
+    // ピクセル単位で反転
+    const imageData = ctx.getImageData(0, 0, inverted.width, inverted.height);
+    for (let i = 0; i < imageData.data.length; i += 4) {
+        const gray = imageData.data[i];  // グレースケール値（0-255）
+        // 白(255) → Alpha 0（透明）
+        // 黒(0) → Alpha 255（不透明）
+        imageData.data[i] = 255;      // R
+        imageData.data[i+1] = 255;    // G
+        imageData.data[i+2] = 255;    // B
+        imageData.data[i+3] = 255 - gray;  // Alpha（反転）
     }
+    ctx.putImageData(imageData, 0, 0);
+    
+    return inverted;
 }
 
 /**
@@ -347,13 +431,54 @@ window.maskEditorSetBrushSize = function(size) {
 window.maskEditorSetMode = function(mode) {
     maskEditorState.mode = mode;
     window.logger.debug('✏️ Mode:', mode);
+    
+    // UIの更新（赤・緑の色分け）
     document.querySelectorAll('[data-mode]').forEach(btn => {
         const isActive = btn.dataset.mode === mode;
-        btn.classList.toggle('bg-blue-600', isActive);
+        if (btn.dataset.mode === 'brush') {
+            // 削除ブラシ（赤）
+            btn.classList.toggle('bg-red-600', isActive);
+            btn.classList.toggle('bg-red-700', false);
+            btn.classList.toggle('bg-green-600', false);
+            btn.classList.toggle('bg-green-700', false);
+            btn.classList.toggle('text-white', true);
+            if (!isActive) {
+                btn.classList.add('opacity-60');
+            } else {
+                btn.classList.remove('opacity-60');
+            }
+        } else if (btn.dataset.mode === 'eraser') {
+            // 復元ブラシ（緑）
+            btn.classList.toggle('bg-green-600', isActive);
+            btn.classList.toggle('bg-green-700', false);
+            btn.classList.toggle('bg-red-600', false);
+            btn.classList.toggle('bg-red-700', false);
+            btn.classList.toggle('text-white', true);
+            if (!isActive) {
+                btn.classList.add('opacity-60');
+            } else {
+                btn.classList.remove('opacity-60');
+            }
+        }
+    });
+};
+
+// 表示モード切替
+window.maskEditorSetViewMode = function(viewMode) {
+    maskEditorState.viewMode = viewMode;
+    window.logger.debug('👁️ View mode:', viewMode);
+    
+    // UIの更新
+    document.querySelectorAll('[data-view-mode]').forEach(btn => {
+        const isActive = btn.dataset.viewMode === viewMode;
+        btn.classList.toggle('bg-gray-700', isActive);
         btn.classList.toggle('text-white', isActive);
         btn.classList.toggle('bg-gray-100', !isActive);
         btn.classList.toggle('text-gray-700', !isActive);
     });
+    
+    // 再描画
+    renderMaskEditor();
 };
 
 // =============================================

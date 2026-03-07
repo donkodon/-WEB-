@@ -79,21 +79,54 @@ maskEditor.get('/mask-editor/:sku', async (c) => {
                             <button 
                                 data-mode="brush"
                                 onclick="window.maskEditorSetMode('brush')"
-                                class="flex-1 bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                                class="flex-1 bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-red-700"
                             >
-                                <i class="fas fa-paintbrush mr-1"></i> ブラシ
+                                <i class="fas fa-eraser mr-1"></i> 削除
                             </button>
                             <button 
                                 data-mode="eraser"
                                 onclick="window.maskEditorSetMode('eraser')"
-                                class="flex-1 bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                                class="flex-1 bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-green-700"
                             >
-                                <i class="fas fa-eraser mr-1"></i> 消しゴム
+                                <i class="fas fa-paint-brush mr-1"></i> 復元
                             </button>
                         </div>
                         <div class="mt-2 text-xs text-gray-500">
-                            <strong>ブラシ:</strong> 白く塗る（削除エリア）<br/>
-                            <strong>消しゴム:</strong> 黒く塗る（保持エリア）
+                            <span class="text-red-600 font-bold">削除ブラシ:</span> 背景を削除（白）<br/>
+                            <span class="text-green-600 font-bold">復元ブラシ:</span> 商品を復元（黒）
+                        </div>
+                    </div>
+                    
+                    {/* View Mode Selection */}
+                    <div class="mb-6">
+                        <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">表示モード</div>
+                        <div class="flex space-x-2">
+                            <button 
+                                data-view-mode="mask"
+                                onclick="window.maskEditorSetViewMode('mask')"
+                                class="flex-1 bg-gray-700 text-white px-2 py-2 rounded-lg text-xs font-medium transition-colors"
+                            >
+                                <i class="fas fa-mask mr-1"></i> マスク
+                            </button>
+                            <button 
+                                data-view-mode="overlay"
+                                onclick="window.maskEditorSetViewMode('overlay')"
+                                class="flex-1 bg-gray-100 text-gray-700 px-2 py-2 rounded-lg text-xs font-medium transition-colors"
+                            >
+                                <i class="fas fa-layer-group mr-1"></i> 重ね表示
+                            </button>
+                            <button 
+                                data-view-mode="result"
+                                onclick="window.maskEditorSetViewMode('result')"
+                                class="flex-1 bg-gray-100 text-gray-700 px-2 py-2 rounded-lg text-xs font-medium transition-colors"
+                            >
+                                <i class="fas fa-eye mr-1"></i> 結果
+                            </button>
+                        </div>
+                        <div class="mt-2 text-xs text-gray-500">
+                            <strong>マスク:</strong> 白黒で編集<br/>
+                            <strong>重ね表示:</strong> 削除エリアを赤色表示<br/>
+                            <strong>結果:</strong> 背景削除結果を表示
                         </div>
                     </div>
 
@@ -137,14 +170,16 @@ maskEditor.get('/mask-editor/:sku', async (c) => {
                     {/* Instructions */}
                     <div class="mt-auto pt-4 border-t border-gray-200">
                         <div class="text-xs text-gray-600 space-y-2">
-                            <p><strong>使い方:</strong></p>
+                            <p><strong>💡 マスク編集の基本:</strong></p>
                             <ul class="list-disc list-inside space-y-1 text-[11px]">
-                                <li>ブラシで白く塗る → 背景として削除</li>
-                                <li>消しゴムで黒く塗る → 商品として保持</li>
-                                <li>マウスまたはタッチで描画</li>
-                                <li>プレビューで結果確認</li>
-                                <li>保存で画像を再生成</li>
+                                <li><span class="text-red-600 font-bold">削除ブラシ:</span> 背景を削除したい部分を塗る</li>
+                                <li><span class="text-green-600 font-bold">復元ブラシ:</span> 商品として残したい部分を塗る</li>
+                                <li>重ね表示で削除エリアを確認</li>
+                                <li>結果モードで仕上がりをチェック</li>
                             </ul>
+                            <p class="text-[10px] text-gray-500 mt-2">
+                                ※AIが削除しすぎた場合は「復元ブラシ」で元に戻せます
+                            </p>
                         </div>
                     </div>
                 </div>
