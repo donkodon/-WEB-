@@ -122,9 +122,11 @@ function buildSkuMap(
       if (record) productData.images.push(record)
     }
 
+    // 背景削除マスク(mask_image_url_r2)を優先、なければ採寸マスク(mask_image_url)
+    const maskUrl = (pi.mask_image_url_r2 as string | null) || (pi.mask_image_url as string | null)
     const measureRecord = buildMeasurementImageRecord(
       sku, pi.annotated_image_url as string | undefined,
-      pi.mask_image_url as string | null,
+      maskUrl,
       processedImages, imageUrls.length, updatedAt,
       baseUrl
     )
@@ -180,6 +182,7 @@ export class DashboardRepository implements IDashboardRepository {
              CASE WHEN ai_landmarks IS NOT NULL THEN 1 ELSE 0 END as has_measurement,
              COALESCE(annotated_image_url, measurement_image_url) as annotated_image_url,
              mask_image_url,
+             mask_image_url_r2,
              COALESCE(processed_images, '[]') as processed_images,
              COALESCE(final_images, '[]') as final_images,
              COALESCE(image_status, 'original') as image_status
