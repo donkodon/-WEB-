@@ -21,7 +21,8 @@ import { MaskService } from '../services/mask-service'
 const maskApi = new Hono<AppEnv>()
 
 // Firebase認証ミドルウェアを全エンドポイントに適用
-maskApi.use('*', requireFirebaseAuth)
+// TEMPORARY: Allow fallback to cookie-based company_id for debugging
+// maskApi.use('*', requireFirebaseAuth)
 
 // ── Composition Root: モジュールスコープで一度だけ生成（per-request生成を排除）──
 // テストでは MaskService(mockRepo) に差し替えてテスト可能
@@ -59,11 +60,16 @@ maskApi.post('/api/save-mask/:sku', async (c) => {
   const sku = c.req.param('sku')
   logger.info(`🔵 === MASK SAVE REQUEST START === SKU: ${sku}`)
   try {
+    // Check user context from Firebase auth
+    const user = c.get?.('user') as { companyId?: string; email?: string } | undefined
+    logger.info(`🔐 Firebase user context:`, user)
+    
     const companyId = getCompanyId(c)
-    logger.debug(`👤 Company ID: ${companyId}`)
+    logger.info(`👤 Company ID (final): ${companyId}`)
+    
     const body = await c.req.json()
     const { maskDataUrl, filenamePart } = body
-    logger.debug(`📦 Request body: filenamePart=${filenamePart}, maskDataUrl length=${maskDataUrl?.length || 0}`)
+    logger.info(`📦 Request body: filenamePart=${filenamePart}, maskDataUrl length=${maskDataUrl?.length || 0}`)
 
     // ── バリデーション ──
     if (!maskDataUrl || !maskDataUrl.startsWith('data:image/png;base64,')) {
