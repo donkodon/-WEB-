@@ -79,16 +79,20 @@
                 S.maskImageData = tmpCtx.getImageData(0, 0, canvas.width, canvas.height);
                 maskCtx.putImageData(S.maskImageData, 0, 0);
 
+                console.log('✅ Mask loaded & synced to canvas size:', canvas.width, 'x', canvas.height);
                 window.logger && window.logger.debug('✅ Mask loaded & synced to canvas size:', canvas.width, 'x', canvas.height);
 
                 saveMaskHistory();
                 
                 // 🎨 マスクロード完了後、自動的にマスクを適用
+                console.log('🎨 Checking applyMaskToCanvas:', typeof window.applyMaskToCanvas);
                 window.logger && window.logger.debug('🎨 Checking applyMaskToCanvas:', typeof window.applyMaskToCanvas);
                 if (window.applyMaskToCanvas) {
+                    console.log('🎨 Calling applyMaskToCanvas...');
                     window.logger && window.logger.debug('🎨 Calling applyMaskToCanvas...');
                     window.applyMaskToCanvas();
                 } else {
+                    console.error('❌ applyMaskToCanvas not found!');
                     window.logger && window.logger.error('❌ applyMaskToCanvas not found!');
                 }
 
@@ -658,24 +662,30 @@
      * 4. adjustedImage を更新（明るさ調整のベース）
      */
     window.applyMaskToCanvas = function() {
+        console.log('🎨 [applyMaskToCanvas] START');
         window.logger && window.logger.info('🎨 [applyMaskToCanvas] START');
         
         const S = window.EditorState;
         if (!S) {
+            console.error('❌ EditorState is null');
             window.logger && window.logger.error('❌ EditorState is null');
             return;
         }
         if (!S.maskCanvas) {
+            console.error('❌ maskCanvas is null');
             window.logger && window.logger.error('❌ maskCanvas is null');
             return;
         }
         if (!S.originalImage) {
+            console.error('❌ originalImage is null');
             window.logger && window.logger.error('❌ originalImage is null');
             return;
         }
 
         const { canvas, ctx, maskCanvas } = S;
         
+        console.log('🎨 Canvas size:', canvas.width, 'x', canvas.height);
+        console.log('🎨 MaskCanvas size:', maskCanvas.width, 'x', maskCanvas.height);
         window.logger && window.logger.debug('🎨 Canvas size:', canvas.width, 'x', canvas.height);
         window.logger && window.logger.debug('🎨 MaskCanvas size:', maskCanvas.width, 'x', maskCanvas.height);
         
@@ -685,16 +695,19 @@
         // 2. 白背景を塗る
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
+        console.log('✅ Step 1: White background drawn');
         window.logger && window.logger.debug('✅ Step 1: White background drawn');
         
         // 3. オリジナル画像を描画
         ctx.putImageData(S.originalImage, 0, 0);
+        console.log('✅ Step 2: Original image drawn');
         window.logger && window.logger.debug('✅ Step 2: Original image drawn');
         
         // 4. マスクで透過処理（destination-in = マスクの白部分だけ残す）
         ctx.globalCompositeOperation = 'destination-in';
         ctx.drawImage(maskCanvas, 0, 0);
         ctx.globalCompositeOperation = 'source-over';  // 通常描画に戻す
+        console.log('✅ Step 3: Mask applied (destination-in)');
         window.logger && window.logger.debug('✅ Step 3: Mask applied (destination-in)');
         
         // 5. adjustedImage キャッシュを更新（明るさ調整のベースとして使用）
@@ -702,6 +715,7 @@
         S.showingOriginal = false;
         S.maskVisible = false;
         
+        console.log('✅ [applyMaskToCanvas] COMPLETE - Mask applied to canvas');
         window.logger && window.logger.info('✅ [applyMaskToCanvas] COMPLETE - Mask applied to canvas');
     };
 })();

@@ -16,12 +16,17 @@
  */
 document.addEventListener('DOMContentLoaded', function () {
     'use strict';
+    
+    console.log('🚀 [image-processing] DOMContentLoaded fired');
 
     const S = window.EditorState;
     if (!S) {
+        console.error('❌ [image-processing] EditorState not found. Check script load order.');
         window.logger && window.logger.error('❌ [image-processing] EditorState not found. Check script load order.');
         return;
     }
+    
+    console.log('✅ [image-processing] EditorState found:', S);
 
     const { canvas, ctx, img, maskCanvas, maskCtx } = S;
 
@@ -45,19 +50,24 @@ document.addEventListener('DOMContentLoaded', function () {
         maskCanvas.height = canvas.height;
 
         ctx.drawImage(img, 0, 0);
+        console.log('✅ [image-processing] Image loaded (initial):', canvas.width, 'x', canvas.height);
         window.logger && window.logger.info('✅ [image-processing] Image loaded (initial):', canvas.width, 'x', canvas.height);
 
         // originalImage キャッシュを保存（調整・切り替えのベース）
         S.originalImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        console.log('✅ originalImage cached');
         window.logger && window.logger.debug('✅ originalImage cached');
 
         // マスク画像をロード、または空マスクを生成
+        console.log('🎭 maskImageUrl:', S.maskImageUrl);
         window.logger && window.logger.debug('🎭 maskImageUrl:', S.maskImageUrl);
         if (S.maskImageUrl) {
+            console.log('🎭 Loading mask image...');
             window.logger && window.logger.info('🎭 Loading mask image...');
             // マスクロード（loadMaskImage内で自動的にapplyMaskToCanvasが呼ばれる）
             window.MaskTools && window.MaskTools.loadMaskImage();
         } else {
+            console.log('⚠️ No mask URL, creating blank mask');
             window.logger && window.logger.info('⚠️ No mask URL, creating blank mask');
             const blankMask = maskCtx.createImageData(maskCanvas.width, maskCanvas.height);
             for (let i = 0; i < blankMask.data.length; i += 4) {
