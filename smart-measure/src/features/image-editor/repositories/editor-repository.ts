@@ -23,7 +23,10 @@ export class EditorRepository implements IEditorRepository {
            COALESCE(processed_images, '[]') as processed_images,
            mask_image_url_r2,
            mask_image_url,
-           updated_at
+           updated_at,
+           COALESCE(brightness, 0) as brightness,
+           COALESCE(white_balance, 5500) as white_balance,
+           COALESCE(hue, 0) as hue
          FROM product_items
          WHERE sku = ? AND company_id = ?
          LIMIT 1`
@@ -46,6 +49,9 @@ export class EditorRepository implements IEditorRepository {
       maskImageUrl:
         ((result.mask_image_url_r2 || result.mask_image_url) as string) ?? null,
       updatedAt: (result.updated_at as string) ?? new Date().toISOString(),
+      brightness: (result.brightness as number) ?? 0,
+      whiteBalance: (result.white_balance as number) ?? 5500,
+      hue: (result.hue as number) ?? 0,
     }
   }
 
@@ -74,7 +80,10 @@ export class EditorRepository implements IEditorRepository {
            updated_at,
            COALESCE(processed_images, '[]') as processed_images,
            COALESCE(final_images, '[]') as final_images,
-           COALESCE(mask_images_r2, '[]') as mask_images_r2
+           COALESCE(mask_images_r2, '[]') as mask_images_r2,
+           COALESCE(brightness, 0) as brightness,
+           COALESCE(white_balance, 5500) as white_balance,
+           COALESCE(hue, 0) as hue
          FROM product_items
          WHERE sku = ? AND company_id = ?
          LIMIT 1`
@@ -105,6 +114,9 @@ export class EditorRepository implements IEditorRepository {
       processedImages,
       finalImages,
       maskImages,
+      brightness: (result.brightness as number) ?? 0,
+      whiteBalance: (result.white_balance as number) ?? 5500,
+      hue: (result.hue as number) ?? 0,
     }
   }
 }

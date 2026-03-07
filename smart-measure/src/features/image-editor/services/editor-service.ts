@@ -25,6 +25,9 @@ export interface EditorData {
   isProcessed: boolean
   isMeasurement: boolean
   maskImageUrl: string       // キャッシュバスター付き（空文字 = マスクなし）
+  brightness: number         // 明るさ調整値 (-100 ~ 100)
+  whiteBalance: number       // ホワイトバランス (2000 ~ 9000)
+  hue: number                // 色相 (-180 ~ 180)
 }
 
 /** imageId 解析結果 */
@@ -107,6 +110,9 @@ export class EditorService {
       isProcessed,
       isMeasurement: true,
       maskImageUrl,
+      brightness: record.brightness,
+      whiteBalance: record.whiteBalance,
+      hue: record.hue,
     }
   }
 
@@ -165,6 +171,9 @@ export class EditorService {
       isProcessed: status === 'processed' || status === 'final',
       isMeasurement: false,
       maskImageUrl,
+      brightness: record?.brightness ?? 0,
+      whiteBalance: record?.whiteBalance ?? 5500,
+      hue: record?.hue ?? 0,
     }
   }
 

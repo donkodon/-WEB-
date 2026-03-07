@@ -92,6 +92,9 @@ editor.get('/edit/:id', async (c) => {
     isProcessed,
     isMeasurement,
     maskImageUrl: maskImageUrlWithCache,
+    brightness,
+    whiteBalance,
+    hue,
   } = editorData
 
   // ── クエリパラメータ ?src= があればダッシュボードの表示URL（p/f画像）を優先使用 ──
@@ -190,23 +193,23 @@ editor.get('/edit/:id', async (c) => {
                     <div>
                         <div class="flex justify-between text-xs font-medium mb-1">
                             <span>明るさ</span>
-                            <span id="val-brightness" class="text-blue-600">0</span>
+                            <span id="val-brightness" class="text-blue-600">{brightness}</span>
                         </div>
-                        <input type="range" id="range-brightness" min="-100" max="100" value="0" class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600" />
+                        <input type="range" id="range-brightness" min="-100" max="100" value={String(brightness)} class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600" />
                     </div>
                      <div>
                         <div class="flex justify-between text-xs font-medium mb-1">
                             <span>WB</span>
-                            <span id="val-wb" class="text-blue-600">5500K</span>
+                            <span id="val-wb" class="text-blue-600">{whiteBalance}K</span>
                         </div>
-                        <input type="range" id="range-wb" min="2000" max="9000" step="100" value="5500" class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600" />
+                        <input type="range" id="range-wb" min="2000" max="9000" step="100" value={String(whiteBalance)} class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600" />
                     </div>
                      <div>
                         <div class="flex justify-between text-xs font-medium mb-1">
                             <span>色味</span>
-                            <span id="val-hue" class="text-blue-600">0°</span>
+                            <span id="val-hue" class="text-blue-600">{hue}°</span>
                         </div>
-                        <input type="range" id="range-hue" min="-180" max="180" value="0" class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600" />
+                        <input type="range" id="range-hue" min="-180" max="180" value={String(hue)} class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600" />
                     </div>
                 </div>
 
@@ -347,6 +350,9 @@ editor.get('/edit/:id', async (c) => {
              data-image-src={imageSrc}
              data-original-src={originalSrc}
              data-is-processed={String(finalIsProcessed)}
+             data-brightness={String(brightness)}
+             data-white-balance={String(whiteBalance)}
+             data-hue={String(hue)}
              style="display: none;">
         </div>
 
@@ -361,6 +367,58 @@ editor.get('/edit/:id', async (c) => {
         <script src={`/static/editor/common/tab-switching.js?v=${JS_VERSION}`}></script>
     </Layout>
   )
+})
+
+// ─────────────────────────────────────────────
+// POST /api/save-adjustments/:sku
+// 画像調整（明るさ・WB・色相）を保存
+// ─────────────────────────────────────────────
+editor.post('/api/save-adjustments/:sku', async (c) => {
+  const sku = c.req.param('sku')
+  const body = await c.req.json<{
+    brightness: number
+    whiteBalance: number
+    hue: number
+  }>()
+
+  // 認証ユーザーのcompany_id取得
+  const user = c.get('user') as { companyId?: string } | undefined
+  const companyId = user?.companyId
+
+  if (!companyId) {
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
+
+  try {
+    // product_itemsテーブルを更新
+    await c.env.DB.prepare(`
+      UPDATE product_items
+      SET 
+        brightness = ?,
+        white_balance = ?,
+        hue = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE sku = ? AND company_id = ?
+    `).bind(
+      body.brightness,
+      body.whiteBalance,
+      body.hue,
+      sku,
+      companyId
+    ).run()
+
+    logger.info(`✅ Saved adjustments for ${sku}: brightness=${body.brightness}, wb=${body.whiteBalance}, hue=${body.hue}`)
+
+    return c.json({ 
+      success: true,
+      brightness: body.brightness,
+      whiteBalance: body.whiteBalance,
+      hue: body.hue
+    })
+  } catch (error) {
+    logger.error('❌ Failed to save adjustments:', error)
+    return c.json({ error: 'Failed to save adjustments' }, 500)
+  }
 })
 
 export default editor

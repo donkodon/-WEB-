@@ -351,6 +351,23 @@
                 window.logger && window.logger.debug('✅ Step2 done: p-image saved to', uploadResult.r2Key);
             }
 
+            // ── Step 2.5: 調整値をDBに保存 ──────────────────────────────
+            window.logger && window.logger.debug('💾 [save] Step2.5: saving adjustments...');
+            const adjustRes = await window.authenticatedFetch(`/api/save-adjustments/${S.sku}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    brightness: S.brightness,
+                    whiteBalance: S.wb,
+                    hue: S.hue
+                })
+            });
+            if (!adjustRes.ok) {
+                const e = await adjustRes.json().catch(() => ({ error: 'Unknown' }));
+                throw new Error('調整値保存失敗: ' + (e.error || 'Unknown'));
+            }
+            window.logger && window.logger.debug('✅ Step2.5 done: adjustments saved');
+
             // ── Step 3: 調整済み canvas → f画像として R2 に保存 ──────────
             window.logger && window.logger.debug('💾 [save] Step3: uploading f-image (final)...');
             const imageData = S.canvas.toDataURL('image/png');

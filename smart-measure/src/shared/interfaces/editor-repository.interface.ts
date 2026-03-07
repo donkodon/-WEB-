@@ -13,6 +13,9 @@ export interface MeasurementImageRecord {
   processedImages: string[]
   maskImageUrl: string | null
   updatedAt: string
+  brightness: number
+  whiteBalance: number
+  hue: number
 }
 
 /** r2_画像取得結果 */
@@ -21,6 +24,9 @@ export interface R2ImageRecord {
   processedImages: string[]
   finalImages: string[]
   maskImages: Array<{ filename: string; url: string }>
+  brightness: number
+  whiteBalance: number
+  hue: number
 }
 
 // ── インターフェース ─────────────────────────────────────────────────────────

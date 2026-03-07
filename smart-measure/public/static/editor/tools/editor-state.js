@@ -47,10 +47,10 @@
     let maskImageData = null;    // ImageData（保存・オーバーレイ用）
     let maskImage     = null;    // HTMLImageElement
 
-    // 調整値
-    let brightness = 0;
-    let wb         = 5500;
-    let hue        = 0;
+    // 調整値（DBから初期値を読み込む）
+    let brightness = parseInt(editorData.dataset.brightness || '0', 10);
+    let wb         = parseInt(editorData.dataset.whiteBalance || '5500', 10);
+    let hue        = parseInt(editorData.dataset.hue || '0', 10);
 
     // ブラシサイズ
     let brushSize     = 24;
