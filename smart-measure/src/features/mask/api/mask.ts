@@ -15,6 +15,7 @@ import {
   ErrorCode,
   logError,
 } from '../../../shared/helpers/error-handler'
+import { logger } from '../../../shared/helpers/logger'
 import { MaskRepository } from '../repositories/mask-repository'
 import { MaskService } from '../services/mask-service'
 
@@ -90,6 +91,7 @@ maskApi.get('/api/mask-info/:sku', async (c) => {
 // ─────────────────────────────────────────────
 maskApi.post('/api/save-mask/:sku', async (c) => {
   const sku = c.req.param('sku')
+  console.log(`🔵 === MASK SAVE REQUEST START === SKU: ${sku}`)
   logger.info(`🔵 === MASK SAVE REQUEST START === SKU: ${sku}`)
   
   let user: any
@@ -100,19 +102,14 @@ maskApi.post('/api/save-mask/:sku', async (c) => {
   
   try {
     // Step 1: Get user context
-    logger.info(`📥 Step 1: Getting user context`)
+    console.log(`📥 Step 1: Getting user context`)
     user = c.get?.('user') as { companyId?: string; email?: string; uid?: string } | undefined
-    logger.info(`🔐 Firebase user context:`, {
-      hasUser: !!user,
-      uid: user?.uid,
-      email: user?.email,
-      companyId: user?.companyId
-    })
+    console.log(`🔐 Firebase user:`, JSON.stringify({ hasUser: !!user, uid: user?.uid, email: user?.email, companyId: user?.companyId }))
     
     // Step 2: Get company ID
-    logger.info(`📥 Step 2: Getting company ID`)
+    console.log(`📥 Step 2: Getting company ID`)
     companyId = getCompanyId(c)
-    logger.info(`👤 Company ID (final): ${companyId}`)
+    console.log(`👤 Company ID (final): ${companyId}`)
     
     if (!companyId || companyId === 'test_company') {
       logger.warn(`⚠️ Using fallback company ID: ${companyId}`)
