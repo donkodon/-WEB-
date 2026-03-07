@@ -82,6 +82,11 @@
                 window.logger && window.logger.debug('✅ Mask loaded & synced to canvas size:', canvas.width, 'x', canvas.height);
 
                 saveMaskHistory();
+                
+                // 🎨 マスクロード完了後、自動的にマスクを適用
+                if (window.applyMaskToCanvas) {
+                    window.applyMaskToCanvas();
+                }
 
                 if (S.maskVisible) {
                     window.ImageAdjust && window.ImageAdjust.applyMaskOverlay();

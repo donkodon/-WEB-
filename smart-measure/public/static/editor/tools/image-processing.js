@@ -52,6 +52,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // マスク画像をロード、または空マスクを生成
         if (S.maskImageUrl) {
+            // マスクロード（loadMaskImage内で自動的にapplyMaskToCanvasが呼ばれる）
             window.MaskTools && window.MaskTools.loadMaskImage();
         } else {
             const blankMask = maskCtx.createImageData(maskCanvas.width, maskCanvas.height);
@@ -64,17 +65,7 @@ document.addEventListener('DOMContentLoaded', function () {
             maskCtx.putImageData(blankMask, 0, 0);
             S.maskImageData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
             window.MaskTools && window.MaskTools.saveMaskHistory();
-            window.logger && window.logger.debug('✅ Blank mask initialized');
-        }
-        
-        // 🎨 マスクがある場合は自動適用（初期表示をマスク適用後にする）
-        if (S.maskImageUrl) {
-            // マスクロード完了後に自動適用（100ms待機）
-            setTimeout(() => {
-                if (window.applyMaskToCanvas) {
-                    window.applyMaskToCanvas();
-                }
-            }, 100);
+            window.logger && window.logger.debug('✅ Blank mask initialized (no mask URL)');
         }
     }
 
