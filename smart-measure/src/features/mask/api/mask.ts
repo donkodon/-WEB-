@@ -57,10 +57,13 @@ maskApi.get('/api/mask-info/:sku', async (c) => {
 // ─────────────────────────────────────────────
 maskApi.post('/api/save-mask/:sku', async (c) => {
   const sku = c.req.param('sku')
+  logger.info(`🔵 === MASK SAVE REQUEST START === SKU: ${sku}`)
   try {
     const companyId = getCompanyId(c)
+    logger.debug(`👤 Company ID: ${companyId}`)
     const body = await c.req.json()
     const { maskDataUrl, filenamePart } = body
+    logger.debug(`📦 Request body: filenamePart=${filenamePart}, maskDataUrl length=${maskDataUrl?.length || 0}`)
 
     // ── バリデーション ──
     if (!maskDataUrl || !maskDataUrl.startsWith('data:image/png;base64,')) {

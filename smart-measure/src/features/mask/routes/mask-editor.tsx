@@ -203,6 +203,10 @@ maskEditor.get('/mask-editor/:sku', async (c) => {
                  data-filename-part={imageFilenamePart}
                  style="display: none;">
             </div>
+            {/* Firebase Authentication */}
+            <script src="/static/auth/firebase-config.js"></script>
+            <script src="/static/auth/auth-guard.js"></script>
+            {/* Mask Editor */}
             <script src="/static/editor/mask/editor.js"></script>
             <script src="/static/editor/mask/init.js"></script>
         </Layout>
