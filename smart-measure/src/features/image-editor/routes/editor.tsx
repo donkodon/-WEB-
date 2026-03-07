@@ -9,6 +9,7 @@ import { Hono } from 'hono'
 import type { AppEnv } from '../../../types/bindings'
 import { Layout } from '../../../components'
 import { logger } from '../../../shared/helpers/logger'
+import { requireFirebaseAuth } from '../../auth/middleware/auth'
 import { EditorRepository } from '../repositories/editor-repository'
 import { EditorService } from '../services/editor-service'
 
@@ -373,7 +374,7 @@ editor.get('/edit/:id', async (c) => {
 // POST /api/save-adjustments/:sku
 // 画像調整（明るさ・WB・色相）を保存
 // ─────────────────────────────────────────────
-editor.post('/api/save-adjustments/:sku', async (c) => {
+editor.post('/api/save-adjustments/:sku', requireFirebaseAuth, async (c) => {
   const sku = c.req.param('sku')
   const body = await c.req.json<{
     brightness: number
