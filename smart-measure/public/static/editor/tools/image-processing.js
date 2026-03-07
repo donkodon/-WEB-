@@ -45,16 +45,20 @@ document.addEventListener('DOMContentLoaded', function () {
         maskCanvas.height = canvas.height;
 
         ctx.drawImage(img, 0, 0);
-        window.logger && window.logger.debug('✅ Image loaded (initial):', canvas.width, 'x', canvas.height);
+        window.logger && window.logger.info('✅ [image-processing] Image loaded (initial):', canvas.width, 'x', canvas.height);
 
         // originalImage キャッシュを保存（調整・切り替えのベース）
         S.originalImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        window.logger && window.logger.debug('✅ originalImage cached');
 
         // マスク画像をロード、または空マスクを生成
+        window.logger && window.logger.debug('🎭 maskImageUrl:', S.maskImageUrl);
         if (S.maskImageUrl) {
+            window.logger && window.logger.info('🎭 Loading mask image...');
             // マスクロード（loadMaskImage内で自動的にapplyMaskToCanvasが呼ばれる）
             window.MaskTools && window.MaskTools.loadMaskImage();
         } else {
+            window.logger && window.logger.info('⚠️ No mask URL, creating blank mask');
             const blankMask = maskCtx.createImageData(maskCanvas.width, maskCanvas.height);
             for (let i = 0; i < blankMask.data.length; i += 4) {
                 blankMask.data[i]     = 0;

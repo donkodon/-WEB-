@@ -84,8 +84,12 @@
                 saveMaskHistory();
                 
                 // 🎨 マスクロード完了後、自動的にマスクを適用
+                window.logger && window.logger.debug('🎨 Checking applyMaskToCanvas:', typeof window.applyMaskToCanvas);
                 if (window.applyMaskToCanvas) {
+                    window.logger && window.logger.debug('🎨 Calling applyMaskToCanvas...');
                     window.applyMaskToCanvas();
+                } else {
+                    window.logger && window.logger.error('❌ applyMaskToCanvas not found!');
                 }
 
                 if (S.maskVisible) {
@@ -654,13 +658,26 @@
      * 4. adjustedImage を更新（明るさ調整のベース）
      */
     window.applyMaskToCanvas = function() {
+        window.logger && window.logger.info('🎨 [applyMaskToCanvas] START');
+        
         const S = window.EditorState;
-        if (!S || !S.maskCanvas || !S.originalImage) {
-            window.logger && window.logger.debug('⚠️ applyMaskToCanvas: state not ready');
+        if (!S) {
+            window.logger && window.logger.error('❌ EditorState is null');
+            return;
+        }
+        if (!S.maskCanvas) {
+            window.logger && window.logger.error('❌ maskCanvas is null');
+            return;
+        }
+        if (!S.originalImage) {
+            window.logger && window.logger.error('❌ originalImage is null');
             return;
         }
 
         const { canvas, ctx, maskCanvas } = S;
+        
+        window.logger && window.logger.debug('🎨 Canvas size:', canvas.width, 'x', canvas.height);
+        window.logger && window.logger.debug('🎨 MaskCanvas size:', maskCanvas.width, 'x', maskCanvas.height);
         
         // 1. キャンバスをクリア
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -668,20 +685,23 @@
         // 2. 白背景を塗る
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
+        window.logger && window.logger.debug('✅ Step 1: White background drawn');
         
         // 3. オリジナル画像を描画
         ctx.putImageData(S.originalImage, 0, 0);
+        window.logger && window.logger.debug('✅ Step 2: Original image drawn');
         
         // 4. マスクで透過処理（destination-in = マスクの白部分だけ残す）
         ctx.globalCompositeOperation = 'destination-in';
         ctx.drawImage(maskCanvas, 0, 0);
         ctx.globalCompositeOperation = 'source-over';  // 通常描画に戻す
+        window.logger && window.logger.debug('✅ Step 3: Mask applied (destination-in)');
         
         // 5. adjustedImage キャッシュを更新（明るさ調整のベースとして使用）
         S.adjustedImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
         S.showingOriginal = false;
         S.maskVisible = false;
         
-        window.logger && window.logger.debug('✅ Mask applied to canvas (original + mask composition)');
+        window.logger && window.logger.info('✅ [applyMaskToCanvas] COMPLETE - Mask applied to canvas');
     };
 })();
