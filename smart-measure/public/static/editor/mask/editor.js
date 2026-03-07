@@ -560,6 +560,8 @@ window.maskEditorSave = async function(sku) {
 
         const data = await res.json();
         window.logger.debug('✅ Mask saved:', data.r2Key, '| overwrite:', data.isOverwrite);
+        window.logger.debug('📍 Mask URL:', data.maskUrl);
+        window.logger.debug('📦 Mask basename:', data.maskBasename);
 
         showToast('マスクを保存しました', 'success');
 

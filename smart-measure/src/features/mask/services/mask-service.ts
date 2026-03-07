@@ -131,10 +131,12 @@ export class MaskService {
     // ① 最優先: 既存のマスクURLから抽出（上書き保存）
     try {
       const { maskImageUrl } = await this.maskRepo.findMaskUrl(db, sku, companyId)
+      logger.debug(`🔍 Existing mask URL from DB: ${maskImageUrl || '(null)'}`)
       if (maskImageUrl) {
         const basename = this.extractBasenameFromUrl(maskImageUrl)
+        logger.debug(`🔍 Extracted basename: ${basename || '(null)'}`)
         if (basename) {
-          logger.debug(`🎯 Overwriting existing mask: ${basename}`)
+          logger.info(`🎯 ✅ Overwriting existing mask: ${basename}`)
           return basename
         }
       }

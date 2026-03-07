@@ -71,12 +71,14 @@ maskApi.post('/api/save-mask/:sku', async (c) => {
     }
 
     // ── ビジネスロジックはServiceに委譲 ──
+    logger.debug(`📥 Saving mask: sku=${sku}, companyId=${companyId}, filenamePart=${filenamePart}`)
     const result = await maskService.saveMask(
       c.env.DB,
       c.env.PRODUCT_IMAGES,
       getR2PublicUrl(c.env),
       { sku, companyId, maskDataUrl, filenamePart }
     )
+    logger.info(`✅ Mask saved successfully: ${result.r2Key} → ${result.maskUrl}`)
 
     return c.json({
       success: true,
