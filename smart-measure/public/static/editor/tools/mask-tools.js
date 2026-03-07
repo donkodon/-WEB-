@@ -397,10 +397,36 @@
         }
 
         try {
-            // Step 1: マスクを base64 に変換して保留（R2 アップロードは後で）
+            // Step 1: マスクを base64 に変換してR2に保存
             const maskDataUrl = S.maskCanvas.toDataURL('image/png');
+            window.logger && window.logger.debug('✅ Step1: Converting mask to PNG');
+            
+            // R2に保存（authenticatedFetchを使用）
+            const sku = S.sku;
+            const filenamePart = S.filenamePart;
+            window.logger && window.logger.info(`💾 Uploading mask to R2: sku=${sku}, filenamePart=${filenamePart}`);
+            
+            const fetchFn = (typeof window.authenticatedFetch === 'function')
+                ? window.authenticatedFetch
+                : fetch;
+            
+            const maskRes = await fetchFn(`/api/save-mask/${sku}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ maskDataUrl, filenamePart })
+            });
+            
+            if (!maskRes.ok) {
+                const errorData = await maskRes.json().catch(() => ({ error: 'Unknown error' }));
+                throw new Error(errorData.details || errorData.error || `Mask save failed (${maskRes.status})`);
+            }
+            
+            const maskResult = await maskRes.json();
+            window.logger && window.logger.info(`✅ Mask saved to R2:`, maskResult.r2Key);
+            
+            // メモリにも保持（後で使用する場合のため）
             S.pendingMaskDataUrl = maskDataUrl;
-            window.logger && window.logger.debug('✅ Step1: mask data stored in memory (pending upload)');
+            window.logger && window.logger.debug('✅ Step1: mask saved to R2 and stored in memory');
 
             // Step 2: ベース画像 × マスク → 透過 PNG 合成
             // ★ 必ずオリジナル画像（背景あり）を使う
@@ -435,11 +461,33 @@
             compCtx.putImageData(imgData, 0, 0);
 
             const compositeDataUrl = comp.toDataURL('image/png');
-            // p画像も保留（R2 アップロードは後で）
+            window.logger && window.logger.debug('✅ Step2: composite (background-removed) generated');
+            
+            // p画像もR2に保存
+            window.logger && window.logger.info(`💾 Uploading processed image (_p.png) to R2`);
+            const processedRes = await fetchFn(`/api/upload-processed-image/${sku}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    imageDataUrl: compositeDataUrl, 
+                    filenamePart: filenamePart 
+                })
+            });
+            
+            if (!processedRes.ok) {
+                const errorData = await processedRes.json().catch(() => ({ error: 'Unknown error' }));
+                window.logger && window.logger.warn(`⚠️ Processed image upload failed: ${errorData.error}`);
+                // エラーでも続行（マスクは既に保存済み）
+            } else {
+                const processedResult = await processedRes.json();
+                window.logger && window.logger.info(`✅ Processed image saved to R2:`, processedResult.r2Key || processedResult.url);
+            }
+            
+            // メモリにも保持
             S.pendingCompositeDataUrl = compositeDataUrl;
-            window.logger && window.logger.debug('✅ Step2: composite generated & stored in memory (pending upload)');
+            window.logger && window.logger.debug('✅ Step2: composite saved to R2 and stored in memory');
 
-            // Step 3: canvas を合成画像で更新（画面表示のみ、R2 保存なし）
+            // Step 3: canvas を合成画像で更新（画面表示）
             const { canvas, ctx } = S;
             canvas.width  = comp.width;
             canvas.height = comp.height;
@@ -465,11 +513,14 @@
 
             // Step 4: 画像調整タブへ切替
             if (window.switchTab) window.switchTab('adjust');
-            window.logger && window.logger.debug('✅ saveMask complete (pending: mask + p-image will be saved on final save)');
+            window.logger && window.logger.info('✅ saveMask complete: mask and processed image saved to R2');
+            
+            // 保存成功通知
+            alert('✅ マスクと背景削除画像をR2に保存しました！');
 
         } catch (error) {
             window.logger && window.logger.error('❌ saveMask error:', error);
-            alert('保存中にエラーが発生しました: ' + error.message);
+            alert('❌ 保存中にエラーが発生しました: ' + error.message);
         } finally {
             if (saveBtn) {
                 saveBtn.disabled  = false;
