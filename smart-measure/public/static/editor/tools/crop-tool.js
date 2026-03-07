@@ -335,60 +335,47 @@
     }
 
     // ── 確定処理 ──────────────────────────────────────────────────
+    /**
+     * クロップ確定処理（座標のみ保存、画像は保存しない）
+     * 
+     * 旧実装: クロップ画像を即座にR2保存 → ページリロード
+     * 新実装: クロップ座標をEditorStateに保存 → プレビュー更新
+     * 
+     * 最終保存は「保存してダッシュボードへ」ボタンで一括実行される：
+     * Step 1: マスク画像保存（optional）
+     * Step 2: 調整値保存
+     * Step 3: クロップ座標保存 ← ここで保存
+     * Step 4: 最終画像（f画像）生成・保存 ← クロップが適用される
+     */
     function confirmCrop() {
         const S = window.EditorState;
         if (!S || !srcCanvas) return;
 
         const btn = document.getElementById('crop-confirm');
-        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>保存中...'; }
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>適用中...'; }
 
-        const out    = document.createElement('canvas');
-        out.width    = OUTPUT_SIZE;
-        out.height   = OUTPUT_SIZE;
-        const outCtx = out.getContext('2d');
-        outCtx.fillStyle = '#ffffff';
-        outCtx.fillRect(0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
-        outCtx.drawImage(srcCanvas, cropX, cropY, cropSize, cropSize, 0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
+        // クロップ座標をEditorStateに保存
+        S.cropX = cropX;
+        S.cropY = cropY;
+        S.cropSize = cropSize;
+        S.cropEnabled = true;
 
-        const dataUrl      = out.toDataURL('image/png');
-        const sku          = S.sku;
-        const filenamePart = S.filenamePart;
+        window.logger && window.logger.debug('✅ Crop coordinates saved:', { cropX, cropY, cropSize });
 
-        if (!sku || !filenamePart) {
-            alert('SKU / ファイル情報が取得できません');
-            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check mr-2"></i>確定して保存'; }
-            return;
+        // プレビュー更新（画像調整を適用してクロップ結果を表示）
+        if (window.ImageAdjust && typeof window.ImageAdjust.applyAllAdjustments === 'function') {
+            window.ImageAdjust.applyAllAdjustments();
         }
 
-        setStatus('R2 に保存中...');
+        setStatus('✅ クロップを適用しました');
+        if (btn) { 
+            btn.disabled = false; 
+            btn.innerHTML = '<i class="fas fa-check mr-2"></i>クロップ適用済み';
+        }
 
-        window.authenticatedFetch('/api/upload-processed-image/' + sku, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ imageDataUrl: dataUrl, filenamePart: filenamePart }),
-        })
-        .then(function(res) {
-            if (!res.ok) return res.json().then(function(e){ throw new Error(e.error || 'Upload failed'); });
-            return res.json();
-        })
-        .then(function(data) {
-            setStatus('✅ 保存完了！');
-            window.logger && window.logger.debug('✅ Crop saved:', data.processedUrl);
-            // main-canvas も更新
-            S.canvas.width  = OUTPUT_SIZE;
-            S.canvas.height = OUTPUT_SIZE;
-            S.ctx.drawImage(out, 0, 0);
-            S.originalImage = S.ctx.getImageData(0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
-            setTimeout(function() {
-                stopCrop();
-                window.location.reload();
-            }, 600);
-        })
-        .catch(function(err) {
-            setStatus('❌ エラー: ' + err.message);
-            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check mr-2"></i>確定して保存'; }
-            window.logger && window.logger.error('❌ Crop save error:', err);
-        });
+        setTimeout(function() {
+            stopCrop();
+        }, 800);
     }
 
     // ── ボタンイベント登録（DOMContentLoaded 後） ─────────────────
@@ -425,6 +412,15 @@
         onMouseDown: function() { return false; },
         onMouseMove: function() { return false; },
         onMouseUp:   function() { return false; },
+        
+        // クロップ座標を外部から取得（image-adjust.js で使用）
+        get cropX()       { return cropX; },
+        get cropY()       { return cropY; },
+        get cropSize()    { return cropSize; },
+        get cropEnabled() { 
+            const S = window.EditorState;
+            return S && S.cropEnabled; 
+        },
     };
 
     window.logger && window.logger.debug('✅ [crop-tool] initialized (inline mode)');

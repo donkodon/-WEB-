@@ -26,7 +26,11 @@ export class EditorRepository implements IEditorRepository {
            updated_at,
            COALESCE(brightness, 0) as brightness,
            COALESCE(white_balance, 5500) as white_balance,
-           COALESCE(hue, 0) as hue
+           COALESCE(hue, 0) as hue,
+           crop_x,
+           crop_y,
+           crop_size,
+           COALESCE(crop_enabled, 0) as crop_enabled
          FROM product_items
          WHERE sku = ? AND company_id = ?
          LIMIT 1`
@@ -52,6 +56,10 @@ export class EditorRepository implements IEditorRepository {
       brightness: (result.brightness as number) ?? 0,
       whiteBalance: (result.white_balance as number) ?? 5500,
       hue: (result.hue as number) ?? 0,
+      cropX: (result.crop_x as number) ?? null,
+      cropY: (result.crop_y as number) ?? null,
+      cropSize: (result.crop_size as number) ?? null,
+      cropEnabled: Boolean(result.crop_enabled),
     }
   }
 
@@ -83,7 +91,11 @@ export class EditorRepository implements IEditorRepository {
            COALESCE(mask_images_r2, '[]') as mask_images_r2,
            COALESCE(brightness, 0) as brightness,
            COALESCE(white_balance, 5500) as white_balance,
-           COALESCE(hue, 0) as hue
+           COALESCE(hue, 0) as hue,
+           crop_x,
+           crop_y,
+           crop_size,
+           COALESCE(crop_enabled, 0) as crop_enabled
          FROM product_items
          WHERE sku = ? AND company_id = ?
          LIMIT 1`
@@ -117,6 +129,10 @@ export class EditorRepository implements IEditorRepository {
       brightness: (result.brightness as number) ?? 0,
       whiteBalance: (result.white_balance as number) ?? 5500,
       hue: (result.hue as number) ?? 0,
+      cropX: (result.crop_x as number) ?? null,
+      cropY: (result.crop_y as number) ?? null,
+      cropSize: (result.crop_size as number) ?? null,
+      cropEnabled: Boolean(result.crop_enabled),
     }
   }
 }

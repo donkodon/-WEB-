@@ -63,7 +63,8 @@
      * 2. オリジナル画像を描画
      * 3. JSON調整（明るさ・WB・色相）を適用
      * 4. マスクで透過処理（RGB→Alpha変換）
-     * 5. マスクオーバーレイ表示（必要な場合）
+     * 5. クロップ適用（cropEnabled の場合）
+     * 6. マスクオーバーレイ表示（必要な場合）
      */
     function applyAllAdjustments() {
         const S = window.EditorState;
@@ -128,7 +129,12 @@
             applyMaskAlphaToCanvas(ctx, canvas, maskCanvas, maskCtx);
         }
 
-        // 5. マスクオーバーレイを再適用（編集中の表示用）
+        // 5. クロップ適用（cropEnabled の場合）
+        // クロップはf画像生成時にのみ適用されるが、プレビューでも表示したい場合はここで適用
+        // 注: 編集中はクロップ枠を表示するだけで、実際の切り出しは保存時に実行
+        // この関数では通常クロップは適用せず、最終保存時の`generateFinalImage()`で適用
+
+        // 6. マスクオーバーレイを再適用（編集中の表示用）
         if (maskVisible && S.maskImageData) {
             applyMaskOverlay();
         }
@@ -372,9 +378,66 @@
             const adjustResult = await adjustRes.json();
             window.logger && window.logger.info('✅ Step2.5 done: adjustments saved', adjustResult);
 
-            // ── Step 3: 調整済み canvas → f画像として R2 に保存 ──────────
-            window.logger && window.logger.debug('💾 [save] Step3: uploading f-image (final)...');
-            const imageData = S.canvas.toDataURL('image/png');
+            // ── Step 2.75: クロップ座標をDBに保存 ────────────────────────
+            if (S.cropEnabled && S.cropX !== null && S.cropY !== null && S.cropSize !== null) {
+                window.logger && window.logger.debug('💾 [save] Step2.75: saving crop metadata...');
+                const cropRes = await window.authenticatedFetch(`/api/save-crop-metadata/${S.sku}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cropX: S.cropX,
+                        cropY: S.cropY,
+                        cropSize: S.cropSize,
+                        cropEnabled: S.cropEnabled
+                    })
+                });
+                if (!cropRes.ok) {
+                    const e = await cropRes.json().catch(() => ({ error: 'Unknown' }));
+                    const errorMsg = e.error || 'Unknown';
+                    const details = e.details ? ` (${e.details})` : '';
+                    window.logger && window.logger.error('❌ Crop metadata save failed:', errorMsg, details);
+                    throw new Error(`クロップ座標保存失敗: ${errorMsg}${details}`);
+                }
+                const cropResult = await cropRes.json();
+                window.logger && window.logger.info('✅ Step2.75 done: crop metadata saved', cropResult);
+            } else {
+                window.logger && window.logger.debug('⏭️ [save] Step2.75 skipped: no crop applied');
+            }
+
+            // ── Step 3: f画像生成（クロップ + 調整 + マスク適用） → R2保存 ──
+            window.logger && window.logger.debug('💾 [save] Step3: generating and uploading f-image (final)...');
+            
+            // クロップが有効な場合は、クロップ適用済みの画像を生成
+            let finalImageData;
+            if (S.cropEnabled && S.cropX !== null && S.cropY !== null && S.cropSize !== null) {
+                // クロップ適用: 元画像 → クロップ → 1000×1000にリサイズ → 調整・マスク適用
+                const tempCanvas = document.createElement('canvas');
+                const tempCtx = tempCanvas.getContext('2d');
+                
+                // 現在のcanvasからクロップ領域を切り出して1000×1000にリサイズ
+                const OUTPUT_SIZE = 1000;
+                tempCanvas.width = OUTPUT_SIZE;
+                tempCanvas.height = OUTPUT_SIZE;
+                
+                // 白背景を塗る
+                tempCtx.fillStyle = '#ffffff';
+                tempCtx.fillRect(0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
+                
+                // 元canvasのクロップ領域を1000×1000にリサイズして描画
+                tempCtx.drawImage(
+                    S.canvas,
+                    S.cropX, S.cropY, S.cropSize, S.cropSize,  // 元画像のクロップ範囲
+                    0, 0, OUTPUT_SIZE, OUTPUT_SIZE              // 1000×1000にリサイズ
+                );
+                
+                finalImageData = tempCanvas.toDataURL('image/png');
+                window.logger && window.logger.debug('✅ Crop applied to f-image:', { cropX: S.cropX, cropY: S.cropY, cropSize: S.cropSize });
+            } else {
+                // クロップなし: 現在のcanvasをそのまま使用
+                finalImageData = S.canvas.toDataURL('image/png');
+            }
+            
+            const imageData = finalImageData;
 
             const response = await window.authenticatedFetch(
                 '/api/save-edited-image/' + S.imageId,

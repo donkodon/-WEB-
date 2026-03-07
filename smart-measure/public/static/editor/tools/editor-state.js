@@ -52,6 +52,12 @@
     let wb         = parseInt(editorData.dataset.whiteBalance || '5500', 10);
     let hue        = parseInt(editorData.dataset.hue || '0', 10);
 
+    // クロップ座標（DBから初期値を読み込む）
+    let cropX      = editorData.dataset.cropX ? parseInt(editorData.dataset.cropX, 10) : null;
+    let cropY      = editorData.dataset.cropY ? parseInt(editorData.dataset.cropY, 10) : null;
+    let cropSize   = editorData.dataset.cropSize ? parseInt(editorData.dataset.cropSize, 10) : null;
+    let cropEnabled = editorData.dataset.cropEnabled === 'true';
+
     // ブラシサイズ
     let brushSize     = 24;
     let maskBrushSize = 20;
@@ -117,6 +123,16 @@
         set wb(v)                       { wb = v; },
         get hue()                       { return hue; },
         set hue(v)                      { hue = v; },
+
+        // クロップ座標（読み書き）
+        get cropX()                     { return cropX; },
+        set cropX(v)                    { cropX = v; },
+        get cropY()                     { return cropY; },
+        set cropY(v)                    { cropY = v; },
+        get cropSize()                  { return cropSize; },
+        set cropSize(v)                 { cropSize = v; },
+        get cropEnabled()               { return cropEnabled; },
+        set cropEnabled(v)              { cropEnabled = v; },
 
         // ブラシサイズ（読み書き）
         get brushSize()                 { return brushSize; },

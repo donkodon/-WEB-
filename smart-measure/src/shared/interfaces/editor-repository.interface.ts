@@ -16,6 +16,10 @@ export interface MeasurementImageRecord {
   brightness: number
   whiteBalance: number
   hue: number
+  cropX: number | null
+  cropY: number | null
+  cropSize: number | null
+  cropEnabled: boolean
 }
 
 /** r2_画像取得結果 */
@@ -27,6 +31,10 @@ export interface R2ImageRecord {
   brightness: number
   whiteBalance: number
   hue: number
+  cropX: number | null
+  cropY: number | null
+  cropSize: number | null
+  cropEnabled: boolean
 }
 
 // ── インターフェース ─────────────────────────────────────────────────────────

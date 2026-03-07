@@ -28,6 +28,10 @@ export interface EditorData {
   brightness: number         // 明るさ調整値 (-100 ~ 100)
   whiteBalance: number       // ホワイトバランス (2000 ~ 9000)
   hue: number                // 色相 (-180 ~ 180)
+  cropX: number | null       // クロップX座標
+  cropY: number | null       // クロップY座標
+  cropSize: number | null    // クロップサイズ
+  cropEnabled: boolean       // クロップ有効フラグ
 }
 
 /** imageId 解析結果 */
@@ -113,6 +117,10 @@ export class EditorService {
       brightness: record.brightness,
       whiteBalance: record.whiteBalance,
       hue: record.hue,
+      cropX: record.cropX,
+      cropY: record.cropY,
+      cropSize: record.cropSize,
+      cropEnabled: record.cropEnabled,
     }
   }
 
@@ -174,6 +182,10 @@ export class EditorService {
       brightness: record?.brightness ?? 0,
       whiteBalance: record?.whiteBalance ?? 5500,
       hue: record?.hue ?? 0,
+      cropX: record?.cropX ?? null,
+      cropY: record?.cropY ?? null,
+      cropSize: record?.cropSize ?? null,
+      cropEnabled: record?.cropEnabled ?? false,
     }
   }
 

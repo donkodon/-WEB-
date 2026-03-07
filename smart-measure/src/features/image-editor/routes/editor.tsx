@@ -390,6 +390,10 @@ editor.get('/edit/:id', async (c) => {
              data-brightness={String(brightness)}
              data-white-balance={String(whiteBalance)}
              data-hue={String(hue)}
+             data-crop-x={editorData.cropX !== null ? String(editorData.cropX) : ''}
+             data-crop-y={editorData.cropY !== null ? String(editorData.cropY) : ''}
+             data-crop-size={editorData.cropSize !== null ? String(editorData.cropSize) : ''}
+             data-crop-enabled={String(editorData.cropEnabled)}
              style="display: none;">
         </div>
 
@@ -487,6 +491,117 @@ editor.post('/api/save-adjustments/:sku', requireFirebaseAuth, async (c) => {
     logger.error('❌ Failed to save adjustments:', error)
     return c.json({ 
       error: 'Failed to save adjustments',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500)
+  }
+})
+
+// ─────────────────────────────────────────────
+// POST /api/save-crop-metadata/:sku
+// クロップ座標（cropX, cropY, cropSize, cropEnabled）をDBに保存
+// 
+// 認証: Firebase認証トークン必須
+// 権限: 自社の商品のみ更新可能（company_id で制限）
+// 
+// リクエストボディ:
+//   {
+//     cropX: number,         // X座標
+//     cropY: number,         // Y座標
+//     cropSize: number,      // クロップサイズ
+//     cropEnabled: boolean   // クロップ有効フラグ
+//   }
+// 
+// レスポンス:
+//   成功: { success: true, crop: { cropX, cropY, cropSize, cropEnabled } }
+//   エラー: { error: string, details?: string }
+// ─────────────────────────────────────────────
+editor.post('/api/save-crop-metadata/:sku', requireFirebaseAuth, async (c) => {
+  const sku = c.req.param('sku')
+  
+  // リクエストボディのバリデーション
+  let body: {
+    cropX: number
+    cropY: number
+    cropSize: number
+    cropEnabled: boolean
+  }
+  try {
+    body = await c.req.json()
+  } catch (error) {
+    logger.error('❌ Invalid JSON body:', error)
+    return c.json({ error: 'Invalid request body' }, 400)
+  }
+
+  // パラメータのバリデーション
+  if (
+    typeof body.cropX !== 'number' ||
+    typeof body.cropY !== 'number' ||
+    typeof body.cropSize !== 'number' ||
+    typeof body.cropEnabled !== 'boolean'
+  ) {
+    return c.json({ 
+      error: 'Invalid parameters',
+      details: 'cropX, cropY, cropSize must be numbers, cropEnabled must be boolean'
+    }, 400)
+  }
+
+  if (body.cropX < 0 || body.cropY < 0 || body.cropSize < 100) {
+    return c.json({ 
+      error: 'Invalid crop values',
+      details: 'cropX, cropY must be >= 0, cropSize must be >= 100'
+    }, 400)
+  }
+
+  // 認証ユーザーのcompany_id取得
+  const user = c.get('user') as { companyId?: string } | undefined
+  const companyId = user?.companyId
+
+  if (!companyId) {
+    logger.warn(`⚠️ Unauthorized crop metadata save attempt for sku=${sku}`)
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
+
+  try {
+    // product_itemsテーブルを更新
+    const result = await c.env.DB.prepare(`
+      UPDATE product_items
+      SET 
+        crop_x = ?,
+        crop_y = ?,
+        crop_size = ?,
+        crop_enabled = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE sku = ? AND company_id = ?
+    `).bind(
+      body.cropX,
+      body.cropY,
+      body.cropSize,
+      body.cropEnabled ? 1 : 0,
+      sku,
+      companyId
+    ).run()
+
+    // 更新された行がない場合のチェック
+    if (result.meta.changes === 0) {
+      logger.warn(`⚠️ No rows updated for sku=${sku}, companyId=${companyId}`)
+      return c.json({ error: 'Product not found or no permission' }, 404)
+    }
+
+    logger.info(`✅ Saved crop metadata for ${sku}: cropX=${body.cropX}, cropY=${body.cropY}, cropSize=${body.cropSize}, enabled=${body.cropEnabled}`)
+
+    return c.json({ 
+      success: true,
+      crop: {
+        cropX: body.cropX,
+        cropY: body.cropY,
+        cropSize: body.cropSize,
+        cropEnabled: body.cropEnabled
+      }
+    })
+  } catch (error) {
+    logger.error('❌ Failed to save crop metadata:', error)
+    return c.json({ 
+      error: 'Failed to save crop metadata',
       details: error instanceof Error ? error.message : 'Unknown error'
     }, 500)
   }
