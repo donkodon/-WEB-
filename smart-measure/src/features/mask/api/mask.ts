@@ -100,22 +100,34 @@ maskApi.post('/api/save-mask/:sku', async (c) => {
     })
 
     // ── ビジネスロジックはServiceに委譲 ──
-    logger.debug(`📥 Saving mask: sku=${sku}, companyId=${companyId}, filenamePart=${filenamePart}`)
-    const result = await maskService.saveMask(
-      c.env.DB,
-      c.env.PRODUCT_IMAGES,
-      getR2PublicUrl(c.env),
-      { sku, companyId, maskDataUrl, filenamePart }
-    )
-    logger.info(`✅ Mask saved successfully: ${result.r2Key} → ${result.maskUrl}`)
-
-    return c.json({
-      success: true,
-      sku,
-      companyId,
-      ...result,
-      message: `Mask saved: ${result.r2Key}`,
-    })
+    logger.info(`📥 Step A: Preparing to save mask`)
+    logger.info(`📥 Parameters:`, { sku, companyId, filenamePart, maskDataUrlLength: maskDataUrl.length })
+    
+    try {
+      logger.info(`📥 Step B: Calling maskService.saveMask`)
+      const result = await maskService.saveMask(
+        c.env.DB,
+        c.env.PRODUCT_IMAGES,
+        getR2PublicUrl(c.env),
+        { sku, companyId, maskDataUrl, filenamePart }
+      )
+      logger.info(`✅ Step C: Mask saved successfully: ${result.r2Key} → ${result.maskUrl}`)
+      
+      return c.json({
+        success: true,
+        sku,
+        companyId,
+        ...result,
+        message: `Mask saved: ${result.r2Key}`,
+      })
+    } catch (serviceError) {
+      logger.error(`❌ Step B failed: maskService.saveMask threw error:`, {
+        errorMessage: serviceError instanceof Error ? serviceError.message : String(serviceError),
+        errorName: serviceError instanceof Error ? serviceError.name : 'Unknown',
+        errorStack: serviceError instanceof Error ? serviceError.stack : undefined
+      })
+      throw serviceError
+    }
   } catch (error) {
     logError('Mask save', error, { sku })
     logger.error(`❌ Mask save exception:`, {

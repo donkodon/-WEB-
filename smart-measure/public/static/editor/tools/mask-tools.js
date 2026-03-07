@@ -428,13 +428,26 @@
             if (!maskRes.ok) {
                 const errorText = await maskRes.text();
                 window.logger && window.logger.error(`❌ Mask save failed (${maskRes.status}):`, errorText);
+                window.logger && window.logger.error(`❌ Full response:`, {
+                    status: maskRes.status,
+                    statusText: maskRes.statusText,
+                    headers: Object.fromEntries(maskRes.headers.entries()),
+                    body: errorText
+                });
                 let errorData;
                 try {
                     errorData = JSON.parse(errorText);
+                    window.logger && window.logger.error(`❌ Parsed error:`, errorData);
                 } catch (e) {
+                    window.logger && window.logger.error(`❌ Could not parse error as JSON`);
                     errorData = { error: errorText || 'Unknown error' };
                 }
-                throw new Error(errorData.details || errorData.error || `Mask save failed (${maskRes.status}): ${errorText}`);
+                const errorMsg = errorData.debug?.message || errorData.details || errorData.error || `Mask save failed (${maskRes.status}): ${errorText}`;
+                window.logger && window.logger.error(`❌ Error message:`, errorMsg);
+                if (errorData.debug?.stack) {
+                    window.logger && window.logger.error(`❌ Stack trace:`, errorData.debug.stack);
+                }
+                throw new Error(errorMsg);
             }
             
             const maskResult = await maskRes.json();
