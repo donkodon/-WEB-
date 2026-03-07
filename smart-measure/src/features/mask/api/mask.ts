@@ -64,11 +64,14 @@ maskApi.post('/api/save-mask/:sku', async (c) => {
 
     // ── バリデーション ──
     if (!maskDataUrl || !maskDataUrl.startsWith('data:image/png;base64,')) {
+      logger.warn(`❌ Invalid mask data: ${maskDataUrl?.substring(0, 50)}...`)
       return c.json({ error: 'Invalid mask data' }, 400)
     }
     if (!c.env.PRODUCT_IMAGES) {
+      logger.error(`❌ R2 bucket not configured!`)
       return c.json({ error: 'R2 bucket not configured' }, 500)
     }
+    logger.debug(`✅ R2 bucket configured: ${typeof c.env.PRODUCT_IMAGES}`)
 
     // ── ビジネスロジックはServiceに委譲 ──
     logger.debug(`📥 Saving mask: sku=${sku}, companyId=${companyId}, filenamePart=${filenamePart}`)

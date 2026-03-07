@@ -29,6 +29,8 @@ export interface SaveMaskResult {
   maskUrl: string
   r2Key: string
   maskBasename: string
+  uploadSuccess: boolean
+  bufferSize: number
 }
 
 export interface MaskInfoResult {
@@ -80,19 +82,28 @@ export class MaskService {
 
     // ② base64 → バイナリ変換
     const buffer = this.decodeBase64(maskDataUrl)
+    logger.debug(`📦 Buffer size: ${buffer.length} bytes`)
 
     // ③ R2 に保存
-    await bucket.put(r2Key, buffer, {
+    logger.info(`🚀 Starting R2 upload: ${r2Key}`)
+    const uploadResult = await bucket.put(r2Key, buffer, {
       httpMetadata: { contentType: 'image/png' },
     })
-    logger.debug(`✅ Mask uploaded to R2: ${r2Key}`)
+    logger.info(`✅ Mask uploaded to R2: ${r2Key}, etag=${uploadResult?.etag || 'unknown'}`)
 
     // ④ DB 更新
     const maskUrl = `${r2PublicUrl}/${r2Key}`
+    logger.info(`🗄️ Updating DB: sku=${sku}, company=${companyId}, url=${maskUrl}`)
     await this.maskRepo.updateMaskUrl(db, sku, companyId, maskUrl)
-    logger.debug(`✅ DB updated: mask_image_url_r2=${maskUrl}`)
+    logger.info(`✅ DB updated: mask_image_url_r2=${maskUrl}`)
 
-    return { maskUrl, r2Key, maskBasename }
+    return { 
+      maskUrl, 
+      r2Key, 
+      maskBasename, 
+      uploadSuccess: true, 
+      bufferSize: buffer.length 
+    }
   }
 
   // ── 再生成用データ取得 ──────────────────────────────────────────────────────

@@ -559,11 +559,20 @@ window.maskEditorSave = async function(sku) {
         }
 
         const data = await res.json();
-        window.logger.debug('✅ Mask saved:', data.r2Key, '| overwrite:', data.isOverwrite);
-        window.logger.debug('📍 Mask URL:', data.maskUrl);
-        window.logger.debug('📦 Mask basename:', data.maskBasename);
+        window.logger.info('✅ Mask saved successfully!');
+        window.logger.info('📦 R2 key:', data.r2Key);
+        window.logger.info('🔗 Mask URL:', data.maskUrl);
+        window.logger.info('📝 Basename:', data.maskBasename);
+        window.logger.info('📊 Upload success:', data.uploadSuccess);
+        window.logger.info('📏 Buffer size:', data.bufferSize, 'bytes');
 
-        showToast('マスクを保存しました', 'success');
+        // 保存確認のため、マスクURLを新しいタブで開く（デバッグ用）
+        if (data.maskUrl) {
+            window.logger.info('🔍 Opening mask URL for verification:', data.maskUrl);
+            // setTimeout(() => window.open(data.maskUrl, '_blank'), 1000);
+        }
+
+        showToast(`マスクを保存しました (${(data.bufferSize / 1024).toFixed(1)}KB)`, 'success');
 
     } catch (error) {
         window.logger.error('❌ Save failed:', error);
