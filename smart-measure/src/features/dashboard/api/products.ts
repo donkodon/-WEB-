@@ -40,8 +40,14 @@ productsRouter.get('/api/dashboard/products', async (c) => {
 
     logger.debug(`📊 API Dashboard request: company_id=${companyId}, page=${page}, perPage=${perPage}`)
 
+    // Get base URL from request headers
+    const protocol = c.req.header('x-forwarded-proto') || 'https'
+    const host = c.req.header('host') || 'smart-measure.pages.dev'
+    const baseUrl = `${protocol}://${host}`
+    logger.debug(`🌐 Base URL: ${baseUrl}`)
+
     const r2PublicUrl = getR2PublicUrl(c.env)
-    const result = await dashboardService.getDashboardProducts(c.env.DB, companyId, page, perPage, r2PublicUrl)
+    const result = await dashboardService.getDashboardProducts(c.env.DB, companyId, page, perPage, r2PublicUrl, baseUrl)
 
     return c.json({ success: true, ...result })
 

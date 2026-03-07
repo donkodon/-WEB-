@@ -39,10 +39,11 @@ export class DashboardService {
     companyId: string,
     page: number,
     perPage: number,
-    r2PublicUrl: string
+    r2PublicUrl: string,
+    baseUrl?: string
   ): Promise<DashboardDataResult> {
     logger.debug(`📊 DashboardService.getDashboardProducts: company=${companyId}, page=${page}`)
-    return this.dashboardRepo.fetchDashboardProducts(db, companyId, page, perPage, r2PublicUrl)
+    return this.dashboardRepo.fetchDashboardProducts(db, companyId, page, perPage, r2PublicUrl, baseUrl)
   }
 
   /**

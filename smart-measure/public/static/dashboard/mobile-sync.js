@@ -3,7 +3,8 @@
     const btnSyncMobile = document.getElementById('btn-sync-mobile');
     
     if (!btnSyncMobile) {
-        window.logger.error('❌ Sync mobile button not found!');
+        // Button not present in current UI - this is normal, skip initialization
+        window.logger && window.logger.debug('⏭️ Sync mobile button not present, skipping initialization');
         return;
     }
     

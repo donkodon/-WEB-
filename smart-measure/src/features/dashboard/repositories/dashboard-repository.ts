@@ -24,7 +24,8 @@ function buildPagination(page: number, perPage: number, total: number) {
 function buildImageRecord(
   sku: string, imageUrl: string, index: number,
   processedImages: string[], finalImages: string[],
-  companyId: string, updatedAt: string, imageUploadApiUrl: string
+  companyId: string, updatedAt: string, imageUploadApiUrl: string,
+  baseUrl: string
 ): DashboardImageRecord | null {
   const r2Path = (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'))
     ? ImageUrlHelper.toR2Path(imageUrl) : imageUrl
@@ -37,9 +38,12 @@ function buildImageRecord(
   const imageStatus = getImageDisplayUrl(sku, filenameWithoutExt, processedImages, finalImages, companyId, updatedAt)
   const status = imageStatus.status === 'final' ? 'final' : imageStatus.status === 'processed' ? 'processed' : 'ready'
   const fileExtension = filename.match(/\.[^/.]+$/)?.[0] || '.jpg'
+  // Use absolute URLs for production environment
+  const originalUrl = `${baseUrl}/api/image-proxy/${sku}/${filenameWithoutExt}${fileExtension}`
+  const processedUrlFull = imageStatus.url && !imageStatus.url.startsWith('http') ? `${baseUrl}${imageStatus.url}` : imageStatus.url
   return {
-    id: imageId, original_url: `/api/image-proxy/${sku}/${filenameWithoutExt}${fileExtension}`,
-    processed_url: imageStatus.url, display_url: imageStatus.url, status,
+    id: imageId, original_url: originalUrl,
+    processed_url: processedUrlFull, display_url: processedUrlFull, status,
     created_at: new Date().toISOString(), filename, sku, sequence: index + 1, is_main: index === 0, updated_at: updatedAt,
   }
 }
@@ -47,16 +51,23 @@ function buildImageRecord(
 // ── 補助関数: 採寸画像レコードを生成（存在する場合のみ） ──────────────────
 function buildMeasurementImageRecord(
   sku: string, annotatedImageUrl: string | undefined, maskImageUrl: string | null,
-  processedImages: string[], imageCount: number, updatedAt: string
+  processedImages: string[], imageCount: number, updatedAt: string,
+  baseUrl: string
 ): DashboardImageRecord | null {
   if (!annotatedImageUrl) return null
   const isProcessed = processedImages.includes('measurement')
+  // Use absolute URLs for production environment
   const processedUrl = isProcessed
-    ? `/api/image-proxy/${sku}/measurement_p.png?v=${new Date(updatedAt).getTime()}` : null
+    ? `${baseUrl}/api/image-proxy/${sku}/measurement_p.png?v=${new Date(updatedAt).getTime()}` : null
+  // Convert relative URLs to absolute
+  const absoluteAnnotatedUrl = annotatedImageUrl && !annotatedImageUrl.startsWith('http')
+    ? `${baseUrl}${annotatedImageUrl}` : annotatedImageUrl
+  const absoluteMaskUrl = maskImageUrl && !maskImageUrl.startsWith('http')
+    ? `${baseUrl}${maskImageUrl}` : maskImageUrl
   return {
-    id: `measurement_${sku}`, original_url: annotatedImageUrl,
-    processed_url: processedUrl, display_url: processedUrl || annotatedImageUrl,
-    mask_url: maskImageUrl || null, status: isProcessed ? 'completed' : 'measurement',
+    id: `measurement_${sku}`, original_url: absoluteAnnotatedUrl,
+    processed_url: processedUrl, display_url: processedUrl || absoluteAnnotatedUrl,
+    mask_url: absoluteMaskUrl || null, status: isProcessed ? 'completed' : 'measurement',
     created_at: new Date().toISOString(), filename: 'measurement.png',
     sku, sequence: imageCount + 1, is_main: false, is_measurement: true, updated_at: updatedAt,
   }
@@ -66,7 +77,8 @@ function buildMeasurementImageRecord(
 function buildSkuMap(
   itemsResult: { results: Record<string, unknown>[] },
   masterMap: Map<string, Record<string, unknown>>,
-  companyId: string, imageUploadApiUrl: string
+  companyId: string, imageUploadApiUrl: string,
+  baseUrl: string
 ): Map<string, DashboardProductRecord> {
   const skuMap = new Map<string, DashboardProductRecord>()
   for (const item of itemsResult.results) {
@@ -106,14 +118,15 @@ function buildSkuMap(
 
     const updatedAt = pi.updated_at as string || new Date().toISOString()
     for (let i = 0; i < imageUrls.length; i++) {
-      const record = buildImageRecord(sku, imageUrls[i], i, processedImages, finalImages, companyId, updatedAt, imageUploadApiUrl)
+      const record = buildImageRecord(sku, imageUrls[i], i, processedImages, finalImages, companyId, updatedAt, imageUploadApiUrl, baseUrl)
       if (record) productData.images.push(record)
     }
 
     const measureRecord = buildMeasurementImageRecord(
       sku, pi.annotated_image_url as string | undefined,
       pi.mask_image_url as string | null,
-      processedImages, imageUrls.length, updatedAt
+      processedImages, imageUrls.length, updatedAt,
+      baseUrl
     )
     if (measureRecord && productData.has_measurement) productData.images.push(measureRecord)
   }
@@ -122,9 +135,12 @@ function buildSkuMap(
 
 export class DashboardRepository implements IDashboardRepository {
   async fetchDashboardProducts(
-    db: D1Database, companyId: string, page: number, perPage: number, r2PublicUrl: string
+    db: D1Database, companyId: string, page: number, perPage: number, r2PublicUrl: string,
+    baseUrl?: string
   ): Promise<DashboardDataResult> {
-    logger.debug(`📊 Fetching dashboard: company_id=${companyId}, page=${page}`)
+    // Default to production URL if not provided
+    const finalBaseUrl = baseUrl || 'https://smart-measure.pages.dev'
+    logger.debug(`📊 Fetching dashboard: company_id=${companyId}, page=${page}, baseUrl=${finalBaseUrl}`)
 
     const countResult = await db.prepare(`
       SELECT COUNT(DISTINCT pi.sku) as total FROM product_items pi
@@ -172,7 +188,7 @@ export class DashboardRepository implements IDashboardRepository {
     `).bind(companyId, ...skuList).all()
 
     const imageUploadApiUrl = getImageUploadApiUrl({ IMAGE_UPLOAD_API_URL: r2PublicUrl })
-    const skuMap = buildSkuMap(itemsResult, masterMap, companyId, imageUploadApiUrl)
+    const skuMap = buildSkuMap(itemsResult, masterMap, companyId, imageUploadApiUrl, finalBaseUrl)
 
     const products: DashboardProductRecord[] = []
     for (const sku of skuList) {

@@ -225,6 +225,15 @@ function createImageHTML(img, product) {
     const isMeasurement = img.is_measurement || false;
     const displayUrl = img.processed_url || img.original_url;
     
+    // Build the click handler URL
+    let clickHandler;
+    if (isMeasurement) {
+        clickHandler = `handleImageClick('landmarks', '${escapeHtml(product.sku)}', null, null)`;
+    } else {
+        const processedUrl = img.processed_url || '';
+        clickHandler = `handleImageClick('edit', null, ${img.id}, '${escapeHtml(processedUrl)}')`;
+    }
+    
     return `
         <div class="${isMeasurement ? 'cursor-pointer' : 'cursor-move sortable-item'} relative group aspect-square" data-image-id="${img.id}">
             <div class="w-full h-full bg-white rounded-lg overflow-hidden border border-gray-100 relative">
@@ -296,7 +305,7 @@ function createImageHTML(img, product) {
                     </button>
                 ` : ''}
             </div>
-            <div class="image-card-overlay absolute inset-0 bg-transparent cursor-pointer z-0" onclick="${isMeasurement ? `window.location.href='/landmarks/${encodeURIComponent(product.sku)}'` : `(function(){var src=${JSON.stringify(img.processed_url||'')};window.location.href='/edit/${img.id}'+(src?'?src='+encodeURIComponent(src):'');})()`}" data-image-id="${img.id}"></div>
+            <div class="image-card-overlay absolute inset-0 bg-transparent cursor-pointer z-0" onclick="${clickHandler}" data-image-id="${img.id}"></div>
         </div>
     `;
 }
@@ -425,5 +434,24 @@ function hideLoadingIndicator() {
 
 // Expose loadPage to global scope for onclick handlers
 window.loadPage = loadPage;
+
+/**
+ * Handle image click event
+ * @param {string} type - 'landmarks' or 'edit'
+ * @param {string|null} sku - SKU code (for landmarks)
+ * @param {number|null} imageId - Image ID (for edit)
+ * @param {string|null} processedUrl - Processed URL (for edit)
+ */
+window.handleImageClick = function(type, sku, imageId, processedUrl) {
+    if (type === 'landmarks') {
+        window.location.href = `/landmarks/${encodeURIComponent(sku)}`;
+    } else if (type === 'edit') {
+        let url = `/edit/${imageId}`;
+        if (processedUrl && processedUrl.trim() !== '') {
+            url += `?src=${encodeURIComponent(processedUrl)}`;
+        }
+        window.location.href = url;
+    }
+};
 
 

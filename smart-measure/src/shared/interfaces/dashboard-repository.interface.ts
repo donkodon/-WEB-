@@ -75,7 +75,8 @@ export interface IDashboardRepository {
     companyId: string,
     page: number,
     perPage: number,
-    r2PublicUrl: string
+    r2PublicUrl: string,
+    baseUrl?: string
   ): Promise<DashboardDataResult>
 
   bulkImportProducts(

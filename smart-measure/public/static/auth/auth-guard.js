@@ -176,8 +176,17 @@ window.authenticatedFetch = async function(url, options = {}) {
       window.logger && window.logger.error('❌ API Error Response:', {
         status: response.status,
         statusText: response.statusText,
+        url: url,
         body: errorBody
       })
+      
+      // If 403, show user-friendly message
+      if (response.status === 403) {
+        const errorData = JSON.parse(errorBody)
+        if (errorData.errorCode === 'USER_NOT_FOUND') {
+          alert('❌ ユーザーが見つかりません\n\nデータベースにユーザーが登録されていないか、アカウントが無効化されています。\n管理者に連絡してください。\n\nEmail: ' + localStorage.getItem('user_email'))
+        }
+      }
     }
     
     // Handle 401 Unauthorized
