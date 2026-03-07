@@ -75,16 +75,25 @@
         ctx.putImageData(imageData, 0, 0);
 
         // 4. マスクで透過処理（マスクがある場合）
+        console.log('🎨 [applyAllAdjustments] maskCanvas:', maskCanvas ? 'exists' : 'null');
+        console.log('🎨 [applyAllAdjustments] maskImageUrl:', S.maskImageUrl);
         if (maskCanvas && S.maskImageUrl) {
+            console.log('🎨 [applyAllAdjustments] Applying mask with destination-in...');
             ctx.globalCompositeOperation = 'destination-in';
             ctx.drawImage(maskCanvas, 0, 0);
             ctx.globalCompositeOperation = 'source-over';
+            console.log('✅ [applyAllAdjustments] Mask applied');
+        } else {
+            console.warn('⚠️ [applyAllAdjustments] Mask NOT applied - maskCanvas:', !!maskCanvas, 'maskImageUrl:', !!S.maskImageUrl);
         }
 
         // 5. マスクオーバーレイを再適用（編集中の表示用）
         if (maskVisible && S.maskImageData) {
+            console.log('🎨 [applyAllAdjustments] Applying mask overlay...');
             applyMaskOverlay();
         }
+        
+        console.log('✅ [applyAllAdjustments] COMPLETE');
     }
 
     /**
