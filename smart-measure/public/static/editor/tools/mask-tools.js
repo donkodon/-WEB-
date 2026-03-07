@@ -494,14 +494,23 @@
             S.pendingCompositeDataUrl = compositeDataUrl;
 
             // Step 3: canvas を合成画像で更新（画面表示）
+            // 🎨 修正：白背景 + 元画像全体 + マスク透過処理で表示
             const { canvas, ctx } = S;
-            canvas.width  = comp.width;
-            canvas.height = comp.height;
+            canvas.width  = origImg.width;
+            canvas.height = origImg.height;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            // 白背景を先に敷く（透明ピクセルが黒く見えるのを防ぐ）
+            
+            // 1. 白背景を塗る
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(comp, 0, 0);
+            
+            // 2. 元画像全体を描画
+            ctx.drawImage(origImg, 0, 0);
+            
+            // 3. マスクで透過処理（destination-in = マスクの白部分だけ残す）
+            ctx.globalCompositeOperation = 'destination-in';
+            ctx.drawImage(maskTmp, 0, 0);
+            ctx.globalCompositeOperation = 'source-over';  // 通常描画に戻す
 
             // adjustedImage キャッシュを合成済み画像で更新
             // （switchToProcessedImage・hideMaskOverlay がここから再描画する）
