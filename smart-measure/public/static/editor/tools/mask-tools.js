@@ -634,4 +634,49 @@
             window.logger && window.logger.debug('✅ [mask-tools] initialized');
         }
     };
+
+    // ────────────────────────────────────────────────────────────────
+    // グローバル関数: マスクをcanvasに適用（オリジナル画像ベース）
+    // ────────────────────────────────────────────────────────────────
+    /**
+     * applyMaskToCanvas()
+     * オリジナル画像 + マスク合成 を canvas に描画
+     * 
+     * 処理フロー:
+     * 1. 白背景を塗る
+     * 2. オリジナル画像を描画
+     * 3. マスクで透過処理（destination-in合成）
+     * 4. adjustedImage を更新（明るさ調整のベース）
+     */
+    window.applyMaskToCanvas = function() {
+        const S = window.EditorState;
+        if (!S || !S.maskCanvas || !S.originalImage) {
+            window.logger && window.logger.debug('⚠️ applyMaskToCanvas: state not ready');
+            return;
+        }
+
+        const { canvas, ctx, maskCanvas } = S;
+        
+        // 1. キャンバスをクリア
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // 2. 白背景を塗る
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // 3. オリジナル画像を描画
+        ctx.putImageData(S.originalImage, 0, 0);
+        
+        // 4. マスクで透過処理（destination-in = マスクの白部分だけ残す）
+        ctx.globalCompositeOperation = 'destination-in';
+        ctx.drawImage(maskCanvas, 0, 0);
+        ctx.globalCompositeOperation = 'source-over';  // 通常描画に戻す
+        
+        // 5. adjustedImage キャッシュを更新（明るさ調整のベースとして使用）
+        S.adjustedImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        S.showingOriginal = false;
+        S.maskVisible = false;
+        
+        window.logger && window.logger.debug('✅ Mask applied to canvas (original + mask composition)');
+    };
 })();

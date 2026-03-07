@@ -29,18 +29,21 @@
             maskTools.classList.add('hidden');
             toolTitle.textContent = '画像調整';
             
-            // Switch back to processed image
-            window.logger && window.logger.debug('📸 Switching back to processed image');
-            if (window.switchToProcessedImage) {
-                window.switchToProcessedImage();
+            // 🎨 修正: オリジナル + マスク + JSON調整を表示
+            window.logger && window.logger.debug('🎨 Applying mask to canvas (adjust tab)');
+            if (window.applyMaskToCanvas) {
+                window.applyMaskToCanvas();
+            }
+            
+            // 明るさ調整を再適用
+            if (window.ImageAdjust && window.ImageAdjust.applyAllAdjustments) {
+                window.ImageAdjust.applyAllAdjustments();
             }
             
             // Hide mask overlay when switching to adjust tab
-            window.logger && window.logger.debug('🎭 Checking window.hideMaskOverlay:', typeof window.hideMaskOverlay);
+            window.logger && window.logger.debug('🎭 Hiding mask overlay');
             if (window.hideMaskOverlay) {
                 window.hideMaskOverlay();
-            } else {
-                window.logger && window.logger.error('❌ window.hideMaskOverlay is not defined!');
             }
         } else if (tab === 'mask') {
             window.logger && window.logger.debug('🎭 Switching to mask tab');

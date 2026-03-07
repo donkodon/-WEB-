@@ -10,19 +10,30 @@
 
     /**
      * 調整ベース画像をキャンバスに適用して調整結果を描画する。
-     * saveMask後は adjustedImage（白抜き合成済み）を、
-     * それ以前は originalImage（オリジナル）をベースとして使う。
-     * maskVisible が true の場合はオーバーレイも再適用する。
+     * 🎨 修正: 常にオリジナル画像 + マスク合成 + JSON調整を適用
+     * 
+     * 処理フロー:
+     * 1. 白背景を塗る
+     * 2. オリジナル画像を描画
+     * 3. JSON調整（明るさ・WB・色相）を適用
+     * 4. マスクで透過処理（destination-in）
+     * 5. マスクオーバーレイ表示（必要な場合）
      */
     function applyAllAdjustments() {
         const S = window.EditorState;
         if (!S || !S.originalImage) return;
 
-        const { canvas, ctx, brightness, wb, hue, maskVisible } = S;
+        const { canvas, ctx, brightness, wb, hue, maskVisible, maskCanvas } = S;
 
-        // 常にオリジナル画像をベースとして使う（saveMask後も変わらない）
-        // ※ adjustedImage（白抜き合成）は保存用データであり、表示ベースには使わない
+        // 1. 白背景を塗る
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // 2. オリジナル画像を描画
         ctx.putImageData(S.originalImage, 0, 0);
+        
+        // 3. JSON調整を適用
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const data      = imageData.data;
 
@@ -63,7 +74,14 @@
 
         ctx.putImageData(imageData, 0, 0);
 
-        // マスクオーバーレイを再適用
+        // 4. マスクで透過処理（マスクがある場合）
+        if (maskCanvas && S.maskImageUrl) {
+            ctx.globalCompositeOperation = 'destination-in';
+            ctx.drawImage(maskCanvas, 0, 0);
+            ctx.globalCompositeOperation = 'source-over';
+        }
+
+        // 5. マスクオーバーレイを再適用（編集中の表示用）
         if (maskVisible && S.maskImageData) {
             applyMaskOverlay();
         }

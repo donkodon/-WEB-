@@ -66,14 +66,24 @@ document.addEventListener('DOMContentLoaded', function () {
             window.MaskTools && window.MaskTools.saveMaskHistory();
             window.logger && window.logger.debug('✅ Blank mask initialized');
         }
+        
+        // 🎨 マスクがある場合は自動適用（初期表示をマスク適用後にする）
+        if (S.maskImageUrl) {
+            // マスクロード完了後に自動適用（100ms待機）
+            setTimeout(() => {
+                if (window.applyMaskToCanvas) {
+                    window.applyMaskToCanvas();
+                }
+            }, 100);
+        }
     }
 
     img.onload  = onInitialImageLoad;
     img.onerror = function () {
-        window.logger && window.logger.error('❌ Failed to load initial image:', S.processedSrc || S.originalSrc);
+        window.logger && window.logger.error('❌ Failed to load initial image:', S.originalSrc);
     };
-    // 優先順位: processedSrc (f画像 or p画像) > originalSrc
-    img.src = S.processedSrc || S.originalSrc;
+    // 🎨 修正: 常にオリジナル画像を読み込む（マスクとJSON調整を後で適用）
+    img.src = S.originalSrc;
 
     // ────────────────────────────────────────────────────────────────
     // 2. 描画イベント（mousedown / mousemove / mouseup / mouseout）
