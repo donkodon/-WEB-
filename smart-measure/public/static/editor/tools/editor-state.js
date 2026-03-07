@@ -24,15 +24,7 @@
     const sku         = parts[0];
     const filenamePart = parts.slice(1).join('_');
 
-    window.logger && window.logger.info('🎨 EditorState init:', {
-        imageId: imageId,
-        sku: sku,
-        filenamePart: filenamePart,
-        parts: parts,
-        processedSrc: processedSrc,
-        originalSrc: originalSrc,
-        maskImageUrl: maskImageUrl
-    });
+    window.logger && window.logger.debug('EditorState initialized:', { sku, filenamePart });
 
     // ── メインキャンバス ─────────────────────────────────────────────
     const canvas = document.getElementById('main-canvas');

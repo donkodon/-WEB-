@@ -29,39 +29,6 @@ maskApi.use('*', requireFirebaseAuth)
 const maskService = new MaskService(new MaskRepository())
 
 // ─────────────────────────────────────────────
-// GET /api/mask-test
-// テスト用エンドポイント（認証・DB・環境変数確認）
-// ─────────────────────────────────────────────
-maskApi.get('/api/mask-test', async (c) => {
-  try {
-    const user = c.get?.('user') as any
-    const companyId = getCompanyId(c)
-    
-    return c.json({
-      success: true,
-      auth: {
-        hasUser: !!user,
-        uid: user?.uid,
-        email: user?.email,
-        userCompanyId: user?.companyId,
-        finalCompanyId: companyId
-      },
-      env: {
-        hasDB: !!c.env.DB,
-        hasR2: !!c.env.PRODUCT_IMAGES,
-        r2PublicUrl: getR2PublicUrl(c.env)
-      }
-    })
-  } catch (error) {
-    return c.json({
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined
-    }, 500)
-  }
-})
-
-// ─────────────────────────────────────────────
 // GET /api/mask-info/:sku
 // マスク情報取得（デバッグ・クライアント確認用）
 // ─────────────────────────────────────────────
@@ -91,100 +58,52 @@ maskApi.get('/api/mask-info/:sku', async (c) => {
 // ─────────────────────────────────────────────
 maskApi.post('/api/save-mask/:sku', async (c) => {
   const sku = c.req.param('sku')
-  console.log(`🔵 === MASK SAVE REQUEST START === SKU: ${sku}`)
-  logger.info(`🔵 === MASK SAVE REQUEST START === SKU: ${sku}`)
-  
-  let user: any
-  let companyId: string
-  let body: any
-  let maskDataUrl: string
-  let filenamePart: string | undefined
+  logger.info(`Mask save request: sku=${sku}`)
   
   try {
-    // Step 1: Get user context
-    console.log(`📥 Step 1: Getting user context`)
-    user = c.get?.('user') as { companyId?: string; email?: string; uid?: string } | undefined
-    console.log(`🔐 Firebase user:`, JSON.stringify({ hasUser: !!user, uid: user?.uid, email: user?.email, companyId: user?.companyId }))
+    const companyId = getCompanyId(c)
+    const body = await c.req.json<{
+      maskDataUrl: string
+      filenamePart?: string
+    }>()
     
-    // Step 2: Get company ID
-    console.log(`📥 Step 2: Getting company ID`)
-    companyId = getCompanyId(c)
-    console.log(`👤 Company ID (final): ${companyId}`)
-    
-    if (!companyId || companyId === 'test_company') {
-      logger.warn(`⚠️ Using fallback company ID: ${companyId}`)
-    }
-    
-    // Step 3: Parse request body
-    logger.info(`📥 Step 3: Parsing request body`)
-    body = await c.req.json()
-    maskDataUrl = body.maskDataUrl
-    filenamePart = body.filenamePart
-    logger.info(`📦 Request body parsed: filenamePart=${filenamePart}, maskDataUrl length=${maskDataUrl?.length || 0}`)
+    const { maskDataUrl, filenamePart } = body
 
-    // ── バリデーション ──
+    // Validation
     if (!maskDataUrl || !maskDataUrl.startsWith('data:image/png;base64,')) {
-      logger.warn(`❌ Invalid mask data: ${maskDataUrl?.substring(0, 50)}...`)
+      logger.warn(`Invalid mask data format for sku=${sku}`)
       return c.json({ error: 'Invalid mask data' }, 400)
     }
     if (!c.env.DB) {
-      logger.error(`❌ DB not configured!`)
+      logger.error(`Database not configured`)
       return c.json({ error: 'Database not configured' }, 500)
     }
     if (!c.env.PRODUCT_IMAGES) {
-      logger.error(`❌ R2 bucket not configured!`)
+      logger.error(`R2 bucket not configured`)
       return c.json({ error: 'R2 bucket not configured' }, 500)
     }
-    logger.debug(`✅ Environment check passed:`, {
-      hasDB: !!c.env.DB,
-      hasR2: !!c.env.PRODUCT_IMAGES,
-      r2PublicUrl: getR2PublicUrl(c.env)
-    })
 
-    // ── ビジネスロジックはServiceに委譲 ──
-    logger.info(`📥 Step A: Preparing to save mask`)
-    logger.info(`📥 Parameters:`, { sku, companyId, filenamePart, maskDataUrlLength: maskDataUrl.length })
+    // Save mask to R2 and update DB
+    const result = await maskService.saveMask(
+      c.env.DB,
+      c.env.PRODUCT_IMAGES,
+      getR2PublicUrl(c.env),
+      { sku, companyId, maskDataUrl, filenamePart }
+    )
     
-    try {
-      logger.info(`📥 Step B: Calling maskService.saveMask`)
-      const result = await maskService.saveMask(
-        c.env.DB,
-        c.env.PRODUCT_IMAGES,
-        getR2PublicUrl(c.env),
-        { sku, companyId, maskDataUrl, filenamePart }
-      )
-      logger.info(`✅ Step C: Mask saved successfully: ${result.r2Key} → ${result.maskUrl}`)
-      
-      return c.json({
-        success: true,
-        sku,
-        companyId,
-        ...result,
-        message: `Mask saved: ${result.r2Key}`,
-      })
-    } catch (serviceError) {
-      logger.error(`❌ Step B failed: maskService.saveMask threw error:`, {
-        errorMessage: serviceError instanceof Error ? serviceError.message : String(serviceError),
-        errorName: serviceError instanceof Error ? serviceError.name : 'Unknown',
-        errorStack: serviceError instanceof Error ? serviceError.stack : undefined
-      })
-      throw serviceError
-    }
+    logger.info(`Mask saved: sku=${sku}, r2Key=${result.r2Key}`)
+    
+    return c.json({
+      success: true,
+      sku,
+      companyId,
+      ...result,
+      message: `Mask saved: ${result.r2Key}`,
+    })
   } catch (error) {
     logError('Mask save', error, { sku })
-    logger.error(`❌ Mask save exception:`, {
-      sku,
-      errorMessage: error instanceof Error ? error.message : String(error),
-      errorStack: error instanceof Error ? error.stack : undefined
-    })
     return c.json(
-      {
-        ...createSafeErrorResponse(error, ErrorCode.UPLOAD_FAILED),
-        debug: {
-          message: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack?.split('\n').slice(0, 3) : undefined
-        }
-      },
+      createSafeErrorResponse(error, ErrorCode.UPLOAD_FAILED),
       500
     )
   }
