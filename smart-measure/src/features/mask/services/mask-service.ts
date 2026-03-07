@@ -66,7 +66,7 @@ export class MaskService {
   ): Promise<SaveMaskResult> {
     const { sku, companyId, maskDataUrl, filenamePart } = input
 
-    // ① ファイル名を解決する（純粋ロジック）
+    // ① ファイル名を解決する（既存マスクがあれば上書き）
     const maskBasename = await this.resolveMaskBasename(
       db,
       sku,
@@ -117,9 +117,10 @@ export class MaskService {
    * マスクのベースファイル名を解決する
    *
    * 優先順位:
-   *   1. クライアントから filenamePart が来た → {filenamePart}_mask
-   *   2. DBの image_urls から最初の画像のベース名 → {basename}_mask
-   *   3. フォールバック → {sku}_mask
+   *   1. 既存の mask_image_url_r2 から抽出 → 上書き保存
+   *   2. クライアントから filenamePart が来た → {filenamePart}_mask
+   *   3. DBの image_urls から最初の画像のベース名 → {basename}_mask
+   *   4. フォールバック → {sku}_mask
    */
   async resolveMaskBasename(
     db: D1Database,
@@ -127,12 +128,28 @@ export class MaskService {
     companyId: string,
     filenamePart?: string
   ): Promise<string> {
+    // ① 最優先: 既存のマスクURLから抽出（上書き保存）
+    try {
+      const { maskImageUrl } = await this.maskRepo.findMaskUrl(db, sku, companyId)
+      if (maskImageUrl) {
+        const basename = this.extractBasenameFromUrl(maskImageUrl)
+        if (basename) {
+          logger.debug(`🎯 Overwriting existing mask: ${basename}`)
+          return basename
+        }
+      }
+    } catch (e) {
+      logger.warn(`⚠️ Failed to get existing mask URL`, e)
+    }
+
+    // ② クライアントから filenamePart が来た場合
     if (filenamePart && filenamePart.trim()) {
       const result = `${filenamePart.trim()}_mask`
       logger.debug(`🎯 Using filenamePart from client: ${result}`)
       return result
     }
 
+    // ③ image_urls から最初の画像のベース名を使用
     try {
       const { imageUrls } = await this.maskRepo.findImageUrls(
         db,
@@ -153,6 +170,7 @@ export class MaskService {
       logger.warn(`⚠️ Failed to get image_urls, fallback to sku_mask`, e)
     }
 
+    // ④ フォールバック
     const result = `${sku}_mask`
     logger.debug(`🎯 Fallback to sku_mask: ${result}`)
     return result
