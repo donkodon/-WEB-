@@ -28,7 +28,7 @@
 
     // ── メインキャンバス ─────────────────────────────────────────────
     const canvas = document.getElementById('main-canvas');
-    const ctx    = canvas.getContext('2d');
+    const ctx    = canvas.getContext('2d', { willReadFrequently: true });
 
     // メイン表示用 Image オブジェクト
     const img        = new Image();
@@ -36,7 +36,7 @@
 
     // ── マスクキャンバス ─────────────────────────────────────────────
     const maskCanvas = document.createElement('canvas');
-    const maskCtx   = maskCanvas.getContext('2d');
+    const maskCtx   = maskCanvas.getContext('2d', { willReadFrequently: true });
 
     // ── 共有状態変数 ─────────────────────────────────────────────────
     let showingOriginal = false; // 現在オリジナル画像を表示中か

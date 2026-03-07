@@ -28,8 +28,6 @@
         } else {
             maskHistoryIndex++;
         }
-
-        window.logger && window.logger.debug(`💾 Mask history saved: index=${maskHistoryIndex} total=${maskHistory.length}`);
     }
 
     // ── マスク画像ロード ─────────────────────────────────────────────
@@ -38,12 +36,8 @@
         const S = window.EditorState;
         if (!S || !S.maskImageUrl) return;
 
-        // キャッシュバスターを付与（ブラウザキャッシュで古いマスクが出ないようにする）
-        const rawUrl  = S.maskImageUrl;
-        const maskUrl = rawUrl + (rawUrl.includes('?') ? '&' : '?') + '_cb=' + Date.now();
-        window.logger && window.logger.debug('🎭 loadMaskImage (cache-busted):', maskUrl);
-
         // /api/images/proxy 経由で読み込む（R2直URLのCORSを回避）
+        const rawUrl = S.maskImageUrl;
         const proxyUrl = `/api/images/proxy?url=${encodeURIComponent(rawUrl)}&_cb=${Date.now()}`;
 
         function doLoad(src) {
@@ -56,13 +50,9 @@
 
                 // canvas がまだ 0 サイズの場合は待つ
                 if (canvas.width === 0 || canvas.height === 0) {
-                    window.logger && window.logger.warn('⚠️ canvas not ready, retrying in 200ms');
                     setTimeout(() => doLoad(src), 200);
                     return;
                 }
-
-                window.logger && window.logger.debug('🎭 Mask image natural size:', mi.naturalWidth, 'x', mi.naturalHeight);
-                window.logger && window.logger.debug('🎭 Canvas size:', canvas.width, 'x', canvas.height);
 
                 // maskCanvas をメインキャンバスと同サイズに揃えてからマスクを描画
                 maskCanvas.width  = canvas.width;
@@ -79,20 +69,11 @@
                 S.maskImageData = tmpCtx.getImageData(0, 0, canvas.width, canvas.height);
                 maskCtx.putImageData(S.maskImageData, 0, 0);
 
-                console.log('✅ Mask loaded & synced to canvas size:', canvas.width, 'x', canvas.height);
-                window.logger && window.logger.debug('✅ Mask loaded & synced to canvas size:', canvas.width, 'x', canvas.height);
-
                 saveMaskHistory();
                 
-                // 🎨 マスクロード完了後、画像調整を適用（マスク合成を含む）
-                console.log('🎨 Mask loaded, applying adjustments with mask...');
-                window.logger && window.logger.debug('🎨 Mask loaded, applying adjustments with mask...');
-                
-                // applyAllAdjustments() が オリジナル + JSON調整 + マスク を一度に適用
+                // マスクロード完了後、画像調整を適用（マスク合成を含む）
                 if (window.ImageAdjust && window.ImageAdjust.applyAllAdjustments) {
                     window.ImageAdjust.applyAllAdjustments();
-                } else {
-                    console.error('❌ ImageAdjust.applyAllAdjustments not found!');
                 }
 
                 if (S.maskVisible) {
@@ -102,10 +83,9 @@
 
             mi.onerror = function () {
                 if (src !== proxyUrl) {
-                    window.logger && window.logger.warn('⚠️ Direct load failed, retrying via proxy:', proxyUrl);
                     doLoad(proxyUrl);
                 } else {
-                    window.logger && window.logger.error('❌ loadMaskImage failed (both direct and proxy):', rawUrl);
+                    console.error('❌ loadMaskImage failed:', rawUrl);
                 }
             };
 

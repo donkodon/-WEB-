@@ -6,22 +6,71 @@
 (function () {
     'use strict';
 
+    // ── ヘルパー関数 ─────────────────────────────────────────────────
+
+    /**
+     * マスクのRGB値をアルファチャンネルに変換して画像に適用
+     * @param {CanvasRenderingContext2D} ctx - メインキャンバスのコンテキスト
+     * @param {HTMLCanvasElement} canvas - メインキャンバス
+     * @param {HTMLCanvasElement} maskCanvas - マスクキャンバス
+     * @param {CanvasRenderingContext2D} maskCtx - マスクコンテキスト
+     * @returns {boolean} 処理成功時 true
+     */
+    function applyMaskAlphaToCanvas(ctx, canvas, maskCanvas, maskCtx) {
+        if (!ctx || !canvas || !maskCanvas || !maskCtx) {
+            console.error('❌ applyMaskAlphaToCanvas: Invalid parameters');
+            return false;
+        }
+        
+        try {
+        // マスク画像の RGB 値を Alpha 値に変換して透過処理
+        // 白（255）= 不透明（残す）、黒（0）= 透明（削除）
+        const maskData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+        const currentData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        
+        for (let i = 0; i < currentData.data.length; i += 4) {
+            // マスクの輝度を取得（白=255、黒=0）
+            const maskValue = (maskData.data[i] + maskData.data[i+1] + maskData.data[i+2]) / 3;
+            // アルファ値として適用
+            currentData.data[i + 3] = maskValue;
+        }
+        
+        // 一時canvasを作成して透過画像を描画
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.putImageData(currentData, 0, 0);
+        
+            // メインcanvasに白背景を描画してから透過画像を重ねる
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(tempCanvas, 0, 0);
+            return true;
+        } catch (error) {
+            console.error('❌ applyMaskAlphaToCanvas error:', error);
+            return false;
+        }
+    }
+
     // ── ピクセル調整コア ─────────────────────────────────────────────
 
     /**
      * 調整ベース画像をキャンバスに適用して調整結果を描画する。
-     * 🎨 修正: 常にオリジナル画像 + マスク合成 + JSON調整を適用
      * 
      * 処理フロー:
      * 1. 白背景を塗る
      * 2. オリジナル画像を描画
      * 3. JSON調整（明るさ・WB・色相）を適用
-     * 4. マスクで透過処理（destination-in）
+     * 4. マスクで透過処理（RGB→Alpha変換）
      * 5. マスクオーバーレイ表示（必要な場合）
      */
     function applyAllAdjustments() {
         const S = window.EditorState;
-        if (!S || !S.originalImage) return;
+        if (!S || !S.originalImage) {
+            console.error('❌ applyAllAdjustments: EditorState or originalImage missing');
+            return;
+        }
 
         const { canvas, ctx, brightness, wb, hue, maskVisible, maskCanvas, maskCtx } = S;
 
@@ -75,59 +124,14 @@
         ctx.putImageData(imageData, 0, 0);
 
         // 4. マスクで透過処理（マスクがある場合）
-        console.log('🎨 [applyAllAdjustments] maskCanvas:', maskCanvas ? 'exists' : 'null');
-        console.log('🎨 [applyAllAdjustments] maskImageUrl:', S.maskImageUrl);
         if (maskCanvas && S.maskImageUrl) {
-            console.log('🎨 [applyAllAdjustments] Applying mask with destination-in...');
-            
-            // マスク画像の RGB 値を Alpha 値に変換して透過処理
-            // 白（255）= 不透明（残す）、黒（0）= 透明（削除）
-            const maskData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
-            const currentData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            
-            for (let i = 0; i < currentData.data.length; i += 4) {
-                // マスクの輝度を取得（白=255、黒=0）
-                const maskValue = (maskData.data[i] + maskData.data[i+1] + maskData.data[i+2]) / 3;
-                // アルファ値として適用
-                currentData.data[i + 3] = maskValue;
-            }
-            
-            // 一時canvasを作成して透過画像を描画
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = canvas.width;
-            tempCanvas.height = canvas.height;
-            const tempCtx = tempCanvas.getContext('2d');
-            tempCtx.putImageData(currentData, 0, 0);
-            
-            // メインcanvasに白背景を描画してから透過画像を重ねる
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(tempCanvas, 0, 0);
-            
-            console.log('✅ [applyAllAdjustments] Mask applied (manual alpha)');
-        } else {
-            console.warn('⚠️ [applyAllAdjustments] Mask NOT applied - maskCanvas:', !!maskCanvas, 'maskImageUrl:', !!S.maskImageUrl);
+            applyMaskAlphaToCanvas(ctx, canvas, maskCanvas, maskCtx);
         }
 
         // 5. マスクオーバーレイを再適用（編集中の表示用）
         if (maskVisible && S.maskImageData) {
-            console.log('🎨 [applyAllAdjustments] Applying mask overlay...');
             applyMaskOverlay();
         }
-        
-        // デバッグ: canvas の最終状態を確認
-        const finalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const sample = finalImageData.data.slice(0, 12); // 最初の3ピクセル
-        console.log('✅ [applyAllAdjustments] COMPLETE - Canvas sample (first 3px RGB):', 
-            `[${sample[0]},${sample[1]},${sample[2]}]`,
-            `[${sample[4]},${sample[5]},${sample[6]}]`,
-            `[${sample[8]},${sample[9]},${sample[10]}]`
-        );
-        
-        // デバッグ: Canvas を画像として出力（コンソールで確認可能）
-        const canvasDataUrl = canvas.toDataURL('image/png');
-        console.log('🖼️ [applyAllAdjustments] Canvas as image:', canvasDataUrl.substring(0, 100) + '...');
-        console.log('🖼️ [applyAllAdjustments] Open this URL in a new tab to see canvas content:', canvasDataUrl);
     }
 
     /**
