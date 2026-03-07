@@ -28,6 +28,39 @@ maskApi.use('*', requireFirebaseAuth)
 const maskService = new MaskService(new MaskRepository())
 
 // ─────────────────────────────────────────────
+// GET /api/mask-test
+// テスト用エンドポイント（認証・DB・環境変数確認）
+// ─────────────────────────────────────────────
+maskApi.get('/api/mask-test', async (c) => {
+  try {
+    const user = c.get?.('user') as any
+    const companyId = getCompanyId(c)
+    
+    return c.json({
+      success: true,
+      auth: {
+        hasUser: !!user,
+        uid: user?.uid,
+        email: user?.email,
+        userCompanyId: user?.companyId,
+        finalCompanyId: companyId
+      },
+      env: {
+        hasDB: !!c.env.DB,
+        hasR2: !!c.env.PRODUCT_IMAGES,
+        r2PublicUrl: getR2PublicUrl(c.env)
+      }
+    })
+  } catch (error) {
+    return c.json({
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    }, 500)
+  }
+})
+
+// ─────────────────────────────────────────────
 // GET /api/mask-info/:sku
 // マスク情報取得（デバッグ・クライアント確認用）
 // ─────────────────────────────────────────────
@@ -58,9 +91,17 @@ maskApi.get('/api/mask-info/:sku', async (c) => {
 maskApi.post('/api/save-mask/:sku', async (c) => {
   const sku = c.req.param('sku')
   logger.info(`🔵 === MASK SAVE REQUEST START === SKU: ${sku}`)
+  
+  let user: any
+  let companyId: string
+  let body: any
+  let maskDataUrl: string
+  let filenamePart: string | undefined
+  
   try {
-    // Check user context from Firebase auth
-    const user = c.get?.('user') as { companyId?: string; email?: string; uid?: string } | undefined
+    // Step 1: Get user context
+    logger.info(`📥 Step 1: Getting user context`)
+    user = c.get?.('user') as { companyId?: string; email?: string; uid?: string } | undefined
     logger.info(`🔐 Firebase user context:`, {
       hasUser: !!user,
       uid: user?.uid,
@@ -68,16 +109,21 @@ maskApi.post('/api/save-mask/:sku', async (c) => {
       companyId: user?.companyId
     })
     
-    const companyId = getCompanyId(c)
+    // Step 2: Get company ID
+    logger.info(`📥 Step 2: Getting company ID`)
+    companyId = getCompanyId(c)
     logger.info(`👤 Company ID (final): ${companyId}`)
     
     if (!companyId || companyId === 'test_company') {
       logger.warn(`⚠️ Using fallback company ID: ${companyId}`)
     }
     
-    const body = await c.req.json()
-    const { maskDataUrl, filenamePart } = body
-    logger.info(`📦 Request body: filenamePart=${filenamePart}, maskDataUrl length=${maskDataUrl?.length || 0}`)
+    // Step 3: Parse request body
+    logger.info(`📥 Step 3: Parsing request body`)
+    body = await c.req.json()
+    maskDataUrl = body.maskDataUrl
+    filenamePart = body.filenamePart
+    logger.info(`📦 Request body parsed: filenamePart=${filenamePart}, maskDataUrl length=${maskDataUrl?.length || 0}`)
 
     // ── バリデーション ──
     if (!maskDataUrl || !maskDataUrl.startsWith('data:image/png;base64,')) {
