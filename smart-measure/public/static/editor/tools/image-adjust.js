@@ -364,9 +364,13 @@
             });
             if (!adjustRes.ok) {
                 const e = await adjustRes.json().catch(() => ({ error: 'Unknown' }));
-                throw new Error('調整値保存失敗: ' + (e.error || 'Unknown'));
+                const errorMsg = e.error || 'Unknown';
+                const details = e.details ? ` (${e.details})` : '';
+                window.logger && window.logger.error('❌ Adjustment save failed:', errorMsg, details);
+                throw new Error(`調整値保存失敗: ${errorMsg}${details}`);
             }
-            window.logger && window.logger.debug('✅ Step2.5 done: adjustments saved');
+            const adjustResult = await adjustRes.json();
+            window.logger && window.logger.info('✅ Step2.5 done: adjustments saved', adjustResult);
 
             // ── Step 3: 調整済み canvas → f画像として R2 に保存 ──────────
             window.logger && window.logger.debug('💾 [save] Step3: uploading f-image (final)...');

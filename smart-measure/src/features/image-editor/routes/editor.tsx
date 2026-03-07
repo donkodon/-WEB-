@@ -18,6 +18,42 @@ const editor = new Hono<AppEnv>()
 // ── Composition Root: モジュールスコープで一度だけ生成（per-request生成を排除）──
 const editorService = new EditorService(new EditorRepository())
 
+// ── 型定義 ──────────────────────────────────────────
+interface ImageAdjustments {
+  brightness: number    // -100 ~ 100
+  whiteBalance: number  // 2000 ~ 9000
+  hue: number           // -180 ~ 180
+}
+
+// ── バリデーション関数 ──────────────────────────────
+function validateAdjustments(body: unknown): { valid: boolean; error?: string } {
+  if (typeof body !== 'object' || body === null) {
+    return { valid: false, error: 'Invalid request body type' }
+  }
+
+  const adj = body as Record<string, unknown>
+
+  // 型チェック
+  if (
+    typeof adj.brightness !== 'number' ||
+    typeof adj.whiteBalance !== 'number' ||
+    typeof adj.hue !== 'number'
+  ) {
+    return { valid: false, error: 'Invalid parameter types' }
+  }
+
+  // 範囲チェック
+  if (
+    adj.brightness < -100 || adj.brightness > 100 ||
+    adj.whiteBalance < 2000 || adj.whiteBalance > 9000 ||
+    adj.hue < -180 || adj.hue > 180
+  ) {
+    return { valid: false, error: 'Parameter values out of range' }
+  }
+
+  return { valid: true }
+}
+
 // ── 静的JSのキャッシュバスター（デプロイ毎に更新）──
 const JS_VERSION = '20250304-13'
 
@@ -372,27 +408,52 @@ editor.get('/edit/:id', async (c) => {
 
 // ─────────────────────────────────────────────
 // POST /api/save-adjustments/:sku
-// 画像調整（明るさ・WB・色相）を保存
+// 画像調整値（明るさ・ホワイトバランス・色相）をDBに保存
+// 
+// 認証: Firebase認証トークン必須
+// 権限: 自社の商品のみ更新可能（company_id で制限）
+// 
+// リクエストボディ:
+//   {
+//     brightness: number,    // -100 ~ 100
+//     whiteBalance: number,  // 2000 ~ 9000
+//     hue: number            // -180 ~ 180
+//   }
+// 
+// レスポンス:
+//   成功: { success: true, brightness, whiteBalance, hue }
+//   エラー: { error: string, details?: string }
 // ─────────────────────────────────────────────
 editor.post('/api/save-adjustments/:sku', requireFirebaseAuth, async (c) => {
   const sku = c.req.param('sku')
-  const body = await c.req.json<{
-    brightness: number
-    whiteBalance: number
-    hue: number
-  }>()
+  
+  // リクエストボディのバリデーション
+  let body: ImageAdjustments
+  try {
+    body = await c.req.json()
+  } catch (error) {
+    logger.error('❌ Invalid JSON body:', error)
+    return c.json({ error: 'Invalid request body' }, 400)
+  }
+
+  // パラメータのバリデーション
+  const validation = validateAdjustments(body)
+  if (!validation.valid) {
+    return c.json({ error: validation.error }, 400)
+  }
 
   // 認証ユーザーのcompany_id取得
   const user = c.get('user') as { companyId?: string } | undefined
   const companyId = user?.companyId
 
   if (!companyId) {
+    logger.warn(`⚠️ Unauthorized adjustment save attempt for sku=${sku}`)
     return c.json({ error: 'Unauthorized' }, 401)
   }
 
   try {
     // product_itemsテーブルを更新
-    await c.env.DB.prepare(`
+    const result = await c.env.DB.prepare(`
       UPDATE product_items
       SET 
         brightness = ?,
@@ -408,6 +469,12 @@ editor.post('/api/save-adjustments/:sku', requireFirebaseAuth, async (c) => {
       companyId
     ).run()
 
+    // 更新された行がない場合のチェック
+    if (result.meta.changes === 0) {
+      logger.warn(`⚠️ No rows updated for sku=${sku}, companyId=${companyId}`)
+      return c.json({ error: 'Product not found or no permission' }, 404)
+    }
+
     logger.info(`✅ Saved adjustments for ${sku}: brightness=${body.brightness}, wb=${body.whiteBalance}, hue=${body.hue}`)
 
     return c.json({ 
@@ -418,7 +485,10 @@ editor.post('/api/save-adjustments/:sku', requireFirebaseAuth, async (c) => {
     })
   } catch (error) {
     logger.error('❌ Failed to save adjustments:', error)
-    return c.json({ error: 'Failed to save adjustments' }, 500)
+    return c.json({ 
+      error: 'Failed to save adjustments',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500)
   }
 })
 
