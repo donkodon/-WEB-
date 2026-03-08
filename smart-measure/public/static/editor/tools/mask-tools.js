@@ -6,8 +6,9 @@
 (function () {
     'use strict';
 
-    // ── ヒストリ管理 ─────────────────────────────────────────────────
+    // ── 定数 ──────────────────────────────────────────────────────────
     const MAX_HISTORY = 20;
+    const CANVAS_WAIT_TIMEOUT = 200;  // canvas初期化待機時間（ms）
     let maskHistory      = [];
     let maskHistoryIndex = -1;
 
@@ -50,7 +51,7 @@
 
                 // canvas がまだ 0 サイズの場合は待つ
                 if (canvas.width === 0 || canvas.height === 0) {
-                    setTimeout(() => doLoad(src), 200);
+                    setTimeout(() => doLoad(src), CANVAS_WAIT_TIMEOUT);
                     return;
                 }
 
@@ -59,14 +60,10 @@
                 maskCanvas.height = canvas.height;
 
                 // マスク画像をキャンバスサイズにフィットさせて描画
-                // （マスク保存時のサイズ != 現在のキャンバスサイズの場合もスケールで合わせる）
-                const tmp    = document.createElement('canvas');
-                tmp.width    = canvas.width;
-                tmp.height   = canvas.height;
-                const tmpCtx = tmp.getContext('2d');
-                tmpCtx.drawImage(mi, 0, 0, canvas.width, canvas.height);
+                const { canvas: scaledCanvas, ctx: scaledCtx } = _createCanvas(canvas.width, canvas.height);
+                scaledCtx.drawImage(mi, 0, 0, canvas.width, canvas.height);
 
-                S.maskImageData = tmpCtx.getImageData(0, 0, canvas.width, canvas.height);
+                S.maskImageData = scaledCtx.getImageData(0, 0, canvas.width, canvas.height);
                 maskCtx.putImageData(S.maskImageData, 0, 0);
 
                 saveMaskHistory();
@@ -434,28 +431,16 @@
             const baseSrc = S.originalSrc;
             const origImg = await _loadImage(baseSrc);
 
-            const comp    = document.createElement('canvas');
-            comp.width    = origImg.width;
-            comp.height   = origImg.height;
-            const compCtx = comp.getContext('2d');
+            // 元画像サイズの合成用canvasを作成
+            const { canvas: comp, ctx: compCtx } = _createCanvas(origImg.width, origImg.height);
             compCtx.drawImage(origImg, 0, 0);
 
-            const imgData = compCtx.getImageData(0, 0, comp.width, comp.height);
+            // maskCanvasを元画像サイズにスケール
+            const { canvas: maskTmp, ctx: maskTmpCtx } = _createCanvas(origImg.width, origImg.height);
+            maskTmpCtx.drawImage(S.maskCanvas, 0, 0, origImg.width, origImg.height);
 
-            // maskCanvas をスケールしてピクセルデータを取得
-            const maskTmp    = document.createElement('canvas');
-            maskTmp.width    = comp.width;
-            maskTmp.height   = comp.height;
-            const maskTmpCtx = maskTmp.getContext('2d');
-            maskTmpCtx.drawImage(S.maskCanvas, 0, 0, comp.width, comp.height);
-            const maskData   = maskTmpCtx.getImageData(0, 0, comp.width, comp.height);
-
-            // マスク輝度 → アルファ値に変換
-            for (let i = 0; i < imgData.data.length; i += 4) {
-                const avg = (maskData.data[i] + maskData.data[i + 1] + maskData.data[i + 2]) / 3;
-                imgData.data[i + 3] = avg;
-            }
-            compCtx.putImageData(imgData, 0, 0);
+            // 合成: マスク輝度をアルファ値に変換
+            _applyMaskToImageData(compCtx, maskTmp);
 
             const compositeDataUrl = comp.toDataURL('image/png');
             window.logger && window.logger.debug('✅ Step2: composite (background-removed) generated');
@@ -498,11 +483,7 @@
             ctx.drawImage(origImg, 0, 0, canvas.width, canvas.height);
             
             // 3. マスクで透過処理（destination-in = マスクの白部分だけ残す）
-            // maskTmpもcanvasサイズに拡大
-            const maskForCanvas = document.createElement('canvas');
-            maskForCanvas.width = canvas.width;
-            maskForCanvas.height = canvas.height;
-            const maskForCanvasCtx = maskForCanvas.getContext('2d');
+            const { canvas: maskForCanvas, ctx: maskForCanvasCtx } = _createCanvas(canvas.width, canvas.height);
             maskForCanvasCtx.drawImage(maskTmp, 0, 0, canvas.width, canvas.height);
             
             ctx.globalCompositeOperation = 'destination-in';
@@ -539,7 +520,48 @@
         }
     };
 
-    /** 画像を crossOrigin='anonymous' でロードし、失敗時はプロキシ経由で再試行する */
+    // ── ユーティリティ関数 ──────────────────────────────────────────
+
+    /**
+     * 新しいcanvas要素とcontextを作成する
+     * @param {number} width - canvas幅
+     * @param {number} height - canvas高さ
+     * @returns {{ canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D }}
+     */
+    function _createCanvas(width, height) {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        return { canvas, ctx };
+    }
+
+    /**
+     * マスクcanvasの輝度をアルファ値に変換して、画像に適用する
+     * @param {CanvasRenderingContext2D} targetCtx - 対象画像のcontext
+     * @param {HTMLCanvasElement} maskCanvas - マスクcanvas
+     */
+    function _applyMaskToImageData(targetCtx, maskCanvas) {
+        const width = maskCanvas.width;
+        const height = maskCanvas.height;
+        
+        const imgData = targetCtx.getImageData(0, 0, width, height);
+        const maskData = maskCanvas.getContext('2d').getImageData(0, 0, width, height);
+
+        // マスク輝度 → アルファ値に変換
+        for (let i = 0; i < imgData.data.length; i += 4) {
+            const avg = (maskData.data[i] + maskData.data[i + 1] + maskData.data[i + 2]) / 3;
+            imgData.data[i + 3] = avg;
+        }
+        
+        targetCtx.putImageData(imgData, 0, 0);
+    }
+
+    /**
+     * 画像を crossOrigin='anonymous' でロードし、失敗時はプロキシ経由で再試行する
+     * @param {string} src - 画像URL
+     * @returns {Promise<HTMLImageElement>}
+     */
     function _loadImage(src) {
         return new Promise((resolve, reject) => {
             const i       = new Image();
@@ -555,8 +577,6 @@
         });
     }
 
-    // ── maskCanvas をリサイズ（内容をスケーリングして保持） ──────────
-
     /**
      * maskCanvas を新しいサイズにリサイズする。
      * 既存のマスク内容は新サイズにスケールして引き継ぐ。
@@ -569,10 +589,7 @@
         const { maskCanvas, maskCtx } = S;
 
         // 現在の内容を一時 canvas に保存
-        const tmp    = document.createElement('canvas');
-        tmp.width    = maskCanvas.width;
-        tmp.height   = maskCanvas.height;
-        const tmpCtx = tmp.getContext('2d');
+        const { canvas: tmp, ctx: tmpCtx } = _createCanvas(maskCanvas.width, maskCanvas.height);
         if (S.maskImageData) {
             tmpCtx.putImageData(S.maskImageData, 0, 0);
         }
@@ -645,61 +662,47 @@
      * 3. マスクで透過処理（destination-in合成）
      * 4. adjustedImage を更新（明るさ調整のベース）
      */
+    /**
+     * オリジナル画像 + マスク合成を canvas に描画
+     * 処理フロー: 白背景 → オリジナル画像 → マスク透過処理 → adjustedImage更新
+     */
     window.applyMaskToCanvas = function() {
-        console.log('🎨 [applyMaskToCanvas] START');
-        window.logger && window.logger.info('🎨 [applyMaskToCanvas] START');
-        
         const S = window.EditorState;
         if (!S) {
-            console.error('❌ EditorState is null');
             window.logger && window.logger.error('❌ EditorState is null');
             return;
         }
         if (!S.maskCanvas) {
-            console.error('❌ maskCanvas is null');
             window.logger && window.logger.error('❌ maskCanvas is null');
             return;
         }
         if (!S.originalImage) {
-            console.error('❌ originalImage is null');
             window.logger && window.logger.error('❌ originalImage is null');
             return;
         }
 
         const { canvas, ctx, maskCanvas } = S;
         
-        console.log('🎨 Canvas size:', canvas.width, 'x', canvas.height);
-        console.log('🎨 MaskCanvas size:', maskCanvas.width, 'x', maskCanvas.height);
-        window.logger && window.logger.debug('🎨 Canvas size:', canvas.width, 'x', canvas.height);
-        window.logger && window.logger.debug('🎨 MaskCanvas size:', maskCanvas.width, 'x', maskCanvas.height);
+        window.logger && window.logger.info(`🎨 [applyMaskToCanvas] Canvas: ${canvas.width}×${canvas.height}, Mask: ${maskCanvas.width}×${maskCanvas.height}`);
         
-        // 1. キャンバスをクリア
+        // 1. 白背景を塗る
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
-        // 2. 白背景を塗る
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        console.log('✅ Step 1: White background drawn');
-        window.logger && window.logger.debug('✅ Step 1: White background drawn');
         
-        // 3. オリジナル画像を描画
+        // 2. オリジナル画像を描画
         ctx.putImageData(S.originalImage, 0, 0);
-        console.log('✅ Step 2: Original image drawn');
-        window.logger && window.logger.debug('✅ Step 2: Original image drawn');
         
-        // 4. マスクで透過処理（destination-in = マスクの白部分だけ残す）
+        // 3. マスクで透過処理（destination-in = マスクの白部分だけ残す）
         ctx.globalCompositeOperation = 'destination-in';
         ctx.drawImage(maskCanvas, 0, 0);
-        ctx.globalCompositeOperation = 'source-over';  // 通常描画に戻す
-        console.log('✅ Step 3: Mask applied (destination-in)');
-        window.logger && window.logger.debug('✅ Step 3: Mask applied (destination-in)');
+        ctx.globalCompositeOperation = 'source-over';
         
-        // 5. adjustedImage キャッシュを更新（明るさ調整のベースとして使用）
+        // 4. adjustedImage キャッシュを更新
         S.adjustedImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
         S.showingOriginal = false;
         S.maskVisible = false;
         
-        console.log('✅ [applyMaskToCanvas] COMPLETE - Mask applied to canvas');
-        window.logger && window.logger.info('✅ [applyMaskToCanvas] COMPLETE - Mask applied to canvas');
+        window.logger && window.logger.info('✅ [applyMaskToCanvas] Complete');
     };
 })();

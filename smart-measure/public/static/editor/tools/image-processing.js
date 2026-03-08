@@ -17,9 +17,14 @@
 document.addEventListener('DOMContentLoaded', function () {
     'use strict';
     
+    // ── 定数 ────────────────────────────────────────────────────────────────
+    const ABSOLUTE_MIN_SIZE = 500;   // 画像の最小サイズ（短辺）
+    const MIN_CROP_SIZE = 1000;      // クロップ枠の最小サイズ（短辺を1000pxに統一）
+    const CROP_SIZE = 1000;          // クロップ枠のサイズ（固定）
+    
     const S = window.EditorState;
     if (!S) {
-        console.error('❌ [image-processing] EditorState not found. Check script load order.');
+        window.logger && window.logger.error('❌ [image-processing] EditorState not found. Check script load order.');
         return;
     }
 
@@ -46,16 +51,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
         ctx.drawImage(img, 0, 0);
 
-        // ★ 画像サイズバリデーション（最小サイズ: 短辺500px以上）
-        const ABSOLUTE_MIN_SIZE = 500;
+        // 画像サイズバリデーション
         if (canvas.width < ABSOLUTE_MIN_SIZE || canvas.height < ABSOLUTE_MIN_SIZE) {
             alert(`画像サイズが小さすぎます。\n両辺とも${ABSOLUTE_MIN_SIZE}px以上の画像をアップロードしてください。\n\n現在のサイズ: ${canvas.width}×${canvas.height}`);
             window.location.href = '/dashboard';
             return;
         }
 
-        // ★ 自動リサイズ: 短辺が1000px未満の場合、アスペクト比を保ったまま拡大
-        const MIN_CROP_SIZE = 1000;
+        // 自動リサイズ: 短辺が1000px未満の場合、アスペクト比を保ったまま拡大
         const shortSide = Math.min(canvas.width, canvas.height);
         
         if (shortSide < MIN_CROP_SIZE) {
@@ -90,8 +93,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // originalImage キャッシュを保存（リサイズ後の画像）
         S.originalImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-        // ★ クロップ座標のデフォルト値設定（未設定の場合は中央配置）
-        const CROP_SIZE = 1000;
+        // クロップ座標のデフォルト値設定（未設定の場合は中央配置）
         if (S.cropX === null || S.cropY === null || S.cropSize === null) {
             S.cropX = Math.floor((canvas.width - CROP_SIZE) / 2);
             S.cropY = Math.floor((canvas.height - CROP_SIZE) / 2);
@@ -102,7 +104,7 @@ document.addEventListener('DOMContentLoaded', function () {
             window.logger && window.logger.debug(`✅ [image-processing] Crop loaded from DB: cropX=${S.cropX}, cropY=${S.cropY}, cropSize=${S.cropSize}`);
         }
 
-        // ★ クロップ枠オーバーレイを初期化して表示
+        // クロップ枠オーバーレイを初期化して表示
         if (window.CropOverlay) {
             window.CropOverlay.init();
             window.CropOverlay.update();
