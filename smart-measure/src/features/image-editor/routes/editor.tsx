@@ -397,12 +397,13 @@ editor.get('/edit/:id', async (c) => {
              style="display: none;">
         </div>
 
-        {/* 読み込み順を保証: client-logger → editor-state → image-adjust → mask-tools → crop-tool → image-processing → tab-switching */}
+        {/* 読み込み順を保証: client-logger → editor-state → image-adjust → mask-tools → crop-overlay → crop-tool → image-processing → tab-switching */}
         {/* ?v= でブラウザキャッシュを無効化（デプロイ毎に JS_VERSION を更新すること）*/}
         <script src={`/static/shared/client-logger.js?v=${JS_VERSION}`}></script>
         <script src={`/static/editor/tools/editor-state.js?v=${JS_VERSION}`}></script>
         <script src={`/static/editor/tools/image-adjust.js?v=${JS_VERSION}`}></script>
         <script src={`/static/editor/tools/mask-tools.js?v=${JS_VERSION}`}></script>
+        <script src={`/static/editor/tools/crop-overlay.js?v=${JS_VERSION}`}></script>
         <script src={`/static/editor/tools/crop-tool.js?v=${JS_VERSION}`}></script>
         <script src={`/static/editor/tools/image-processing.js?v=${JS_VERSION}`}></script>
         <script src={`/static/editor/common/tab-switching.js?v=${JS_VERSION}`}></script>

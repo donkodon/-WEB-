@@ -59,7 +59,18 @@
                 '✅ [crop-tool] loaded:', loader.naturalWidth, 'x', loader.naturalHeight
             );
 
-            resetToAutoCenter();
+            // ★ EditorState から既存のクロップ座標を読み込み
+            if (S.cropX !== null && S.cropY !== null && S.cropSize !== null) {
+                cropX = S.cropX;
+                cropY = S.cropY;
+                cropSize = S.cropSize;
+                window.logger && window.logger.debug('✅ [crop-tool] Loaded existing crop coords:', {cropX, cropY, cropSize});
+            } else {
+                // デフォルトは中央配置
+                resetToAutoCenter();
+                window.logger && window.logger.debug('✅ [crop-tool] Initialized crop to center');
+            }
+
             buildOverlay();   // オーバーレイを canvas-container に挿入
             renderAll();
             active = true;
@@ -148,7 +159,8 @@
     // ── 自動センタークロップ計算 ───────────────────────────────────
     function resetToAutoCenter() {
         if (!srcCanvas) return;
-        cropSize = Math.min(srcCanvas.width, srcCanvas.height);
+        const CROP_SIZE = 1000; // 固定サイズ
+        cropSize = CROP_SIZE;
         cropX    = Math.round((srcCanvas.width  - cropSize) / 2);
         cropY    = Math.round((srcCanvas.height - cropSize) / 2);
     }
@@ -362,15 +374,20 @@
 
         window.logger && window.logger.debug('✅ Crop coordinates saved:', { cropX, cropY, cropSize });
 
+        // 常時表示のクロップ枠オーバーレイを更新
+        if (window.CropOverlay && typeof window.CropOverlay.update === 'function') {
+            window.CropOverlay.update();
+        }
+
         // プレビュー更新（画像調整を適用してクロップ結果を表示）
         if (window.ImageAdjust && typeof window.ImageAdjust.applyAllAdjustments === 'function') {
             window.ImageAdjust.applyAllAdjustments();
         }
 
-        setStatus('✅ クロップを適用しました');
+        setStatus('✅ クロップ位置を更新しました');
         if (btn) { 
             btn.disabled = false; 
-            btn.innerHTML = '<i class="fas fa-check mr-2"></i>クロップ適用済み';
+            btn.innerHTML = '<i class="fas fa-check mr-2"></i>確定';
         }
 
         setTimeout(function() {

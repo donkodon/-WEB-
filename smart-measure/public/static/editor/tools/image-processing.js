@@ -49,6 +49,33 @@ document.addEventListener('DOMContentLoaded', function () {
         // originalImage キャッシュを保存（調整・切り替えのベース）
         S.originalImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
+        // ★ 画像サイズバリデーション（1000×1000未満はエラー）
+        const MIN_SIZE = 1000;
+        if (canvas.width < MIN_SIZE || canvas.height < MIN_SIZE) {
+            alert(`画像サイズが小さすぎます。\n${MIN_SIZE}×${MIN_SIZE}以上の画像をアップロードしてください。\n\n現在のサイズ: ${canvas.width}×${canvas.height}`);
+            window.location.href = '/dashboard';
+            return;
+        }
+
+        // ★ クロップ座標のデフォルト値設定（未設定の場合は中央配置）
+        const CROP_SIZE = 1000;
+        if (S.cropX === null || S.cropY === null || S.cropSize === null) {
+            S.cropX = Math.floor((canvas.width - CROP_SIZE) / 2);
+            S.cropY = Math.floor((canvas.height - CROP_SIZE) / 2);
+            S.cropSize = CROP_SIZE;
+            S.cropEnabled = true;  // デフォルトで有効
+            window.logger && window.logger.debug(`✅ [image-processing] Crop initialized to center: cropX=${S.cropX}, cropY=${S.cropY}, cropSize=${S.cropSize}`);
+        } else {
+            window.logger && window.logger.debug(`✅ [image-processing] Crop loaded from DB: cropX=${S.cropX}, cropY=${S.cropY}, cropSize=${S.cropSize}`);
+        }
+
+        // ★ クロップ枠オーバーレイを初期化して表示
+        if (window.CropOverlay) {
+            window.CropOverlay.init();
+            window.CropOverlay.update();
+            window.logger && window.logger.debug('✅ [image-processing] Crop overlay displayed');
+        }
+
         // マスク画像をロード、または空マスクを生成
         if (S.maskImageUrl) {
             // マスクロード（loadMaskImage内で自動的にapplyAllAdjustmentsが呼ばれる）
