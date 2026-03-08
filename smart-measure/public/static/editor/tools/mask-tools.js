@@ -164,18 +164,17 @@
             const tmpImg       = new Image();
             tmpImg.crossOrigin = 'anonymous';
             tmpImg.onload = function () {
-                if (canvas.width !== tmpImg.naturalWidth || canvas.height !== tmpImg.naturalHeight) {
-                    window.logger && window.logger.debug(`📐 Resizing canvas: ${canvas.width}x${canvas.height} → ${tmpImg.naturalWidth}x${tmpImg.naturalHeight}`);
-                    canvas.width  = tmpImg.naturalWidth;
-                    canvas.height = tmpImg.naturalHeight;
-                    _resizeMaskCanvas(tmpImg.naturalWidth, tmpImg.naturalHeight);
-                }
-                ctx.drawImage(tmpImg, 0, 0);
+                // ✅ 修正: canvasサイズを維持し、元画像をリサイズ後のサイズに拡大描画
+                // これにより、画像調整タブとマスクタブでcanvasサイズが統一される
+                window.logger && window.logger.debug(`📐 Drawing original image: ${tmpImg.naturalWidth}x${tmpImg.naturalHeight} → canvas ${canvas.width}x${canvas.height}`);
+                
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(tmpImg, 0, 0, canvas.width, canvas.height);
 
                 // ★ オリジナル画像を ImageData としてキャッシュする
                 // drawMask / applyMaskOverlay の再描画ベースとして使用する
                 S.originalForMask = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                window.logger && window.logger.debug('✅ Switched to original for mask, cached as originalForMask');
+                window.logger && window.logger.debug('✅ Switched to original for mask, cached as originalForMask (canvas size maintained)');
 
                 if (callback) callback();
             };
