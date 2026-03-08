@@ -485,22 +485,28 @@
             S.pendingCompositeDataUrl = compositeDataUrl;
 
             // Step 3: canvas を合成画像で更新（画面表示）
-            // 🎨 修正：白背景 + 元画像全体 + マスク透過処理で表示
+            // ✅ 修正：canvasサイズを維持し、合成画像をリサイズ後のサイズに拡大描画
             const { canvas, ctx } = S;
-            canvas.width  = origImg.width;
-            canvas.height = origImg.height;
+            // canvasサイズは変更しない（リサイズ後のサイズを維持: 例 1778×1000）
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
             // 1. 白背景を塗る
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
-            // 2. 元画像全体を描画
-            ctx.drawImage(origImg, 0, 0);
+            // 2. 元画像全体をcanvasサイズに拡大描画
+            ctx.drawImage(origImg, 0, 0, canvas.width, canvas.height);
             
             // 3. マスクで透過処理（destination-in = マスクの白部分だけ残す）
+            // maskTmpもcanvasサイズに拡大
+            const maskForCanvas = document.createElement('canvas');
+            maskForCanvas.width = canvas.width;
+            maskForCanvas.height = canvas.height;
+            const maskForCanvasCtx = maskForCanvas.getContext('2d');
+            maskForCanvasCtx.drawImage(maskTmp, 0, 0, canvas.width, canvas.height);
+            
             ctx.globalCompositeOperation = 'destination-in';
-            ctx.drawImage(maskTmp, 0, 0);
+            ctx.drawImage(maskForCanvas, 0, 0);
             ctx.globalCompositeOperation = 'source-over';  // 通常描画に戻す
 
             // adjustedImage キャッシュを合成済み画像で更新
