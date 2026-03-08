@@ -46,16 +46,49 @@ document.addEventListener('DOMContentLoaded', function () {
 
         ctx.drawImage(img, 0, 0);
 
-        // originalImage キャッシュを保存（調整・切り替えのベース）
-        S.originalImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-        // ★ 画像サイズバリデーション（1000×1000未満はエラー）
-        const MIN_SIZE = 1000;
-        if (canvas.width < MIN_SIZE || canvas.height < MIN_SIZE) {
-            alert(`画像サイズが小さすぎます。\n${MIN_SIZE}×${MIN_SIZE}以上の画像をアップロードしてください。\n\n現在のサイズ: ${canvas.width}×${canvas.height}`);
+        // ★ 画像サイズバリデーション（最小サイズ: 短辺500px以上）
+        const ABSOLUTE_MIN_SIZE = 500;
+        if (canvas.width < ABSOLUTE_MIN_SIZE || canvas.height < ABSOLUTE_MIN_SIZE) {
+            alert(`画像サイズが小さすぎます。\n両辺とも${ABSOLUTE_MIN_SIZE}px以上の画像をアップロードしてください。\n\n現在のサイズ: ${canvas.width}×${canvas.height}`);
             window.location.href = '/dashboard';
             return;
         }
+
+        // ★ 自動リサイズ: 短辺が1000px未満の場合、アスペクト比を保ったまま拡大
+        const MIN_CROP_SIZE = 1000;
+        const shortSide = Math.min(canvas.width, canvas.height);
+        
+        if (shortSide < MIN_CROP_SIZE) {
+            const scale = MIN_CROP_SIZE / shortSide;
+            const newWidth = Math.round(canvas.width * scale);
+            const newHeight = Math.round(canvas.height * scale);
+            
+            window.logger && window.logger.info(`📐 [image-processing] Auto-resizing image: ${canvas.width}×${canvas.height} → ${newWidth}×${newHeight} (scale: ${scale.toFixed(3)})`);
+            
+            // 一時canvasでリサイズ
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = newWidth;
+            tempCanvas.height = newHeight;
+            const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+            
+            // 高品質リサイズ（imageSmoothingEnabled はデフォルトtrue）
+            tempCtx.imageSmoothingQuality = 'high';
+            tempCtx.drawImage(img, 0, 0, newWidth, newHeight);
+            
+            // メインcanvasのサイズを変更
+            canvas.width = newWidth;
+            canvas.height = newHeight;
+            maskCanvas.width = newWidth;
+            maskCanvas.height = newHeight;
+            
+            // リサイズ後の画像をメインcanvasに描画
+            ctx.drawImage(tempCanvas, 0, 0);
+            
+            window.logger && window.logger.info(`✅ [image-processing] Resize complete: ${newWidth}×${newHeight}`);
+        }
+
+        // originalImage キャッシュを保存（リサイズ後の画像）
+        S.originalImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
         // ★ クロップ座標のデフォルト値設定（未設定の場合は中央配置）
         const CROP_SIZE = 1000;
