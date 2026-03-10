@@ -138,4 +138,86 @@ maskApi.post('/api/regenerate-with-mask/:sku', async (c) => {
   }
 })
 
+// ─────────────────────────────────────────────
+// POST /api/save-cropped-image/:sku
+// 自由クロップした画像を保存（R2 + DB更新）
+// ─────────────────────────────────────────────
+maskApi.post('/api/save-cropped-image/:sku', async (c) => {
+  const sku = c.req.param('sku')
+  logger.info(`Cropped image save request: sku=${sku}`)
+  
+  try {
+    const companyId = getCompanyId(c)
+    const body = await c.req.json<{
+      imageDataUrl: string
+      width: number
+      height: number
+    }>()
+    
+    const { imageDataUrl, width, height } = body
+
+    // Validation
+    if (!imageDataUrl || !imageDataUrl.startsWith('data:image/png;base64,')) {
+      logger.warn(`Invalid image data format for sku=${sku}`)
+      return c.json({ error: 'Invalid image data' }, 400)
+    }
+    if (!c.env.DB) {
+      logger.error(`Database not configured`)
+      return c.json({ error: 'Database not configured' }, 500)
+    }
+    if (!c.env.PRODUCT_IMAGES) {
+      logger.error(`R2 bucket not configured`)
+      return c.json({ error: 'R2 bucket not configured' }, 500)
+    }
+
+    // Extract base64 data
+    const base64Data = imageDataUrl.replace(/^data:image\/png;base64,/, '')
+    const binaryData = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0))
+
+    // Save to R2 with _f.png suffix (final/cropped)
+    const r2Key = `products/${companyId}/${sku}_f.png`
+    await c.env.PRODUCT_IMAGES.put(r2Key, binaryData, {
+      httpMetadata: { contentType: 'image/png' }
+    })
+
+    // Update DB: Mark as processed and store crop info
+    await c.env.DB.prepare(`
+      UPDATE product_images
+      SET 
+        is_processed = 1,
+        crop_width = ?,
+        crop_height = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE product_sku = ? AND company_id = ?
+    `).bind(width, height, sku, companyId).run()
+
+    // Also record in processed_images table
+    const publicUrl = getR2PublicUrl(c.env) + r2Key
+    await c.env.DB.prepare(`
+      INSERT OR REPLACE INTO processed_images
+      (product_sku, company_id, s3_key, public_url, created_at)
+      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).bind(sku, companyId, r2Key, publicUrl).run()
+
+    logger.info(`Cropped image saved: sku=${sku}, size=${width}x${height}, r2Key=${r2Key}`)
+    
+    return c.json({
+      success: true,
+      sku,
+      companyId,
+      r2Key,
+      publicUrl,
+      width,
+      height,
+      message: `Cropped image saved: ${r2Key}`,
+    })
+  } catch (error) {
+    logError('Cropped image save', error, { sku })
+    return c.json(
+      createSafeErrorResponse(error, ErrorCode.UPLOAD_FAILED),
+      500
+    )
+  }
+})
+
 export default maskApi

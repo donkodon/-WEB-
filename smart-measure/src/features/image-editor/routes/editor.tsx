@@ -222,6 +222,38 @@ editor.get('/edit/:id', async (c) => {
                     </div>
                 </div>
 
+                {/* Free Crop Panel（自由クロップモード時に表示） */}
+                <div id="free-crop-panel" style="display:none" class="flex flex-col h-full">
+                    <div class="mb-3">
+                        <div class="text-xs font-bold text-orange-600 mb-1 flex items-center">
+                            <i class="fas fa-crop-alt mr-1"></i> 自由クロップ
+                        </div>
+                        <p class="text-[11px] text-gray-500 leading-relaxed">
+                            ドラッグして範囲を選択<br/>ハンドルでサイズ調整
+                        </p>
+                    </div>
+                    <div class="mb-3">
+                        <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">プレビュー</div>
+                        <canvas id="free-crop-preview-canvas" width="200" height="200"
+                            class="w-full border border-gray-200 rounded-lg bg-gray-50">
+                        </canvas>
+                    </div>
+                    <div id="free-crop-info" class="text-[10px] text-gray-400 mb-3 leading-relaxed">
+                        範囲を選択してください
+                    </div>
+                    <div id="free-crop-status" class="text-[10px] text-gray-400 mb-3 leading-relaxed"></div>
+                    <div class="space-y-2 mt-auto pt-3 border-t border-gray-100">
+                        <button id="free-crop-confirm"
+                            class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2.5 rounded-lg text-sm flex items-center justify-center shadow-md">
+                            <i class="fas fa-check mr-2"></i> 確定して保存
+                        </button>
+                        <button id="free-crop-cancel"
+                            class="w-full bg-white hover:bg-gray-50 text-gray-500 font-medium py-2 rounded-lg text-sm border border-gray-200">
+                            キャンセル
+                        </button>
+                    </div>
+                </div>
+
                 {/* Image Adjust Tools */}
                 <div id="adjust-tools">
                 <div class="space-y-3 mb-4">
@@ -404,7 +436,7 @@ editor.get('/edit/:id', async (c) => {
              style="display: none;">
         </div>
 
-        {/* 読み込み順を保証: client-logger → editor-state → image-adjust → mask-tools → crop-overlay → crop-tool → image-processing → tab-switching */}
+        {/* 読み込み順を保証: client-logger → editor-state → image-adjust → mask-tools → crop-overlay → crop-tool → free-crop-tool → image-processing → tab-switching */}
         {/* ?v= でブラウザキャッシュを無効化（デプロイ毎に JS_VERSION を更新すること）*/}
         <script src={`/static/shared/client-logger.js?v=${JS_VERSION}`}></script>
         <script src={`/static/editor/tools/editor-state.js?v=${JS_VERSION}`}></script>
@@ -412,6 +444,7 @@ editor.get('/edit/:id', async (c) => {
         <script src={`/static/editor/tools/mask-tools.js?v=${JS_VERSION}`}></script>
         <script src={`/static/editor/tools/crop-overlay.js?v=${JS_VERSION}`}></script>
         <script src={`/static/editor/tools/crop-tool.js?v=${JS_VERSION}`}></script>
+        <script src={`/static/editor/tools/free-crop-tool.js?v=${JS_VERSION}`}></script>
         <script src={`/static/editor/tools/image-processing.js?v=${JS_VERSION}`}></script>
         <script src={`/static/editor/common/tab-switching.js?v=${JS_VERSION}`}></script>
     </Layout>
