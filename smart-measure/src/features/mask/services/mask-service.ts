@@ -86,10 +86,20 @@ export class MaskService {
 
     // ③ R2 に保存
     logger.info(`🚀 Starting R2 upload: ${r2Key}`)
-    const uploadResult = await bucket.put(r2Key, buffer, {
-      httpMetadata: { contentType: 'image/png' },
-    })
-    logger.info(`✅ Mask uploaded to R2: ${r2Key}, etag=${uploadResult?.etag || 'unknown'}`)
+    logger.debug(`🔍 Bucket object type: ${typeof bucket}`)
+    logger.debug(`🔍 Bucket.put exists: ${typeof bucket.put === 'function'}`)
+    
+    try {
+      const uploadResult = await bucket.put(r2Key, buffer, {
+        httpMetadata: { contentType: 'image/png' },
+      })
+      logger.info(`✅ Mask uploaded to R2: ${r2Key}, etag=${uploadResult?.etag || 'unknown'}`)
+      logger.debug(`📊 Upload result: ${JSON.stringify(uploadResult)}`)
+    } catch (uploadError) {
+      logger.error(`❌ R2 upload failed: ${uploadError}`)
+      logger.error(`❌ Upload error details:`, uploadError)
+      throw new Error(`R2 upload failed: ${uploadError instanceof Error ? uploadError.message : String(uploadError)}`)
+    }
 
     // ④ DB 更新
     const maskUrl = `${r2PublicUrl}/${r2Key}`

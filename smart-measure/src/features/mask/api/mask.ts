@@ -83,7 +83,12 @@ maskApi.post('/api/save-mask/:sku', async (c) => {
       return c.json({ error: 'R2 bucket not configured' }, 500)
     }
 
+    // Debug: Check R2 bucket availability
+    logger.debug(`🔍 R2 bucket check: ${c.env.PRODUCT_IMAGES ? 'available' : 'NOT AVAILABLE'}`)
+    logger.debug(`🔍 R2 public URL: ${getR2PublicUrl(c.env)}`)
+    
     // Save mask to R2 and update DB
+    logger.info(`🎭 [save-mask] Calling maskService.saveMask...`)
     const result = await maskService.saveMask(
       c.env.DB,
       c.env.PRODUCT_IMAGES,
@@ -91,7 +96,7 @@ maskApi.post('/api/save-mask/:sku', async (c) => {
       { sku, companyId, maskDataUrl, filenamePart }
     )
     
-    logger.info(`Mask saved: sku=${sku}, r2Key=${result.r2Key}`)
+    logger.info(`✅ [save-mask] Success: sku=${sku}, r2Key=${result.r2Key}`)
     
     return c.json({
       success: true,
@@ -101,6 +106,8 @@ maskApi.post('/api/save-mask/:sku', async (c) => {
       message: `Mask saved: ${result.r2Key}`,
     })
   } catch (error) {
+    logger.error(`❌ [save-mask] Error occurred:`, error)
+    logger.error(`❌ [save-mask] Error stack:`, error instanceof Error ? error.stack : 'no stack')
     logError('Mask save', error, { sku })
     return c.json(
       createSafeErrorResponse(error, ErrorCode.UPLOAD_FAILED),
