@@ -134,6 +134,201 @@ settings.get('/settings', (c) => {
         {/* Load usage data */}
         <script src="/static/billing/usage-settings.js"></script>
 
+        {/* Pricing Plans Section */}
+        <div class="bg-white border border-gray-200 rounded-xl p-6 mb-8">
+            <h3 class="font-bold text-lg text-gray-800 mb-6 flex items-center">
+                <div class="bg-gradient-to-r from-purple-500 to-pink-600 text-white w-8 h-8 rounded flex items-center justify-center mr-3 text-sm">
+                    <i class="fas fa-crown"></i>
+                </div>
+                料金プラン
+            </h3>
+
+            {/* Current Plan Display */}
+            <div class="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-6 mb-6 border border-indigo-200">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <div class="text-sm text-indigo-600 font-medium mb-1">現在のプラン</div>
+                        <div class="flex items-baseline">
+                            <span id="current-plan-name" class="text-3xl font-bold text-indigo-900">無料プラン</span>
+                            <span id="current-plan-price" class="text-lg text-indigo-700 ml-3">¥0/月</span>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <span id="current-plan-badge" class="inline-block px-4 py-2 bg-indigo-600 text-white rounded-full text-sm font-bold">
+                            <i class="fas fa-gift mr-1"></i> FREE
+                        </span>
+                    </div>
+                </div>
+                <div class="pt-4 border-t border-indigo-200">
+                    <div class="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                            <div class="text-indigo-600 mb-1">今月の使用量</div>
+                            <div class="font-bold text-indigo-900"><span id="plan-usage-count">0</span> / 10件</div>
+                        </div>
+                        <div>
+                            <div class="text-indigo-600 mb-1">次回更新日</div>
+                            <div class="font-bold text-indigo-900" id="plan-renewal-date">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Plan Comparison Table */}
+            <div class="overflow-x-auto mb-6">
+                <table class="w-full border-collapse">
+                    <thead>
+                        <tr class="border-b-2 border-gray-200">
+                            <th class="text-left py-4 px-4 text-sm font-bold text-gray-700">機能</th>
+                            <th class="text-center py-4 px-4">
+                                <div class="text-sm font-bold text-gray-700">無料プラン</div>
+                                <div class="text-2xl font-bold text-gray-900 mt-1">¥0</div>
+                                <div class="text-xs text-gray-500">/月</div>
+                            </th>
+                            <th class="text-center py-4 px-4 bg-blue-50">
+                                <div class="text-sm font-bold text-blue-700">スタータープラン</div>
+                                <div class="text-2xl font-bold text-blue-900 mt-1">¥3,000</div>
+                                <div class="text-xs text-blue-600">/月</div>
+                            </th>
+                            <th class="text-center py-4 px-4 bg-purple-50">
+                                <div class="text-sm font-bold text-purple-700">ビジネスプラン</div>
+                                <div class="text-2xl font-bold text-purple-900 mt-1">¥10,000</div>
+                                <div class="text-xs text-purple-600">/月</div>
+                            </th>
+                            <th class="text-center py-4 px-4 bg-gradient-to-br from-yellow-50 to-orange-50 border-2 border-yellow-400">
+                                <div class="text-sm font-bold text-orange-700 flex items-center justify-center">
+                                    <i class="fas fa-crown mr-1"></i> エンタープライズ
+                                </div>
+                                <div class="text-2xl font-bold text-orange-900 mt-1">¥30,000</div>
+                                <div class="text-xs text-orange-600">/月</div>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-sm">
+                        <tr class="border-b border-gray-100">
+                            <td class="py-3 px-4 font-medium text-gray-700">商品データダウンロード</td>
+                            <td class="py-3 px-4 text-center text-gray-600">10件/月</td>
+                            <td class="py-3 px-4 text-center bg-blue-50 font-bold text-blue-900">100件/月</td>
+                            <td class="py-3 px-4 text-center bg-purple-50 font-bold text-purple-900">500件/月</td>
+                            <td class="py-3 px-4 text-center bg-gradient-to-br from-yellow-50 to-orange-50 font-bold text-orange-900">無制限</td>
+                        </tr>
+                        <tr class="border-b border-gray-100">
+                            <td class="py-3 px-4 font-medium text-gray-700">AI画像生成</td>
+                            <td class="py-3 px-4 text-center text-gray-600">10回/月</td>
+                            <td class="py-3 px-4 text-center bg-blue-50 font-bold text-blue-900">100回/月</td>
+                            <td class="py-3 px-4 text-center bg-purple-50 font-bold text-purple-900">500回/月</td>
+                            <td class="py-3 px-4 text-center bg-gradient-to-br from-yellow-50 to-orange-50 font-bold text-orange-900">無制限</td>
+                        </tr>
+                        <tr class="border-b border-gray-100">
+                            <td class="py-3 px-4 font-medium text-gray-700">超過時の従量課金</td>
+                            <td class="py-3 px-4 text-center text-red-600 font-bold">利用不可</td>
+                            <td class="py-3 px-4 text-center bg-blue-50 text-blue-700">松¥100 → 竹¥50 → 梅¥25</td>
+                            <td class="py-3 px-4 text-center bg-purple-50 text-purple-700">松¥100 → 竹¥50 → 梅¥25</td>
+                            <td class="py-3 px-4 text-center bg-gradient-to-br from-yellow-50 to-orange-50 text-orange-700">追加料金なし</td>
+                        </tr>
+                        <tr class="border-b border-gray-100">
+                            <td class="py-3 px-4 font-medium text-gray-700">画像エクスポート</td>
+                            <td class="py-3 px-4 text-center"><i class="fas fa-check text-green-600"></i></td>
+                            <td class="py-3 px-4 text-center bg-blue-50"><i class="fas fa-check text-green-600"></i></td>
+                            <td class="py-3 px-4 text-center bg-purple-50"><i class="fas fa-check text-green-600"></i></td>
+                            <td class="py-3 px-4 text-center bg-gradient-to-br from-yellow-50 to-orange-50"><i class="fas fa-check text-green-600"></i></td>
+                        </tr>
+                        <tr class="border-b border-gray-100">
+                            <td class="py-3 px-4 font-medium text-gray-700">優先サポート</td>
+                            <td class="py-3 px-4 text-center"><i class="fas fa-times text-red-600"></i></td>
+                            <td class="py-3 px-4 text-center bg-blue-50"><i class="fas fa-times text-red-600"></i></td>
+                            <td class="py-3 px-4 text-center bg-purple-50"><i class="fas fa-check text-green-600"></i></td>
+                            <td class="py-3 px-4 text-center bg-gradient-to-br from-yellow-50 to-orange-50"><i class="fas fa-check text-green-600"></i></td>
+                        </tr>
+                        <tr>
+                            <td class="py-3 px-4 font-medium text-gray-700">専任担当者</td>
+                            <td class="py-3 px-4 text-center"><i class="fas fa-times text-red-600"></i></td>
+                            <td class="py-3 px-4 text-center bg-blue-50"><i class="fas fa-times text-red-600"></i></td>
+                            <td class="py-3 px-4 text-center bg-purple-50"><i class="fas fa-times text-red-600"></i></td>
+                            <td class="py-3 px-4 text-center bg-gradient-to-br from-yellow-50 to-orange-50"><i class="fas fa-check text-green-600"></i></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            {/* Action Buttons */}
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <button disabled class="bg-gray-200 text-gray-500 py-3 rounded-lg font-bold cursor-not-allowed">
+                    <i class="fas fa-check mr-2"></i> 現在のプラン
+                </button>
+                <button id="btn-select-starter" class="bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 shadow-md shadow-blue-200 transition-all transform hover:scale-105">
+                    <i class="fas fa-rocket mr-2"></i> スタータープランへ
+                </button>
+                <button id="btn-select-business" class="bg-purple-600 text-white py-3 rounded-lg font-bold hover:bg-purple-700 shadow-md shadow-purple-200 transition-all transform hover:scale-105">
+                    <i class="fas fa-building mr-2"></i> ビジネスプランへ
+                </button>
+                <button id="btn-select-enterprise" class="bg-gradient-to-r from-yellow-500 to-orange-500 text-white py-3 rounded-lg font-bold hover:from-yellow-600 hover:to-orange-600 shadow-lg shadow-orange-300 transition-all transform hover:scale-105">
+                    <i class="fas fa-crown mr-2"></i> エンタープライズへ
+                </button>
+            </div>
+
+            {/* Additional Info */}
+            <div class="mt-6 pt-6 border-t border-gray-200">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                    <div class="flex items-start space-x-3">
+                        <i class="fas fa-info-circle text-blue-500 mt-1"></i>
+                        <div>
+                            <div class="font-bold text-gray-800">いつでもプラン変更可能</div>
+                            <div class="text-gray-600 text-xs">アップグレード・ダウングレードはいつでも可能です</div>
+                        </div>
+                    </div>
+                    <div class="flex items-start space-x-3">
+                        <i class="fas fa-lock text-green-500 mt-1"></i>
+                        <div>
+                            <div class="font-bold text-gray-800">安全な決済</div>
+                            <div class="text-gray-600 text-xs">Stripe による安全な決済処理</div>
+                        </div>
+                    </div>
+                    <div class="flex items-start space-x-3">
+                        <i class="fas fa-calendar-check text-purple-500 mt-1"></i>
+                        <div>
+                            <div class="font-bold text-gray-800">日割り計算</div>
+                            <div class="text-gray-600 text-xs">プラン変更時は日割りで調整されます</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {/* Payment Method Section */}
+        <div class="bg-white border border-gray-200 rounded-xl p-6 mb-8">
+            <h3 class="font-bold text-lg text-gray-800 mb-6 flex items-center">
+                <div class="bg-green-100 text-green-600 w-8 h-8 rounded flex items-center justify-center mr-3 text-sm">
+                    <i class="fas fa-credit-card"></i>
+                </div>
+                支払い方法
+            </h3>
+
+            <div id="payment-method-display" class="bg-gray-50 rounded-lg p-6 mb-4">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-4">
+                        <div class="bg-white w-16 h-10 rounded border border-gray-200 flex items-center justify-center">
+                            <i class="fab fa-cc-visa text-2xl text-blue-600"></i>
+                        </div>
+                        <div>
+                            <div class="font-bold text-gray-800">未登録</div>
+                            <div class="text-xs text-gray-500">有料プランを選択後に登録できます</div>
+                        </div>
+                    </div>
+                    <button id="btn-manage-payment" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 shadow-sm">
+                        <i class="fas fa-cog mr-1"></i> 支払い方法を管理
+                    </button>
+                </div>
+            </div>
+
+            <div class="text-xs text-gray-500 flex items-start space-x-2">
+                <i class="fas fa-shield-alt text-green-500 mt-0.5"></i>
+                <div>
+                    <span class="font-bold text-gray-700">安全な決済処理:</span> 
+                    クレジットカード情報は Stripe によって暗号化され、当社のサーバーには保存されません。Visa、Mastercard、American Express、JCB に対応しています。
+                </div>
+            </div>
+        </div>
+
         <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
             {/* CSV Import */}
             <div class="bg-white border border-gray-200 rounded-xl p-6">
@@ -299,6 +494,119 @@ settings.get('/settings', (c) => {
                  </button>
             </div>
         </div>
+
+        {/* Plan Selection Modal */}
+        <div id="plan-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                {/* Modal Header */}
+                <div class="sticky top-0 bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6 rounded-t-2xl">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-2xl font-bold mb-1"><span id="modal-plan-name">スタータープラン</span>を選択</h3>
+                            <p class="text-blue-100 text-sm">お支払い情報の確認</p>
+                        </div>
+                        <button id="btn-close-modal" class="text-white hover:bg-white hover:bg-opacity-20 rounded-full w-10 h-10 flex items-center justify-center transition-all">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Modal Body */}
+                <div class="p-6">
+                    {/* Plan Summary */}
+                    <div class="bg-gradient-to-br from-blue-50 to-purple-50 rounded-xl p-6 mb-6 border-2 border-blue-200">
+                        <div class="flex items-center justify-between mb-4">
+                            <div>
+                                <div class="text-sm text-blue-600 font-medium mb-1">選択中のプラン</div>
+                                <div class="text-3xl font-bold text-blue-900" id="modal-selected-plan">スタータープラン</div>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-4xl font-bold text-blue-900">¥<span id="modal-plan-price">3,000</span></div>
+                                <div class="text-sm text-blue-600">/月（税込）</div>
+                            </div>
+                        </div>
+                        <div class="pt-4 border-t border-blue-200">
+                            <div class="grid grid-cols-2 gap-4 text-sm">
+                                <div>
+                                    <div class="text-blue-600 mb-1">商品データダウンロード</div>
+                                    <div class="font-bold text-blue-900"><span id="modal-sku-limit">100</span>件/月</div>
+                                </div>
+                                <div>
+                                    <div class="text-blue-600 mb-1">AI画像生成</div>
+                                    <div class="font-bold text-blue-900"><span id="modal-ai-limit">100</span>回/月</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Features List */}
+                    <div class="mb-6">
+                        <h4 class="font-bold text-gray-800 mb-3 flex items-center">
+                            <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                            プランに含まれる機能
+                        </h4>
+                        <ul id="modal-features-list" class="space-y-2 text-sm text-gray-700">
+                            <li class="flex items-start">
+                                <i class="fas fa-check text-green-500 mr-2 mt-1"></i>
+                                <span>月間100件までの商品データダウンロード</span>
+                            </li>
+                            <li class="flex items-start">
+                                <i class="fas fa-check text-green-500 mr-2 mt-1"></i>
+                                <span>月間100回までのAI画像生成</span>
+                            </li>
+                            <li class="flex items-start">
+                                <i class="fas fa-check text-green-500 mr-2 mt-1"></i>
+                                <span>超過分は従量課金（松¥100 → 竹¥50 → 梅¥25）</span>
+                            </li>
+                            <li class="flex items-start">
+                                <i class="fas fa-check text-green-500 mr-2 mt-1"></i>
+                                <span>画像エクスポート機能</span>
+                            </li>
+                            <li class="flex items-start">
+                                <i class="fas fa-check text-green-500 mr-2 mt-1"></i>
+                                <span>いつでもプラン変更・キャンセル可能</span>
+                            </li>
+                        </ul>
+                    </div>
+
+                    {/* Billing Information */}
+                    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+                        <div class="flex items-start space-x-3">
+                            <i class="fas fa-info-circle text-yellow-600 mt-1"></i>
+                            <div class="text-sm">
+                                <div class="font-bold text-yellow-900 mb-1">請求について</div>
+                                <ul class="text-yellow-800 space-y-1">
+                                    <li>• 初回請求は本日から開始されます</li>
+                                    <li>• 次回更新日: <span class="font-bold" id="modal-next-billing-date">2026年4月10日</span></li>
+                                    <li>• プラン変更時は日割り計算で調整されます</li>
+                                    <li>• いつでもキャンセル可能（即時停止、返金なし）</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div class="flex space-x-4">
+                        <button id="btn-modal-cancel" class="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-bold hover:bg-gray-300 transition-all">
+                            キャンセル
+                        </button>
+                        <button id="btn-modal-confirm" class="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 text-white py-3 rounded-lg font-bold hover:from-blue-700 hover:to-purple-700 shadow-lg shadow-blue-300 transition-all transform hover:scale-105">
+                            <i class="fas fa-lock mr-2"></i>
+                            Stripe決済へ進む
+                        </button>
+                    </div>
+
+                    {/* Security Notice */}
+                    <div class="mt-6 pt-4 border-t border-gray-200 text-center text-xs text-gray-500">
+                        <i class="fas fa-shield-alt text-green-500 mr-1"></i>
+                        安全な決済処理（SSL暗号化 / PCI DSS準拠）
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {/* JavaScript for Plan Selection */}
+        <script src="/static/billing/plan-selection.js"></script>
     </Layout>
   )
 })
