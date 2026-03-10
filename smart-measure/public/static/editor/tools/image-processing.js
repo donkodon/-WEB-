@@ -238,7 +238,18 @@ document.addEventListener('DOMContentLoaded', function () {
         btnCrop.addEventListener('click', () => {
             // スクエアクロップモーダルを開く（1000×1000）
             if (window.CropTool && typeof window.CropTool.openSquareCropModal === 'function') {
+                // クロップ枠を表示
+                if (window.CropOverlay) {
+                    window.CropOverlay.show();
+                    window.CropOverlay.update();
+                    cropFrameVisible = true;
+                    cropFrameToggleText.textContent = 'クロップ枠を非表示';
+                    btnToggleCropFrame.querySelector('i').className = 'fas fa-eye-slash mr-2';
+                }
+                
+                // クロップツールを開く
                 window.CropTool.openSquareCropModal();
+                window.logger && window.logger.debug('✅ [image-processing] Crop tool opened with frame visible');
             } else {
                 alert('クロップ機能が読み込まれていません。ページをリロードしてください。');
             }

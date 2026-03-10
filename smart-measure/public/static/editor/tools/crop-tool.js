@@ -87,6 +87,12 @@
         removeOverlay();
         hideCropPanel();
         srcCanvas = null;
+        
+        // クロップ枠を非表示に戻す
+        if (window.CropOverlay) {
+            window.CropOverlay.hide();
+            window.logger && window.logger.debug('✅ [crop-tool] Crop frame hidden after closing crop tool');
+        }
     }
 
     // ── サイドバー切り替え ─────────────────────────────────────────
