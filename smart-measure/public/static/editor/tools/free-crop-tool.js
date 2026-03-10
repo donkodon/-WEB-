@@ -1,46 +1,71 @@
 /**
  * free-crop-tool.js - 自由サイズクロップツール
  * 
- * 機能:
- * 1. マウスドラッグで矩形選択（自由サイズ）
- * 2. 四隅と辺のハンドルでサイズ調整
- * 3. 内側をドラッグで位置移動
- * 4. 選択範囲をそのままPNGで保存
+ * 責務:
+ * - ユーザーがマウスドラッグで自由に範囲を選択できる
+ * - 8箇所のハンドル（四隅+辺）でサイズ調整
+ * - 選択範囲の移動
+ * - 選択範囲をPNG画像として保存
+ * 
+ * アーキテクチャ:
+ * - State管理: active, srcCanvas, overlay, crop座標
+ * - UI操作: オーバーレイcanvas、プレビュー、情報表示
+ * - 座標変換: canvas表示座標 ↔ 元画像座標
+ * - API連携: 選択範囲をbase64 PNG化してサーバーに送信
  */
 (function () {
     'use strict';
 
-    // ── 定数 ──────────────────────────────────────────────────────
-    const MIN_SIZE = 50;           // 最小サイズ
-    const HANDLE_SIZE = 12;        // ハンドルのサイズ
-    const HANDLE_COLOR = '#ff6600'; // ハンドルの色（オレンジ）
-    const BORDER_COLOR = '#ff6600'; // 枠線の色
-    const BORDER_WIDTH = 2;        // 枠線の太さ
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 定数定義
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    const CONFIG = {
+        MIN_SIZE: 50,              // 最小サイズ (px)
+        HANDLE_SIZE: 12,           // ハンドルのサイズ (px)
+        HANDLE_COLOR: '#ff6600',   // ハンドルの色（オレンジ）
+        BORDER_COLOR: '#ff6600',   // 枠線の色
+        BORDER_WIDTH: 2,           // 枠線の太さ (px)
+        OVERLAY_OPACITY: 0.5,      // 外側の暗幕の透明度
+        PREVIEW_SIZE: 200          // プレビューcanvasのサイズ (px)
+    };
 
-    // ── 状態 ──────────────────────────────────────────────────────
-    let active = false;
-    let srcCanvas = null;
-    let overlay = null;
-    let overlayCtx = null;
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // State管理
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    const state = {
+        active: false,             // ツールがアクティブか
+        srcCanvas: null,           // 元画像を描画したcanvas
+        overlay: null,             // オーバーレイcanvas要素
+        overlayCtx: null,          // オーバーレイcanvasコンテキスト
+        
+        // クロップ座標（元画像座標系）
+        cropX: 0,
+        cropY: 0,
+        cropW: 0,
+        cropH: 0,
+        
+        // ドラッグ状態
+        isSelecting: false,        // 新規選択中
+        isDragging: false,         // 移動中
+        isResizing: false,         // リサイズ中
+        dragStartX: 0,             // ドラッグ開始X座標
+        dragStartY: 0,             // ドラッグ開始Y座標
+        activeHandle: null         // アクティブなハンドル ('nw','ne','sw','se','n','e','s','w','move')
+    };
 
-    // クロップ座標（元画像座標系）
-    let cropX = 0;
-    let cropY = 0;
-    let cropW = 0;
-    let cropH = 0;
-
-    // ドラッグ状態
-    let isSelecting = false;  // 初期選択中
-    let isDragging = false;   // 移動中
-    let isResizing = false;   // リサイズ中
-    let dragStartX = 0;
-    let dragStartY = 0;
-    let activeHandle = null;  // 'nw', 'ne', 'sw', 'se', 'n', 'e', 's', 'w', 'move'
-
-    // ── 公開関数：クロップツールを開始 ─────────────────────────────
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ライフサイクル管理
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    
+    /**
+     * クロップツールを開始
+     */
     function startFreeCrop() {
         const S = window.EditorState;
-        if (!S) return;
+        if (!S) {
+            console.error('[free-crop] EditorState not found');
+            return;
+        }
 
         const imgUrl = S.processedSrc || S.originalSrc;
         if (!imgUrl) {
@@ -48,57 +73,111 @@
             return;
         }
 
-        // サイドバーをクロップパネルに切り替え
         showCropPanel();
         setStatus('画像を読み込み中...');
 
-        // 画像を読み込む
-        const loader = new Image();
-        loader.crossOrigin = 'anonymous';
-        loader.onload = function () {
-            srcCanvas = document.createElement('canvas');
-            srcCanvas.width = loader.naturalWidth;
-            srcCanvas.height = loader.naturalHeight;
-            srcCanvas.getContext('2d').drawImage(loader, 0, 0);
-
-            window.logger && window.logger.info(`✅ [free-crop] Image loaded: ${srcCanvas.width}×${srcCanvas.height}`);
-
-            // 初期選択範囲をリセット
-            cropX = 0;
-            cropY = 0;
-            cropW = 0;
-            cropH = 0;
-
-            // オーバーレイを作成
-            buildOverlay();
-            active = true;
-            setStatus('画像上でドラッグして範囲を選択してください');
-        };
-        loader.onerror = function () {
-            setStatus('❌ 画像の読み込みに失敗しました');
-        };
-        loader.src = imgUrl + (imgUrl.includes('?') ? '&' : '?') + '_cb=' + Date.now();
+        loadImage(imgUrl)
+            .then(imageData => {
+                initializeCropState(imageData);
+                buildOverlay();
+                state.active = true;
+                setStatus('画像上でドラッグして範囲を選択してください');
+                
+                window.logger && window.logger.info(
+                    `✅ [free-crop] Tool started: ${state.srcCanvas.width}×${state.srcCanvas.height}`
+                );
+            })
+            .catch(error => {
+                console.error('[free-crop] Failed to load image:', error);
+                setStatus('❌ 画像の読み込みに失敗しました');
+            });
     }
 
-    // ── クロップツールを終了 ────────────────────────────────────────
+    /**
+     * クロップツールを終了
+     */
     function stopFreeCrop() {
-        active = false;
+        state.active = false;
         removeOverlay();
         hideCropPanel();
-        srcCanvas = null;
-        cropX = cropY = cropW = cropH = 0;
+        resetCropState();
         
         // クロップ枠を非表示に戻す
         if (window.CropOverlay) {
             window.CropOverlay.hide();
         }
+        
+        window.logger && window.logger.debug('✅ [free-crop] Tool stopped');
     }
 
-    // ── サイドバー切り替え ─────────────────────────────────────────
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 画像読み込み
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    
+    /**
+     * 画像を読み込んでcanvasに描画
+     * @param {string} url - 画像URL
+     * @returns {Promise<{canvas: HTMLCanvasElement, width: number, height: number}>}
+     */
+    function loadImage(url) {
+        return new Promise((resolve, reject) => {
+            const loader = new Image();
+            loader.crossOrigin = 'anonymous';
+            
+            loader.onload = function () {
+                const canvas = document.createElement('canvas');
+                canvas.width = loader.naturalWidth;
+                canvas.height = loader.naturalHeight;
+                canvas.getContext('2d').drawImage(loader, 0, 0);
+                
+                resolve({
+                    canvas: canvas,
+                    width: canvas.width,
+                    height: canvas.height
+                });
+            };
+            
+            loader.onerror = function () {
+                reject(new Error('Image load failed'));
+            };
+            
+            // キャッシュバスター付きでロード
+            loader.src = url + (url.includes('?') ? '&' : '?') + '_cb=' + Date.now();
+        });
+    }
+
+    /**
+     * クロップ状態を初期化
+     * @param {{canvas: HTMLCanvasElement}} imageData
+     */
+    function initializeCropState(imageData) {
+        state.srcCanvas = imageData.canvas;
+        state.cropX = 0;
+        state.cropY = 0;
+        state.cropW = 0;
+        state.cropH = 0;
+    }
+
+    /**
+     * クロップ状態をリセット
+     */
+    function resetCropState() {
+        state.srcCanvas = null;
+        state.cropX = 0;
+        state.cropY = 0;
+        state.cropW = 0;
+        state.cropH = 0;
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // UI管理（パネル表示切り替え）
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    
     function showCropPanel() {
         const adjustTools = document.getElementById('adjust-tools');
         const maskTools = document.getElementById('mask-tools');
         const cropPanel = document.getElementById('free-crop-panel');
+        
         if (adjustTools) adjustTools.style.display = 'none';
         if (maskTools) maskTools.style.display = 'none';
         if (cropPanel) cropPanel.style.display = 'flex';
@@ -107,227 +186,300 @@
     function hideCropPanel() {
         const adjustTools = document.getElementById('adjust-tools');
         const cropPanel = document.getElementById('free-crop-panel');
+        
         if (adjustTools) adjustTools.style.display = 'block';
         if (cropPanel) cropPanel.style.display = 'none';
     }
 
-    // ── オーバーレイcanvasを作成 ────────────────────────────────────
+    function setStatus(text) {
+        const status = document.getElementById('free-crop-status');
+        if (status) status.textContent = text;
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // オーバーレイ管理
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    
+    /**
+     * オーバーレイcanvasを作成して画像キャンバスに重ねる
+     */
     function buildOverlay() {
         const mainCanvas = window.EditorState.canvas;
-        if (!mainCanvas) return;
+        if (!mainCanvas) {
+            console.error('[free-crop] Main canvas not found');
+            return;
+        }
 
-        // 画像キャンバスの親divを取得（相対位置の基準）
         const canvasWrapper = mainCanvas.parentElement;
-        if (!canvasWrapper) return;
+        if (!canvasWrapper) {
+            console.error('[free-crop] Canvas wrapper not found');
+            return;
+        }
 
-        overlay = document.createElement('canvas');
-        overlay.id = 'free-crop-overlay';
-        overlay.style.position = 'absolute';
-        overlay.style.top = '0';
-        overlay.style.left = '0';
-        overlay.style.cursor = 'crosshair';
-        overlay.style.zIndex = '100';
-        overlay.style.pointerEvents = 'auto';
+        // オーバーレイcanvas作成
+        state.overlay = document.createElement('canvas');
+        state.overlay.id = 'free-crop-overlay';
+        state.overlay.style.position = 'absolute';
+        state.overlay.style.top = '0';
+        state.overlay.style.left = '0';
+        state.overlay.style.cursor = 'crosshair';
+        state.overlay.style.zIndex = '100';
+        state.overlay.style.pointerEvents = 'auto';
 
-        // 画像キャンバスと完全に同じサイズに設定
-        overlay.width = mainCanvas.offsetWidth;
-        overlay.height = mainCanvas.offsetHeight;
-        overlay.style.width = mainCanvas.offsetWidth + 'px';
-        overlay.style.height = mainCanvas.offsetHeight + 'px';
+        // 画像キャンバスと同じサイズに設定
+        state.overlay.width = mainCanvas.offsetWidth;
+        state.overlay.height = mainCanvas.offsetHeight;
+        state.overlay.style.width = mainCanvas.offsetWidth + 'px';
+        state.overlay.style.height = mainCanvas.offsetHeight + 'px';
 
-        overlayCtx = overlay.getContext('2d');
+        state.overlayCtx = state.overlay.getContext('2d');
 
-        // イベントリスナー
-        overlay.addEventListener('mousedown', onMouseDown);
-        overlay.addEventListener('mousemove', onMouseMove);
-        overlay.addEventListener('mouseup', onMouseUp);
-        overlay.addEventListener('mouseleave', onMouseUp);
+        // イベントリスナー登録
+        state.overlay.addEventListener('mousedown', onMouseDown);
+        state.overlay.addEventListener('mousemove', onMouseMove);
+        state.overlay.addEventListener('mouseup', onMouseUp);
+        state.overlay.addEventListener('mouseleave', onMouseUp);
 
-        // 画像キャンバスと同じ親要素（wrapper div）に追加
-        canvasWrapper.style.position = 'relative'; // 相対位置の基準にする
-        canvasWrapper.appendChild(overlay);
+        // 画像キャンバスの親要素に追加
+        canvasWrapper.style.position = 'relative';
+        canvasWrapper.appendChild(state.overlay);
         
-        window.logger && window.logger.info(`✅ [free-crop] Overlay created: ${overlay.width}×${overlay.height}px`);
+        window.logger && window.logger.debug(
+            `✅ [free-crop] Overlay created: ${state.overlay.width}×${state.overlay.height}px`
+        );
         
         renderOverlay();
     }
 
+    /**
+     * オーバーレイを削除
+     */
     function removeOverlay() {
-        if (overlay && overlay.parentElement) {
-            overlay.removeEventListener('mousedown', onMouseDown);
-            overlay.removeEventListener('mousemove', onMouseMove);
-            overlay.removeEventListener('mouseup', onMouseUp);
-            overlay.removeEventListener('mouseleave', onMouseUp);
-            overlay.parentElement.removeChild(overlay);
-            overlay = null;
-            overlayCtx = null;
+        if (state.overlay && state.overlay.parentElement) {
+            state.overlay.removeEventListener('mousedown', onMouseDown);
+            state.overlay.removeEventListener('mousemove', onMouseMove);
+            state.overlay.removeEventListener('mouseup', onMouseUp);
+            state.overlay.removeEventListener('mouseleave', onMouseUp);
+            state.overlay.parentElement.removeChild(state.overlay);
+            state.overlay = null;
+            state.overlayCtx = null;
         }
     }
 
-    // ── 座標変換 ────────────────────────────────────────────────────
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 座標変換
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    
+    /**
+     * Canvas表示座標 → 元画像座標
+     * @param {number} cx - Canvas X座標
+     * @param {number} cy - Canvas Y座標
+     * @returns {{x: number, y: number}}
+     */
     function canvasToImage(cx, cy) {
         const mainCanvas = window.EditorState.canvas;
-        const scaleX = srcCanvas.width / mainCanvas.offsetWidth;
-        const scaleY = srcCanvas.height / mainCanvas.offsetHeight;
+        const scaleX = state.srcCanvas.width / mainCanvas.offsetWidth;
+        const scaleY = state.srcCanvas.height / mainCanvas.offsetHeight;
+        
         return {
             x: Math.round(cx * scaleX),
             y: Math.round(cy * scaleY)
         };
     }
 
+    /**
+     * 元画像座標 → Canvas表示座標
+     * @param {number} ix - 元画像 X座標
+     * @param {number} iy - 元画像 Y座標
+     * @returns {{x: number, y: number}}
+     */
     function imageToCanvas(ix, iy) {
         const mainCanvas = window.EditorState.canvas;
-        const scaleX = mainCanvas.offsetWidth / srcCanvas.width;
-        const scaleY = mainCanvas.offsetHeight / srcCanvas.height;
+        const scaleX = mainCanvas.offsetWidth / state.srcCanvas.width;
+        const scaleY = mainCanvas.offsetHeight / state.srcCanvas.height;
+        
         return {
             x: ix * scaleX,
             y: iy * scaleY
         };
     }
 
-    // ── マウスイベント ──────────────────────────────────────────────
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // マウスイベント処理
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    
     function onMouseDown(e) {
-        if (!active) return;
+        if (!state.active) return;
 
-        const rect = overlay.getBoundingClientRect();
+        const rect = state.overlay.getBoundingClientRect();
         const mx = e.clientX - rect.left;
         const my = e.clientY - rect.top;
 
         // 選択範囲がない場合は新規選択開始
-        if (cropW === 0 || cropH === 0) {
-            isSelecting = true;
-            const img = canvasToImage(mx, my);
-            cropX = img.x;
-            cropY = img.y;
-            cropW = 0;
-            cropH = 0;
-            dragStartX = mx;
-            dragStartY = my;
+        if (state.cropW === 0 || state.cropH === 0) {
+            startNewSelection(mx, my);
             return;
         }
 
         // ハンドルを検出
-        activeHandle = detectHandle(mx, my);
+        state.activeHandle = detectHandle(mx, my);
 
-        if (activeHandle === 'move') {
-            isDragging = true;
-            dragStartX = mx;
-            dragStartY = my;
-        } else if (activeHandle) {
-            isResizing = true;
-            dragStartX = mx;
-            dragStartY = my;
+        if (state.activeHandle === 'move') {
+            startDragging(mx, my);
+        } else if (state.activeHandle) {
+            startResizing(mx, my);
         } else {
             // 範囲外クリック → 新規選択
-            isSelecting = true;
-            const img = canvasToImage(mx, my);
-            cropX = img.x;
-            cropY = img.y;
-            cropW = 0;
-            cropH = 0;
-            dragStartX = mx;
-            dragStartY = my;
+            startNewSelection(mx, my);
         }
     }
 
     function onMouseMove(e) {
-        if (!active) return;
+        if (!state.active) return;
 
-        const rect = overlay.getBoundingClientRect();
+        const rect = state.overlay.getBoundingClientRect();
         const mx = e.clientX - rect.left;
         const my = e.clientY - rect.top;
 
-        // カーソル更新
-        if (!isSelecting && !isDragging && !isResizing) {
+        // カーソル更新（ドラッグ中以外）
+        if (!state.isSelecting && !state.isDragging && !state.isResizing) {
             const handle = detectHandle(mx, my);
             updateCursor(handle);
         }
 
         // 新規選択中
-        if (isSelecting) {
-            const img = canvasToImage(mx, my);
-            cropW = img.x - cropX;
-            cropH = img.y - cropY;
-
-            // 負の値を補正
-            if (cropW < 0) {
-                cropX = img.x;
-                cropW = -cropW;
-            }
-            if (cropH < 0) {
-                cropY = img.y;
-                cropH = -cropH;
-            }
-
-            renderOverlay();
-            updatePreview();
-            updateInfo();
+        if (state.isSelecting) {
+            updateSelection(mx, my);
             return;
         }
 
         // 移動中
-        if (isDragging) {
-            const dx = mx - dragStartX;
-            const dy = my - dragStartY;
-            const imgDelta = canvasToImage(dx, dy);
-            
-            cropX += imgDelta.x;
-            cropY += imgDelta.y;
-
-            // 画像境界内に制限
-            cropX = Math.max(0, Math.min(srcCanvas.width - cropW, cropX));
-            cropY = Math.max(0, Math.min(srcCanvas.height - cropH, cropY));
-
-            dragStartX = mx;
-            dragStartY = my;
-
-            renderOverlay();
-            updatePreview();
-            updateInfo();
+        if (state.isDragging) {
+            updateDragPosition(mx, my);
             return;
         }
 
         // リサイズ中
-        if (isResizing) {
-            const dx = mx - dragStartX;
-            const dy = my - dragStartY;
-            const imgDelta = canvasToImage(dx, dy);
-
-            resizeCropRegion(activeHandle, imgDelta.x, imgDelta.y);
-
-            dragStartX = mx;
-            dragStartY = my;
-
-            renderOverlay();
-            updatePreview();
-            updateInfo();
+        if (state.isResizing) {
+            updateResize(mx, my);
         }
     }
 
     function onMouseUp(e) {
-        isSelecting = false;
-        isDragging = false;
-        isResizing = false;
-        activeHandle = null;
+        state.isSelecting = false;
+        state.isDragging = false;
+        state.isResizing = false;
+        state.activeHandle = null;
 
         // 選択完了
-        if (cropW > 0 && cropH > 0) {
+        if (state.cropW > 0 && state.cropH > 0) {
             setStatus('選択範囲を調整するか、「確定して保存」をクリックしてください');
         }
     }
 
-    // ── ハンドル検出 ────────────────────────────────────────────────
-    function detectHandle(mx, my) {
-        if (cropW === 0 || cropH === 0) return null;
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // マウス操作ヘルパー
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    
+    function startNewSelection(mx, my) {
+        state.isSelecting = true;
+        const img = canvasToImage(mx, my);
+        state.cropX = img.x;
+        state.cropY = img.y;
+        state.cropW = 0;
+        state.cropH = 0;
+        state.dragStartX = mx;
+        state.dragStartY = my;
+    }
 
-        const pos = imageToCanvas(cropX, cropY);
-        const size = imageToCanvas(cropW, cropH);
+    function startDragging(mx, my) {
+        state.isDragging = true;
+        state.dragStartX = mx;
+        state.dragStartY = my;
+    }
+
+    function startResizing(mx, my) {
+        state.isResizing = true;
+        state.dragStartX = mx;
+        state.dragStartY = my;
+    }
+
+    function updateSelection(mx, my) {
+        const img = canvasToImage(mx, my);
+        state.cropW = img.x - state.cropX;
+        state.cropH = img.y - state.cropY;
+
+        // 負の値を補正
+        if (state.cropW < 0) {
+            state.cropX = img.x;
+            state.cropW = -state.cropW;
+        }
+        if (state.cropH < 0) {
+            state.cropY = img.y;
+            state.cropH = -state.cropH;
+        }
+
+        renderOverlay();
+        updatePreview();
+        updateInfo();
+    }
+
+    function updateDragPosition(mx, my) {
+        const dx = mx - state.dragStartX;
+        const dy = my - state.dragStartY;
+        const imgDelta = canvasToImage(dx, dy);
+        
+        state.cropX += imgDelta.x;
+        state.cropY += imgDelta.y;
+
+        // 画像境界内に制限
+        state.cropX = Math.max(0, Math.min(state.srcCanvas.width - state.cropW, state.cropX));
+        state.cropY = Math.max(0, Math.min(state.srcCanvas.height - state.cropH, state.cropY));
+
+        state.dragStartX = mx;
+        state.dragStartY = my;
+
+        renderOverlay();
+        updatePreview();
+        updateInfo();
+    }
+
+    function updateResize(mx, my) {
+        const dx = mx - state.dragStartX;
+        const dy = my - state.dragStartY;
+        const imgDelta = canvasToImage(dx, dy);
+
+        resizeCropRegion(state.activeHandle, imgDelta.x, imgDelta.y);
+
+        state.dragStartX = mx;
+        state.dragStartY = my;
+
+        renderOverlay();
+        updatePreview();
+        updateInfo();
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ハンドル検出
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    
+    /**
+     * マウス座標から最も近いハンドルを検出
+     * @param {number} mx - マウスX座標
+     * @param {number} my - マウスY座標
+     * @returns {string|null} - ハンドルID ('nw','ne','sw','se','n','e','s','w','move') or null
+     */
+    function detectHandle(mx, my) {
+        if (state.cropW === 0 || state.cropH === 0) return null;
+
+        const pos = imageToCanvas(state.cropX, state.cropY);
+        const size = imageToCanvas(state.cropW, state.cropH);
         const cx = pos.x;
         const cy = pos.y;
         const cw = size.x;
         const ch = size.y;
 
-        const hs = HANDLE_SIZE;
+        const hs = CONFIG.HANDLE_SIZE;
 
         // 四隅
         if (isNear(mx, my, cx, cy, hs)) return 'nw';
@@ -361,9 +513,11 @@
         return Math.abs(mx - tx) <= threshold && my >= ty - height/2 && my <= ty + height/2;
     }
 
-    // ── カーソル更新 ────────────────────────────────────────────────
+    /**
+     * ハンドルに応じてカーソルを変更
+     */
     function updateCursor(handle) {
-        if (!overlay) return;
+        if (!state.overlay) return;
 
         const cursors = {
             'nw': 'nw-resize',
@@ -377,98 +531,113 @@
             'move': 'move'
         };
 
-        overlay.style.cursor = cursors[handle] || 'crosshair';
+        state.overlay.style.cursor = cursors[handle] || 'crosshair';
     }
 
-    // ── リサイズ処理 ────────────────────────────────────────────────
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // リサイズ処理
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    
+    /**
+     * ハンドルに応じてクロップ領域をリサイズ
+     * @param {string} handle - ハンドルID
+     * @param {number} dx - X方向の移動量
+     * @param {number} dy - Y方向の移動量
+     */
     function resizeCropRegion(handle, dx, dy) {
-        const oldX = cropX;
-        const oldY = cropY;
-        const oldW = cropW;
-        const oldH = cropH;
+        const oldX = state.cropX;
+        const oldY = state.cropY;
+        const oldW = state.cropW;
+        const oldH = state.cropH;
 
         switch (handle) {
             case 'nw':
-                cropX += dx;
-                cropY += dy;
-                cropW -= dx;
-                cropH -= dy;
+                state.cropX += dx;
+                state.cropY += dy;
+                state.cropW -= dx;
+                state.cropH -= dy;
                 break;
             case 'ne':
-                cropY += dy;
-                cropW += dx;
-                cropH -= dy;
+                state.cropY += dy;
+                state.cropW += dx;
+                state.cropH -= dy;
                 break;
             case 'sw':
-                cropX += dx;
-                cropW -= dx;
-                cropH += dy;
+                state.cropX += dx;
+                state.cropW -= dx;
+                state.cropH += dy;
                 break;
             case 'se':
-                cropW += dx;
-                cropH += dy;
+                state.cropW += dx;
+                state.cropH += dy;
                 break;
             case 'n':
-                cropY += dy;
-                cropH -= dy;
+                state.cropY += dy;
+                state.cropH -= dy;
                 break;
             case 's':
-                cropH += dy;
+                state.cropH += dy;
                 break;
             case 'w':
-                cropX += dx;
-                cropW -= dx;
+                state.cropX += dx;
+                state.cropW -= dx;
                 break;
             case 'e':
-                cropW += dx;
+                state.cropW += dx;
                 break;
         }
 
         // 最小サイズ制限
-        if (cropW < MIN_SIZE) {
-            cropX = oldX;
-            cropW = oldW;
+        if (state.cropW < CONFIG.MIN_SIZE) {
+            state.cropX = oldX;
+            state.cropW = oldW;
         }
-        if (cropH < MIN_SIZE) {
-            cropY = oldY;
-            cropH = oldH;
+        if (state.cropH < CONFIG.MIN_SIZE) {
+            state.cropY = oldY;
+            state.cropH = oldH;
         }
 
         // 画像境界制限
-        cropX = Math.max(0, Math.min(srcCanvas.width - cropW, cropX));
-        cropY = Math.max(0, Math.min(srcCanvas.height - cropH, cropY));
-        cropW = Math.min(srcCanvas.width - cropX, cropW);
-        cropH = Math.min(srcCanvas.height - cropY, cropH);
+        state.cropX = Math.max(0, Math.min(state.srcCanvas.width - state.cropW, state.cropX));
+        state.cropY = Math.max(0, Math.min(state.srcCanvas.height - state.cropH, state.cropY));
+        state.cropW = Math.min(state.srcCanvas.width - state.cropX, state.cropW);
+        state.cropH = Math.min(state.srcCanvas.height - state.cropY, state.cropH);
     }
 
-    // ── オーバーレイ描画 ────────────────────────────────────────────
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 描画処理
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    
+    /**
+     * オーバーレイを描画（暗幕 + 枠線 + ハンドル + サイズ表示）
+     */
     function renderOverlay() {
-        if (!overlayCtx) return;
+        if (!state.overlayCtx) return;
 
-        overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+        state.overlayCtx.clearRect(0, 0, state.overlay.width, state.overlay.height);
 
-        if (cropW === 0 || cropH === 0) return;
+        if (state.cropW === 0 || state.cropH === 0) return;
 
-        const pos = imageToCanvas(cropX, cropY);
-        const size = imageToCanvas(cropW, cropH);
+        const pos = imageToCanvas(state.cropX, state.cropY);
+        const size = imageToCanvas(state.cropW, state.cropH);
         const cx = pos.x;
         const cy = pos.y;
         const cw = size.x;
         const ch = size.y;
 
-        // 外側を暗くする
-        overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-        overlayCtx.fillRect(0, 0, overlay.width, cy);
-        overlayCtx.fillRect(0, cy, cx, ch);
-        overlayCtx.fillRect(cx + cw, cy, overlay.width - cx - cw, ch);
-        overlayCtx.fillRect(0, cy + ch, overlay.width, overlay.height - cy - ch);
+        // 外側を暗くする（4つの矩形で構成）
+        state.overlayCtx.fillStyle = `rgba(0, 0, 0, ${CONFIG.OVERLAY_OPACITY})`;
+        state.overlayCtx.fillRect(0, 0, state.overlay.width, cy);                     // 上
+        state.overlayCtx.fillRect(0, cy, cx, ch);                                      // 左
+        state.overlayCtx.fillRect(cx + cw, cy, state.overlay.width - cx - cw, ch);    // 右
+        state.overlayCtx.fillRect(0, cy + ch, state.overlay.width, state.overlay.height - cy - ch); // 下
 
         // 枠線
-        overlayCtx.strokeStyle = BORDER_COLOR;
-        overlayCtx.lineWidth = BORDER_WIDTH;
-        overlayCtx.strokeRect(cx, cy, cw, ch);
+        state.overlayCtx.strokeStyle = CONFIG.BORDER_COLOR;
+        state.overlayCtx.lineWidth = CONFIG.BORDER_WIDTH;
+        state.overlayCtx.strokeRect(cx, cy, cw, ch);
 
-        // ハンドルを描画
+        // ハンドルを描画（8箇所）
         drawHandle(cx, cy);              // nw
         drawHandle(cx + cw, cy);         // ne
         drawHandle(cx, cy + ch);         // sw
@@ -479,33 +648,44 @@
         drawHandle(cx + cw, cy + ch/2);  // e
 
         // サイズ表示
-        overlayCtx.fillStyle = BORDER_COLOR;
-        overlayCtx.font = 'bold 14px sans-serif';
-        overlayCtx.textAlign = 'center';
-        overlayCtx.fillText(`${cropW} × ${cropH}`, cx + cw/2, cy - 10);
+        state.overlayCtx.fillStyle = CONFIG.BORDER_COLOR;
+        state.overlayCtx.font = 'bold 14px sans-serif';
+        state.overlayCtx.textAlign = 'center';
+        state.overlayCtx.fillText(`${state.cropW} × ${state.cropH}`, cx + cw/2, cy - 10);
     }
 
+    /**
+     * ハンドルを描画
+     * @param {number} x - X座標
+     * @param {number} y - Y座標
+     */
     function drawHandle(x, y) {
-        const hs = HANDLE_SIZE / 2;
-        overlayCtx.fillStyle = HANDLE_COLOR;
-        overlayCtx.fillRect(x - hs, y - hs, HANDLE_SIZE, HANDLE_SIZE);
-        overlayCtx.strokeStyle = '#ffffff';
-        overlayCtx.lineWidth = 2;
-        overlayCtx.strokeRect(x - hs, y - hs, HANDLE_SIZE, HANDLE_SIZE);
+        const hs = CONFIG.HANDLE_SIZE / 2;
+        
+        // ハンドル本体
+        state.overlayCtx.fillStyle = CONFIG.HANDLE_COLOR;
+        state.overlayCtx.fillRect(x - hs, y - hs, CONFIG.HANDLE_SIZE, CONFIG.HANDLE_SIZE);
+        
+        // 白い枠線
+        state.overlayCtx.strokeStyle = '#ffffff';
+        state.overlayCtx.lineWidth = 2;
+        state.overlayCtx.strokeRect(x - hs, y - hs, CONFIG.HANDLE_SIZE, CONFIG.HANDLE_SIZE);
     }
 
-    // ── プレビュー更新 ──────────────────────────────────────────────
+    /**
+     * プレビューを更新
+     */
     function updatePreview() {
         const previewCanvas = document.getElementById('free-crop-preview-canvas');
-        if (!previewCanvas || cropW === 0 || cropH === 0) return;
+        if (!previewCanvas || state.cropW === 0 || state.cropH === 0) return;
 
         const ctx = previewCanvas.getContext('2d');
-        const previewSize = 200;
+        const previewSize = CONFIG.PREVIEW_SIZE;
 
         // アスペクト比を維持してプレビュー
-        const scale = Math.min(previewSize / cropW, previewSize / cropH);
-        const pw = cropW * scale;
-        const ph = cropH * scale;
+        const scale = Math.min(previewSize / state.cropW, previewSize / state.cropH);
+        const pw = state.cropW * scale;
+        const ph = state.cropH * scale;
         const px = (previewSize - pw) / 2;
         const py = (previewSize - ph) / 2;
 
@@ -513,20 +693,26 @@
         ctx.fillStyle = '#f0f0f0';
         ctx.fillRect(0, 0, previewSize, previewSize);
 
-        ctx.drawImage(srcCanvas, cropX, cropY, cropW, cropH, px, py, pw, ph);
+        ctx.drawImage(
+            state.srcCanvas,
+            state.cropX, state.cropY, state.cropW, state.cropH,
+            px, py, pw, ph
+        );
     }
 
-    // ── 情報表示更新 ────────────────────────────────────────────────
+    /**
+     * 選択範囲情報を更新
+     */
     function updateInfo() {
         const infoDiv = document.getElementById('free-crop-info');
         if (!infoDiv) return;
 
-        if (cropW > 0 && cropH > 0) {
+        if (state.cropW > 0 && state.cropH > 0) {
             infoDiv.innerHTML = `
                 <div class="text-xs text-gray-600 space-y-1">
-                    <div><span class="font-bold">サイズ:</span> ${cropW} × ${cropH} px</div>
-                    <div><span class="font-bold">位置:</span> (${cropX}, ${cropY})</div>
-                    <div><span class="font-bold">アスペクト比:</span> ${(cropW / cropH).toFixed(2)}</div>
+                    <div><span class="font-bold">サイズ:</span> ${state.cropW} × ${state.cropH} px</div>
+                    <div><span class="font-bold">位置:</span> (${state.cropX}, ${state.cropY})</div>
+                    <div><span class="font-bold">アスペクト比:</span> ${(state.cropW / state.cropH).toFixed(2)}</div>
                 </div>
             `;
         } else {
@@ -534,15 +720,15 @@
         }
     }
 
-    // ── ステータス表示 ──────────────────────────────────────────────
-    function setStatus(text) {
-        const status = document.getElementById('free-crop-status');
-        if (status) status.textContent = text;
-    }
-
-    // ── 保存処理 ────────────────────────────────────────────────────
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 保存処理
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    
+    /**
+     * 選択範囲をクロップしてサーバーに保存
+     */
     async function saveCrop() {
-        if (!srcCanvas || cropW === 0 || cropH === 0) {
+        if (!state.srcCanvas || state.cropW === 0 || state.cropH === 0) {
             alert('選択範囲が指定されていません');
             return;
         }
@@ -552,31 +738,41 @@
         try {
             // クロップした画像を作成
             const croppedCanvas = document.createElement('canvas');
-            croppedCanvas.width = cropW;
-            croppedCanvas.height = cropH;
+            croppedCanvas.width = state.cropW;
+            croppedCanvas.height = state.cropH;
             const ctx = croppedCanvas.getContext('2d');
-            ctx.drawImage(srcCanvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+            ctx.drawImage(
+                state.srcCanvas,
+                state.cropX, state.cropY, state.cropW, state.cropH,
+                0, 0, state.cropW, state.cropH
+            );
 
             const dataUrl = croppedCanvas.toDataURL('image/png');
 
-            // アップロード
+            // APIに送信
             const S = window.EditorState;
             const response = await window.authenticatedFetch(`/api/save-cropped-image/${S.sku}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     imageDataUrl: dataUrl,
-                    width: cropW,
-                    height: cropH
+                    width: state.cropW,
+                    height: state.cropH
                 })
             });
 
             if (!response.ok) {
-                throw new Error('保存に失敗しました');
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || '保存に失敗しました');
             }
 
-            window.logger && window.logger.info('✅ [free-crop] Saved:', cropW, 'x', cropH);
-            alert(`切り抜き完了！\nサイズ: ${cropW} × ${cropH} px`);
+            const result = await response.json();
+            
+            window.logger && window.logger.info(
+                `✅ [free-crop] Saved: ${state.cropW}×${state.cropH}, key=${result.r2Key}`
+            );
+            
+            alert(`切り抜き完了！\nサイズ: ${state.cropW} × ${state.cropH} px`);
             
             stopFreeCrop();
             window.location.reload();
@@ -588,7 +784,10 @@
         }
     }
 
-    // ── イベントリスナー設定 ────────────────────────────────────────
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // イベントリスナー登録
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    
     document.addEventListener('DOMContentLoaded', function() {
         const btnConfirm = document.getElementById('free-crop-confirm');
         const btnCancel = document.getElementById('free-crop-cancel');
@@ -602,11 +801,14 @@
         }
     });
 
-    // ── 公開API ─────────────────────────────────────────────────────
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 公開API
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    
     window.FreeCropTool = {
         start: startFreeCrop,
         stop: stopFreeCrop
     };
 
-    window.logger && window.logger.debug('✅ [free-crop-tool] initialized');
+    window.logger && window.logger.debug('✅ [free-crop-tool] Module initialized');
 })();

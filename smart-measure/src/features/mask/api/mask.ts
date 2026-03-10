@@ -141,10 +141,15 @@ maskApi.post('/api/regenerate-with-mask/:sku', async (c) => {
 // ─────────────────────────────────────────────
 // POST /api/save-cropped-image/:sku
 // 自由クロップした画像を保存（R2 + DB更新）
+// 
+// Option C実装:
+// - R2に _f.png として保存
+// - final_images 配列に追加
+// - image_status を 'final' に更新
 // ─────────────────────────────────────────────
 maskApi.post('/api/save-cropped-image/:sku', async (c) => {
   const sku = c.req.param('sku')
-  logger.info(`Cropped image save request: sku=${sku}`)
+  logger.info(`🖼️ [save-cropped] Request: sku=${sku}`)
   
   try {
     const companyId = getCompanyId(c)
@@ -158,19 +163,19 @@ maskApi.post('/api/save-cropped-image/:sku', async (c) => {
 
     // Validation
     if (!imageDataUrl || !imageDataUrl.startsWith('data:image/png;base64,')) {
-      logger.warn(`Invalid image data format for sku=${sku}`)
-      return c.json({ error: 'Invalid image data' }, 400)
+      logger.warn(`❌ [save-cropped] Invalid image data format: sku=${sku}`)
+      return c.json({ error: 'Invalid image data format' }, 400)
     }
     if (!c.env.DB) {
-      logger.error(`Database not configured`)
+      logger.error(`❌ [save-cropped] Database not configured`)
       return c.json({ error: 'Database not configured' }, 500)
     }
     if (!c.env.PRODUCT_IMAGES) {
-      logger.error(`R2 bucket not configured`)
+      logger.error(`❌ [save-cropped] R2 bucket not configured`)
       return c.json({ error: 'R2 bucket not configured' }, 500)
     }
 
-    // Extract base64 data
+    // Extract base64 data and convert to binary
     const base64Data = imageDataUrl.replace(/^data:image\/png;base64,/, '')
     const binaryData = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0))
 
@@ -179,27 +184,47 @@ maskApi.post('/api/save-cropped-image/:sku', async (c) => {
     await c.env.PRODUCT_IMAGES.put(r2Key, binaryData, {
       httpMetadata: { contentType: 'image/png' }
     })
+    logger.debug(`✅ [save-cropped] R2 upload: ${r2Key}`)
 
-    // Update DB: Mark as processed and store crop info
+    // Get current final_images array
+    const result = await c.env.DB.prepare(`
+      SELECT final_images FROM product_items
+      WHERE sku = ? AND company_id = ?
+    `).bind(sku, companyId).first()
+
+    let finalImages: string[] = []
+    if (result?.final_images) {
+      try {
+        finalImages = JSON.parse(result.final_images as string)
+      } catch (e) {
+        logger.error(`❌ [save-cropped] Failed to parse final_images:`, e)
+        finalImages = []
+      }
+    }
+
+    // Add 'r2_1_1' to final_images if not already present
+    // Note: This assumes the image ID is always 'r2_1_1'
+    // If multiple images per SKU exist, this should be extracted from EditorState
+    const imageId = 'r2_1_1'
+    if (!finalImages.includes(imageId)) {
+      finalImages.push(imageId)
+    }
+
+    // Update DB: Mark as final and update final_images array
     await c.env.DB.prepare(`
-      UPDATE product_images
+      UPDATE product_items
       SET 
-        is_processed = 1,
-        crop_width = ?,
-        crop_height = ?,
+        final_images = ?,
+        image_status = 'final',
         updated_at = CURRENT_TIMESTAMP
-      WHERE product_sku = ? AND company_id = ?
-    `).bind(width, height, sku, companyId).run()
+      WHERE sku = ? AND company_id = ?
+    `).bind(JSON.stringify(finalImages), sku, companyId).run()
 
-    // Also record in processed_images table
     const publicUrl = getR2PublicUrl(c.env) + r2Key
-    await c.env.DB.prepare(`
-      INSERT OR REPLACE INTO processed_images
-      (product_sku, company_id, s3_key, public_url, created_at)
-      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `).bind(sku, companyId, r2Key, publicUrl).run()
-
-    logger.info(`Cropped image saved: sku=${sku}, size=${width}x${height}, r2Key=${r2Key}`)
+    
+    logger.info(
+      `✅ [save-cropped] Success: sku=${sku}, size=${width}×${height}, key=${r2Key}`
+    )
     
     return c.json({
       success: true,
@@ -209,6 +234,8 @@ maskApi.post('/api/save-cropped-image/:sku', async (c) => {
       publicUrl,
       width,
       height,
+      imageStatus: 'final',
+      finalImages,
       message: `Cropped image saved: ${r2Key}`,
     })
   } catch (error) {
