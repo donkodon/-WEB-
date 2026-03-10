@@ -1,138 +1,283 @@
 /**
- * Plan Selection UI Handler
- * Handles plan selection modal, plan switching, and Stripe Checkout redirect
+ * Plan Selection UI Handler - Subscription + Credit Purchase
+ * Handles subscription plans and credit purchase with new pricing
  */
 
 (function() {
     'use strict';
 
     // ============================================
-    // Plan Configuration
+    // Plan Configuration - Subscription (13 plans)
     // ============================================
-    const PLANS = {
-        free: {
-            name: '無料プラン',
-            price: 0,
-            priceId: null,
-            skuLimit: 10,
-            aiLimit: 10,
-            features: [
-                '月間10件までの商品データダウンロード',
-                '月間10回までのAI画像生成',
-                '超過時は利用不可',
-                '画像エクスポート機能',
-                'コミュニティサポート'
-            ],
-            badge: 'FREE',
-            badgeColor: 'bg-gray-600',
-            unlimited: false
-        },
-        starter: {
-            name: 'スタータープラン',
-            price: 3000,
-            priceId: 'price_starter_monthly', // TODO: Replace with actual Stripe Price ID
-            skuLimit: 100,
-            aiLimit: 100,
-            features: [
-                '月間100件までの商品データダウンロード',
-                '月間100回までのAI画像生成',
-                '超過分は従量課金（松¥100 → 竹¥50 → 梅¥25）',
-                '画像エクスポート機能',
-                'メールサポート'
-            ],
-            badge: 'STARTER',
-            badgeColor: 'bg-blue-600',
-            unlimited: false
-        },
-        business: {
-            name: 'ビジネスプラン',
-            price: 10000,
-            priceId: 'price_business_monthly', // TODO: Replace with actual Stripe Price ID
-            skuLimit: 500,
-            aiLimit: 500,
-            features: [
-                '月間500件までの商品データダウンロード',
-                '月間500回までのAI画像生成',
-                '超過分は従量課金（松¥100 → 竹¥50 → 梅¥25）',
-                '画像エクスポート機能',
-                '優先サポート（24時間以内返信）'
-            ],
-            badge: 'BUSINESS',
-            badgeColor: 'bg-purple-600',
-            unlimited: false
-        },
-        enterprise: {
-            name: 'エンタープライズプラン',
-            price: 30000,
-            priceId: 'price_enterprise_monthly', // TODO: Replace with actual Stripe Price ID
-            skuLimit: '無制限',
-            aiLimit: '無制限',
-            features: [
-                '商品データダウンロード無制限',
-                'AI画像生成無制限',
-                '従量課金なし（固定料金）',
-                '画像エクスポート機能',
-                '専任担当者',
-                '優先サポート（1時間以内返信）'
-            ],
-            badge: 'ENTERPRISE',
-            badgeColor: 'bg-gradient-to-r from-yellow-500 to-orange-500',
-            unlimited: true
-        }
-    };
+    const SUBSCRIPTION_PLANS = [
+        { qty: 50, price: 880, priceId: 'price_sub_50', popular: false },
+        { qty: 200, price: 3300, priceId: 'price_sub_200', popular: true },
+        { qty: 500, price: 7700, priceId: 'price_sub_500', popular: false },
+        { qty: 1000, price: 13500, priceId: 'price_sub_1000', popular: false },
+        { qty: 2500, price: 28000, priceId: 'price_sub_2500', popular: false },
+        { qty: 5000, price: 44000, priceId: 'price_sub_5000', popular: true },
+        { qty: 7500, price: 60000, priceId: 'price_sub_7500', popular: false },
+        { qty: 10000, price: 77000, priceId: 'price_sub_10000', popular: false },
+        { qty: 15000, price: 99000, priceId: 'price_sub_15000', popular: false },
+        { qty: 25000, price: 150000, priceId: 'price_sub_25000', popular: false },
+        { qty: 50000, price: 275000, priceId: 'price_sub_50000', popular: false },
+        { qty: 75000, price: 412500, priceId: 'price_sub_75000', popular: false },
+        { qty: 100000, price: 550000, priceId: 'price_sub_100000', popular: true }
+    ];
+
+    // ============================================
+    // Plan Configuration - Credit Purchase (7 plans)
+    // ============================================
+    const CREDIT_PLANS = [
+        { qty: 40, price: 880, priceId: 'price_credit_40', discount: 0 },
+        { qty: 200, price: 3465, priceId: 'price_credit_200', discount: 21 },
+        { qty: 500, price: 8085, priceId: 'price_credit_500', discount: 26 },
+        { qty: 1000, price: 14175, priceId: 'price_credit_1000', discount: 35 },
+        { qty: 2500, price: 30800, priceId: 'price_credit_2500', discount: 44 },
+        { qty: 5000, price: 48400, priceId: 'price_credit_5000', discount: 56 },
+        { qty: 10000, price: 80850, priceId: 'price_credit_10000', discount: 63 }
+    ];
 
     // ============================================
     // State
     // ============================================
-    let currentPlan = 'free'; // Will be loaded from API
+    let currentTab = 'subscription'; // 'subscription' or 'credits'
     let selectedPlan = null;
+    let selectedType = null; // 'subscription' or 'credit'
 
     // ============================================
     // DOM Elements
     // ============================================
+    const tabSubscription = document.getElementById('tab-subscription');
+    const tabCredits = document.getElementById('tab-credits');
+    const subscriptionContent = document.getElementById('subscription-content');
+    const creditsContent = document.getElementById('credits-content');
+    const subscriptionPlansGrid = document.getElementById('subscription-plans-grid');
+    const creditsPlansGrid = document.getElementById('credits-plans-grid');
+    const btnBuyCredits = document.getElementById('btn-buy-credits');
+    
     const modal = document.getElementById('plan-modal');
     const btnCloseModal = document.getElementById('btn-close-modal');
     const btnModalCancel = document.getElementById('btn-modal-cancel');
     const btnModalConfirm = document.getElementById('btn-modal-confirm');
     
-    const btnSelectStarter = document.getElementById('btn-select-starter');
-    const btnSelectBusiness = document.getElementById('btn-select-business');
-    const btnSelectEnterprise = document.getElementById('btn-select-enterprise');
-    
     const btnManagePayment = document.getElementById('btn-manage-payment');
+
+    // ============================================
+    // Tab Switching
+    // ============================================
+    function switchTab(tab) {
+        currentTab = tab;
+
+        if (tab === 'subscription') {
+            tabSubscription.classList.add('active', 'bg-purple-600', 'text-white');
+            tabSubscription.classList.remove('text-gray-700');
+            tabCredits.classList.remove('active', 'bg-purple-600', 'text-white');
+            tabCredits.classList.add('text-gray-700');
+            
+            subscriptionContent.classList.remove('hidden');
+            creditsContent.classList.add('hidden');
+        } else {
+            tabCredits.classList.add('active', 'bg-green-600', 'text-white');
+            tabCredits.classList.remove('text-gray-700');
+            tabSubscription.classList.remove('active', 'bg-purple-600', 'text-white');
+            tabSubscription.classList.add('text-gray-700');
+            
+            creditsContent.classList.remove('hidden');
+            subscriptionContent.classList.add('hidden');
+        }
+
+        console.log(`[plan-selection] Switched to ${tab} tab`);
+    }
+
+    // ============================================
+    // Plan Card Generation
+    // ============================================
+    function generateSubscriptionCard(plan) {
+        const unitPrice = (plan.price / plan.qty).toFixed(1);
+        const popularBadge = plan.popular ? `
+            <div class="absolute -top-3 -right-3 bg-red-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg transform rotate-12">
+                <i class="fas fa-fire mr-1"></i> 人気
+            </div>
+        ` : '';
+
+        return `
+            <div class="plan-card relative bg-white border-2 ${plan.popular ? 'border-purple-400' : 'border-gray-200'} rounded-xl p-5 hover:shadow-xl transition-all cursor-pointer transform hover:scale-105" 
+                 data-plan-type="subscription" 
+                 data-price-id="${plan.priceId}" 
+                 data-qty="${plan.qty}" 
+                 data-price="${plan.price}">
+                ${popularBadge}
+                <div class="text-center mb-3">
+                    <div class="text-3xl font-bold text-purple-900">${plan.qty.toLocaleString()}</div>
+                    <div class="text-xs text-gray-500">枚/月</div>
+                </div>
+                <div class="text-center mb-3 pb-3 border-b border-gray-200">
+                    <div class="text-2xl font-bold text-gray-900">¥${plan.price.toLocaleString()}</div>
+                    <div class="text-xs text-gray-500">/月（税込）</div>
+                </div>
+                <div class="text-center text-xs text-gray-600 mb-3">
+                    <i class="fas fa-tag mr-1 text-purple-500"></i>
+                    単価: <strong>¥${unitPrice}</strong>/枚
+                </div>
+                <button class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-2 rounded-lg font-bold text-sm hover:from-purple-700 hover:to-indigo-700 transition-all">
+                    <i class="fas fa-check-circle mr-1"></i> 選択する
+                </button>
+            </div>
+        `;
+    }
+
+    function generateCreditCard(plan) {
+        const unitPrice = (plan.price / plan.qty).toFixed(1);
+        const discountBadge = plan.discount > 0 ? `
+            <div class="absolute -top-3 -right-3 bg-green-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg">
+                ${plan.discount}% OFF
+            </div>
+        ` : '';
+
+        return `
+            <div class="plan-card relative bg-white border-2 border-gray-200 rounded-xl p-5 hover:shadow-xl transition-all cursor-pointer transform hover:scale-105" 
+                 data-plan-type="credit" 
+                 data-price-id="${plan.priceId}" 
+                 data-qty="${plan.qty}" 
+                 data-price="${plan.price}">
+                ${discountBadge}
+                <div class="text-center mb-3">
+                    <div class="text-3xl font-bold text-green-900">${plan.qty.toLocaleString()}</div>
+                    <div class="text-xs text-gray-500">枚（買い切り）</div>
+                </div>
+                <div class="text-center mb-3 pb-3 border-b border-gray-200">
+                    <div class="text-2xl font-bold text-gray-900">¥${plan.price.toLocaleString()}</div>
+                    <div class="text-xs text-gray-500">（税込）</div>
+                </div>
+                <div class="text-center text-xs text-gray-600 mb-3">
+                    <i class="fas fa-tag mr-1 text-green-500"></i>
+                    単価: <strong>¥${unitPrice}</strong>/枚
+                </div>
+                <button class="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-2 rounded-lg font-bold text-sm hover:from-green-700 hover:to-emerald-700 transition-all">
+                    <i class="fas fa-shopping-cart mr-1"></i> 購入する
+                </button>
+            </div>
+        `;
+    }
+
+    // ============================================
+    // Render Plans
+    // ============================================
+    function renderPlans() {
+        // Render subscription plans
+        if (subscriptionPlansGrid) {
+            subscriptionPlansGrid.innerHTML = SUBSCRIPTION_PLANS.map(plan => 
+                generateSubscriptionCard(plan)
+            ).join('');
+        }
+
+        // Render credit plans
+        if (creditsPlansGrid) {
+            creditsPlansGrid.innerHTML = CREDIT_PLANS.map(plan => 
+                generateCreditCard(plan)
+            ).join('');
+        }
+
+        // Add click handlers to all plan cards
+        document.querySelectorAll('.plan-card').forEach(card => {
+            card.addEventListener('click', handlePlanCardClick);
+        });
+
+        console.log('[plan-selection] Plans rendered');
+    }
+
+    // ============================================
+    // Plan Card Click Handler
+    // ============================================
+    function handlePlanCardClick(e) {
+        const card = e.currentTarget;
+        const planType = card.dataset.planType;
+        const priceId = card.dataset.priceId;
+        const qty = parseInt(card.dataset.qty);
+        const price = parseInt(card.dataset.price);
+
+        console.log(`[plan-selection] Plan clicked: ${planType}, ${qty} sheets, ¥${price}`);
+
+        selectedPlan = { planType, priceId, qty, price };
+        selectedType = planType;
+
+        openModal(selectedPlan);
+    }
 
     // ============================================
     // Modal Management
     // ============================================
-    function openModal(planKey) {
-        selectedPlan = planKey;
-        const plan = PLANS[planKey];
+    function openModal(plan) {
+        if (!plan) return;
+
+        const unitPrice = (plan.price / plan.qty).toFixed(1);
         
-        if (!plan) {
-            console.error('Invalid plan key:', planKey);
-            return;
+        // Update modal content
+        const modalTitle = plan.planType === 'subscription' 
+            ? `サブスクプラン: ${plan.qty.toLocaleString()}枚/月`
+            : `クレジット購入: ${plan.qty.toLocaleString()}枚`;
+        
+        document.getElementById('modal-plan-name').textContent = modalTitle;
+        document.getElementById('modal-selected-plan').textContent = modalTitle;
+        document.getElementById('modal-plan-price').textContent = plan.price.toLocaleString();
+        document.getElementById('modal-sku-limit').textContent = plan.qty.toLocaleString();
+        document.getElementById('modal-ai-limit').textContent = plan.qty.toLocaleString();
+
+        // Update features list based on plan type
+        const featuresList = document.getElementById('modal-features-list');
+        if (plan.planType === 'subscription') {
+            featuresList.innerHTML = `
+                <li class="flex items-start">
+                    <i class="fas fa-check text-green-500 mr-2 mt-1"></i>
+                    <span>月間${plan.qty.toLocaleString()}枚まで処理可能</span>
+                </li>
+                <li class="flex items-start">
+                    <i class="fas fa-check text-green-500 mr-2 mt-1"></i>
+                    <span>単価: ¥${unitPrice}/枚（月額固定）</span>
+                </li>
+                <li class="flex items-start">
+                    <i class="fas fa-check text-green-500 mr-2 mt-1"></i>
+                    <span>毎月自動更新</span>
+                </li>
+                <li class="flex items-start">
+                    <i class="fas fa-check text-green-500 mr-2 mt-1"></i>
+                    <span>いつでも変更・キャンセル可能</span>
+                </li>
+                <li class="flex items-start">
+                    <i class="fas fa-check text-green-500 mr-2 mt-1"></i>
+                    <span>日割り計算で調整</span>
+                </li>
+            `;
+        } else {
+            featuresList.innerHTML = `
+                <li class="flex items-start">
+                    <i class="fas fa-check text-green-500 mr-2 mt-1"></i>
+                    <span>${plan.qty.toLocaleString()}枚のクレジットを即時付与</span>
+                </li>
+                <li class="flex items-start">
+                    <i class="fas fa-check text-green-500 mr-2 mt-1"></i>
+                    <span>単価: ¥${unitPrice}/枚（買い切り）</span>
+                </li>
+                <li class="flex items-start">
+                    <i class="fas fa-check text-green-500 mr-2 mt-1"></i>
+                    <span>有効期限: 購入日から1年間</span>
+                </li>
+                <li class="flex items-start">
+                    <i class="fas fa-check text-green-500 mr-2 mt-1"></i>
+                    <span>サブスクとの併用可能</span>
+                </li>
+                <li class="flex items-start">
+                    <i class="fas fa-check text-green-500 mr-2 mt-1"></i>
+                    <span>使いたい時に使いたい分だけ</span>
+                </li>
+            `;
         }
 
-        // Update modal content
-        document.getElementById('modal-plan-name').textContent = plan.name;
-        document.getElementById('modal-selected-plan').textContent = plan.name;
-        document.getElementById('modal-plan-price').textContent = plan.price.toLocaleString();
-        document.getElementById('modal-sku-limit').textContent = plan.skuLimit;
-        document.getElementById('modal-ai-limit').textContent = plan.aiLimit;
-
-        // Update features list
-        const featuresList = document.getElementById('modal-features-list');
-        featuresList.innerHTML = plan.features.map(feature => `
-            <li class="flex items-start">
-                <i class="fas fa-check text-green-500 mr-2 mt-1"></i>
-                <span>${feature}</span>
-            </li>
-        `).join('');
-
-        // Calculate next billing date (30 days from today)
-        const nextBillingDate = new Date();
-        nextBillingDate.setDate(nextBillingDate.getDate() + 30);
-        const formattedDate = nextBillingDate.toLocaleDateString('ja-JP', {
+        // Update billing date
+        const nextDate = new Date();
+        nextDate.setDate(nextDate.getDate() + 30);
+        const formattedDate = nextDate.toLocaleDateString('ja-JP', {
             year: 'numeric',
             month: 'long',
             day: 'numeric'
@@ -143,47 +288,36 @@
         modal.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
 
-        console.log(`[plan-selection] Modal opened for: ${plan.name}`);
+        console.log(`[plan-selection] Modal opened for: ${plan.planType}`);
     }
 
     function closeModal() {
         modal.classList.add('hidden');
         document.body.style.overflow = 'auto';
         selectedPlan = null;
+        selectedType = null;
         console.log('[plan-selection] Modal closed');
     }
 
     // ============================================
-    // Plan Selection Handlers
+    // Confirm Plan
     // ============================================
-    function handlePlanSelect(planKey) {
-        console.log(`[plan-selection] Plan selected: ${planKey}`);
-        
-        if (planKey === currentPlan) {
-            alert('既に選択中のプランです');
-            return;
-        }
-
-        openModal(planKey);
-    }
-
     function handleConfirmPlan() {
         if (!selectedPlan) {
             console.error('[plan-selection] No plan selected');
             return;
         }
 
-        const plan = PLANS[selectedPlan];
-        console.log(`[plan-selection] Confirming plan: ${plan.name}`);
+        console.log(`[plan-selection] Confirming plan:`, selectedPlan);
 
         // Disable button and show loading
         btnModalConfirm.disabled = true;
         btnModalConfirm.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> 処理中...';
 
         // TODO: Call API to create Stripe Checkout Session
-        // For now, just show alert
         setTimeout(() => {
-            alert(`${plan.name}の決済ページへリダイレクトします（Stripe API未実装）\n\nStripe Checkout Session ID: cs_test_xxxxx\nPrice ID: ${plan.priceId}`);
+            const planTypeName = selectedPlan.planType === 'subscription' ? 'サブスク' : 'クレジット';
+            alert(`${planTypeName}の決済ページへリダイレクトします（Stripe API未実装）\n\nプラン: ${selectedPlan.qty.toLocaleString()}枚\n金額: ¥${selectedPlan.price.toLocaleString()}\nPrice ID: ${selectedPlan.priceId}`);
             
             // Reset button
             btnModalConfirm.disabled = false;
@@ -197,75 +331,55 @@
     }
 
     // ============================================
+    // Credit Balance Display
+    // ============================================
+    async function loadCreditBalance() {
+        try {
+            console.log('[plan-selection] Loading credit balance...');
+            
+            // TODO: Call API to get credit balance
+            // For now, use mock data
+            const mockBalance = {
+                total: 0,
+                used: 0,
+                remaining: 0
+            };
+
+            document.getElementById('total-credits').textContent = mockBalance.total.toLocaleString();
+            document.getElementById('used-credits').textContent = mockBalance.used.toLocaleString();
+            document.getElementById('remaining-credits').textContent = mockBalance.remaining.toLocaleString();
+
+            console.log('[plan-selection] Credit balance loaded');
+
+        } catch (error) {
+            console.error('[plan-selection] Failed to load credit balance:', error);
+        }
+    }
+
+    // ============================================
     // Payment Method Management
     // ============================================
     function handleManagePayment() {
         console.log('[plan-selection] Opening payment management portal');
-        
-        // TODO: Call API to create Stripe Customer Portal Session
-        alert('Stripe Customer Portal へリダイレクトします（API未実装）\n\n支払い方法の追加・変更・削除、請求書の確認ができます。');
-        
+        alert('Stripe Customer Portal へリダイレクトします（API未実装）');
         // TODO: Redirect to Stripe Customer Portal
-        // window.location.href = portalUrl;
-    }
-
-    // ============================================
-    // Current Plan Display
-    // ============================================
-    async function loadCurrentPlan() {
-        try {
-            console.log('[plan-selection] Loading current plan...');
-            
-            // TODO: Call API to get current plan
-            // For now, use mock data
-            const mockPlan = {
-                planType: 'free',
-                status: 'active',
-                usageCount: 0,
-                renewalDate: null
-            };
-
-            currentPlan = mockPlan.planType;
-            const plan = PLANS[currentPlan];
-
-            // Update current plan display
-            document.getElementById('current-plan-name').textContent = plan.name;
-            document.getElementById('current-plan-price').textContent = `¥${plan.price.toLocaleString()}/月`;
-            document.getElementById('current-plan-badge').innerHTML = `
-                <i class="fas fa-${currentPlan === 'free' ? 'gift' : 'crown'} mr-1"></i> ${plan.badge}
-            `;
-            document.getElementById('current-plan-badge').className = `inline-block px-4 py-2 ${plan.badgeColor} text-white rounded-full text-sm font-bold`;
-
-            // Update usage
-            document.getElementById('plan-usage-count').textContent = mockPlan.usageCount;
-
-            // Update renewal date
-            if (mockPlan.renewalDate) {
-                document.getElementById('plan-renewal-date').textContent = mockPlan.renewalDate;
-            } else {
-                document.getElementById('plan-renewal-date').textContent = '-';
-            }
-
-            console.log(`[plan-selection] Current plan loaded: ${plan.name}`);
-
-        } catch (error) {
-            console.error('[plan-selection] Failed to load current plan:', error);
-        }
     }
 
     // ============================================
     // Event Listeners
     // ============================================
     function initEventListeners() {
-        // Plan selection buttons
-        if (btnSelectStarter) {
-            btnSelectStarter.addEventListener('click', () => handlePlanSelect('starter'));
+        // Tab switching
+        if (tabSubscription) {
+            tabSubscription.addEventListener('click', () => switchTab('subscription'));
         }
-        if (btnSelectBusiness) {
-            btnSelectBusiness.addEventListener('click', () => handlePlanSelect('business'));
+        if (tabCredits) {
+            tabCredits.addEventListener('click', () => switchTab('credits'));
         }
-        if (btnSelectEnterprise) {
-            btnSelectEnterprise.addEventListener('click', () => handlePlanSelect('enterprise'));
+
+        // Buy credits button (switches to credits tab)
+        if (btnBuyCredits) {
+            btnBuyCredits.addEventListener('click', () => switchTab('credits'));
         }
 
         // Modal close buttons
@@ -310,9 +424,11 @@
     // ============================================
     function init() {
         console.log('[plan-selection] Initializing plan selection UI...');
+        renderPlans();
+        loadCreditBalance();
         initEventListeners();
-        loadCurrentPlan();
         console.log('[plan-selection] Initialization complete');
+        console.log(`[plan-selection] ${SUBSCRIPTION_PLANS.length} subscription plans, ${CREDIT_PLANS.length} credit plans loaded`);
     }
 
     // Run on DOM ready
