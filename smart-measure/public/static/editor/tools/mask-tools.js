@@ -430,20 +430,40 @@
             
             // Verify R2 upload by trying to fetch the image
             if (maskResult.maskUrl) {
+                console.log(`🔍 [mask-tools] ===== R2 VERIFICATION START =====`);
                 console.log(`🔍 [mask-tools] Verifying R2 upload: ${maskResult.maskUrl}`);
+                console.log(`🔍 [mask-tools] Expected R2 key: ${maskResult.r2Key}`);
+                
                 try {
-                    const verifyRes = await fetch(maskResult.maskUrl);
-                    console.log(`🔍 [mask-tools] Verification status: ${verifyRes.status}`);
+                    const verifyRes = await fetch(maskResult.maskUrl, { method: 'HEAD' });
+                    console.log(`🔍 [mask-tools] Verification HTTP status: ${verifyRes.status} ${verifyRes.statusText}`);
+                    console.log(`🔍 [mask-tools] Response headers:`, Object.fromEntries(verifyRes.headers.entries()));
+                    
                     if (verifyRes.ok) {
-                        console.log(`✅ [mask-tools] R2 verification SUCCESS - image is accessible`);
+                        const contentType = verifyRes.headers.get('content-type');
+                        const contentLength = verifyRes.headers.get('content-length');
+                        console.log(`✅ [mask-tools] R2 verification SUCCESS`);
+                        console.log(`📊 [mask-tools] Content-Type: ${contentType}`);
+                        console.log(`📊 [mask-tools] Content-Length: ${contentLength} bytes`);
+                        console.log(`🔍 [mask-tools] ===== R2 VERIFICATION END (SUCCESS) =====`);
                     } else {
-                        console.error(`❌ [mask-tools] R2 verification FAILED - status ${verifyRes.status}`);
-                        throw new Error(`Mask saved but not accessible on R2 (status: ${verifyRes.status})`);
+                        console.error(`❌ [mask-tools] R2 verification FAILED - HTTP ${verifyRes.status}`);
+                        console.log(`🔍 [mask-tools] ===== R2 VERIFICATION END (FAILED) =====`);
+                        throw new Error(`Mask saved to DB but not accessible on R2 (HTTP ${verifyRes.status})`);
                     }
                 } catch (verifyError) {
                     console.error(`❌ [mask-tools] R2 verification ERROR:`, verifyError);
-                    throw new Error(`Mask saved but verification failed: ${verifyError.message}`);
+                    console.error(`❌ [mask-tools] Error details:`, {
+                        name: verifyError.name,
+                        message: verifyError.message,
+                        stack: verifyError.stack
+                    });
+                    console.log(`🔍 [mask-tools] ===== R2 VERIFICATION END (ERROR) =====`);
+                    throw new Error(`Mask saved to DB but verification failed: ${verifyError.message}`);
                 }
+            } else {
+                console.error(`❌ [mask-tools] No maskUrl in API response - cannot verify R2 upload`);
+                throw new Error('API returned success but no maskUrl provided');
             }
             
             // Store mask in memory for later use
@@ -530,10 +550,16 @@
 
             // Switch to adjust tab
             if (window.switchTab) window.switchTab('adjust');
-            window.logger && window.logger.info('Mask save complete');
             
-            // Success notification
-            alert('✅ マスクと背景削除画像をR2に保存しました！');
+            // Final verification message
+            console.log('🎉 [mask-tools] ALL STEPS COMPLETED');
+            console.log('📊 [mask-tools] Mask saved:', maskResult.r2Key);
+            console.log('📊 [mask-tools] Mask URL:', maskResult.maskUrl);
+            console.log('📊 [mask-tools] DB updated:', maskResult.success);
+            window.logger && window.logger.info('✅ Mask save complete');
+            
+            // Success notification with details
+            alert(`✅ マスクと背景削除画像を保存しました！\n\nR2キー: ${maskResult.r2Key}\nマスクURL: ${maskResult.maskUrl}`);
 
         } catch (error) {
             window.logger && window.logger.error('Mask save error:', error);

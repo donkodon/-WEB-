@@ -102,16 +102,26 @@ export class MaskService {
       throw new Error(error)
     }
     
+    let uploadResult
     try {
-      const uploadResult = await bucket.put(r2Key, buffer, {
+      uploadResult = await bucket.put(r2Key, buffer, {
         httpMetadata: { contentType: 'image/png' },
       })
       console.log(`✅ [mask-service] Mask uploaded to R2: ${r2Key}`)
-      console.log(`📊 [mask-service] Upload etag: ${uploadResult?.etag || 'unknown'}`)
-      console.log(`📊 [mask-service] Upload httpEtag: ${uploadResult?.httpEtag || 'unknown'}`)
+      console.log(`📊 [mask-service] Upload result:`, JSON.stringify(uploadResult, null, 2))
       
       if (!uploadResult) {
         throw new Error('Upload result is null or undefined')
+      }
+      
+      // R2 アップロード直後に存在確認
+      console.log(`🔍 [mask-service] Verifying R2 object: ${r2Key}`)
+      const headResult = await bucket.head(r2Key)
+      if (headResult) {
+        console.log(`✅ [mask-service] R2 verification SUCCESS: object exists, size=${headResult.size} bytes`)
+      } else {
+        console.error(`❌ [mask-service] R2 verification FAILED: object not found`)
+        throw new Error('R2 upload reported success but object not found')
       }
     } catch (uploadError) {
       console.error(`❌ [mask-service] R2 upload failed:`, uploadError)
