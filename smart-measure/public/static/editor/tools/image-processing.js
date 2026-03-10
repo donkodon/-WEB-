@@ -104,11 +104,11 @@ document.addEventListener('DOMContentLoaded', function () {
             window.logger && window.logger.debug(`✅ [image-processing] Crop loaded from DB: cropX=${S.cropX}, cropY=${S.cropY}, cropSize=${S.cropSize}`);
         }
 
-        // クロップ枠オーバーレイを初期化して表示
+        // クロップ枠オーバーレイを初期化（デフォルトは非表示）
         if (window.CropOverlay) {
             window.CropOverlay.init();
-            window.CropOverlay.update();
-            window.logger && window.logger.debug('✅ [image-processing] Crop overlay displayed');
+            window.CropOverlay.hide();  // 初期状態は非表示
+            window.logger && window.logger.debug('✅ [image-processing] Crop overlay initialized (hidden by default)');
         }
 
         // マスク画像をロード、または空マスクを生成
@@ -256,6 +256,32 @@ document.addEventListener('DOMContentLoaded', function () {
             S.currentTool       = 'eraser';
             S.maskMode          = false;
             canvas.style.cursor = 'default';
+        });
+    }
+
+    // クロップ枠表示/非表示トグルボタン
+    const btnToggleCropFrame = document.getElementById('btn-toggle-crop-frame');
+    const cropFrameToggleText = document.getElementById('crop-frame-toggle-text');
+    let cropFrameVisible = false;  // 初期状態は非表示
+
+    if (btnToggleCropFrame) {
+        btnToggleCropFrame.addEventListener('click', () => {
+            cropFrameVisible = !cropFrameVisible;
+            
+            if (cropFrameVisible) {
+                // クロップ枠を表示
+                window.CropOverlay && window.CropOverlay.show();
+                window.CropOverlay && window.CropOverlay.update();
+                cropFrameToggleText.textContent = 'クロップ枠を非表示';
+                btnToggleCropFrame.querySelector('i').className = 'fas fa-eye-slash mr-2';
+                window.logger && window.logger.debug('✅ [image-processing] Crop frame shown');
+            } else {
+                // クロップ枠を非表示
+                window.CropOverlay && window.CropOverlay.hide();
+                cropFrameToggleText.textContent = 'クロップ枠を表示';
+                btnToggleCropFrame.querySelector('i').className = 'fas fa-eye mr-2';
+                window.logger && window.logger.debug('✅ [image-processing] Crop frame hidden');
+            }
         });
     }
 

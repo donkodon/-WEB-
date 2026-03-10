@@ -269,6 +269,13 @@ editor.get('/edit/:id', async (c) => {
                 </div>
 
                 <div class="mb-4">
+                     <button id="btn-toggle-crop-frame" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2 rounded-lg text-xs flex items-center justify-center transition-colors">
+                         <i class="fas fa-eye mr-2"></i>
+                         <span id="crop-frame-toggle-text">クロップ枠を表示</span>
+                     </button>
+                </div>
+
+                <div class="mb-4">
                     <div class="flex justify-between text-[10px] font-bold text-gray-500 mb-1">
                         <span><i class="fas fa-ruler-horizontal mr-1"></i> ブラシサイズ</span>
                         <span id="val-size" class="text-blue-600">24px</span>
