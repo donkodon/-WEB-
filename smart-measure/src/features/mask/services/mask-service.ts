@@ -76,7 +76,7 @@ export class MaskService {
       filenamePart
     )
 
-    const r2Key = `${companyId}/${sku}/${maskBasename}.png`
+    const r2Key = `products/${companyId}/${sku}/${maskBasename}.png`
     logger.debug(`🎭 Saving mask: company=${companyId}, sku=${sku}`)
     logger.debug(`📦 R2 key: ${r2Key}`)
 
