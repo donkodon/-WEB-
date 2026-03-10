@@ -113,8 +113,12 @@
 
     // ── オーバーレイcanvasを作成 ────────────────────────────────────
     function buildOverlay() {
-        const container = document.getElementById('canvas-container');
-        if (!container) return;
+        const mainCanvas = window.EditorState.canvas;
+        if (!mainCanvas) return;
+
+        // 画像キャンバスの親divを取得（相対位置の基準）
+        const canvasWrapper = mainCanvas.parentElement;
+        if (!canvasWrapper) return;
 
         overlay = document.createElement('canvas');
         overlay.id = 'free-crop-overlay';
@@ -123,9 +127,9 @@
         overlay.style.left = '0';
         overlay.style.cursor = 'crosshair';
         overlay.style.zIndex = '100';
+        overlay.style.pointerEvents = 'auto';
 
-        // canvasと同じサイズに設定
-        const mainCanvas = window.EditorState.canvas;
+        // 画像キャンバスと完全に同じサイズに設定
         overlay.width = mainCanvas.offsetWidth;
         overlay.height = mainCanvas.offsetHeight;
         overlay.style.width = mainCanvas.offsetWidth + 'px';
@@ -139,7 +143,12 @@
         overlay.addEventListener('mouseup', onMouseUp);
         overlay.addEventListener('mouseleave', onMouseUp);
 
-        container.appendChild(overlay);
+        // 画像キャンバスと同じ親要素（wrapper div）に追加
+        canvasWrapper.style.position = 'relative'; // 相対位置の基準にする
+        canvasWrapper.appendChild(overlay);
+        
+        window.logger && window.logger.info(`✅ [free-crop] Overlay created: ${overlay.width}×${overlay.height}px`);
+        
         renderOverlay();
     }
 
