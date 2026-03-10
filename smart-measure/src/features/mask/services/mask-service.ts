@@ -77,35 +77,58 @@ export class MaskService {
     )
 
     const r2Key = `products/${companyId}/${sku}/${maskBasename}.png`
-    logger.debug(`🎭 Saving mask: company=${companyId}, sku=${sku}`)
-    logger.debug(`📦 R2 key: ${r2Key}`)
+    console.log(`🎭 [mask-service] Saving mask: company=${companyId}, sku=${sku}`)
+    console.log(`📦 [mask-service] R2 key: ${r2Key}`)
+    console.log(`📦 [mask-service] Mask basename: ${maskBasename}`)
 
     // ② base64 → バイナリ変換
+    console.log(`🔄 [mask-service] Decoding base64 data...`)
     const buffer = this.decodeBase64(maskDataUrl)
-    logger.debug(`📦 Buffer size: ${buffer.length} bytes`)
+    console.log(`📦 [mask-service] Buffer size: ${buffer.length} bytes`)
+    
+    if (buffer.length === 0) {
+      throw new Error('Decoded buffer is empty')
+    }
 
     // ③ R2 に保存
-    logger.info(`🚀 Starting R2 upload: ${r2Key}`)
-    logger.debug(`🔍 Bucket object type: ${typeof bucket}`)
-    logger.debug(`🔍 Bucket.put exists: ${typeof bucket.put === 'function'}`)
+    console.log(`🚀 [mask-service] Starting R2 upload: ${r2Key}`)
+    console.log(`🔍 [mask-service] Bucket exists: ${!!bucket}`)
+    console.log(`🔍 [mask-service] Bucket.put exists: ${typeof bucket?.put === 'function'}`)
+    console.log(`🔍 [mask-service] Buffer size: ${buffer.length} bytes`)
+    
+    if (!bucket) {
+      const error = 'R2 bucket not available'
+      console.error(`❌ [mask-service] ${error}`)
+      throw new Error(error)
+    }
     
     try {
       const uploadResult = await bucket.put(r2Key, buffer, {
         httpMetadata: { contentType: 'image/png' },
       })
-      logger.info(`✅ Mask uploaded to R2: ${r2Key}, etag=${uploadResult?.etag || 'unknown'}`)
-      logger.debug(`📊 Upload result: ${JSON.stringify(uploadResult)}`)
+      console.log(`✅ [mask-service] Mask uploaded to R2: ${r2Key}`)
+      console.log(`📊 [mask-service] Upload etag: ${uploadResult?.etag || 'unknown'}`)
+      console.log(`📊 [mask-service] Upload httpEtag: ${uploadResult?.httpEtag || 'unknown'}`)
+      
+      if (!uploadResult) {
+        throw new Error('Upload result is null or undefined')
+      }
     } catch (uploadError) {
-      logger.error(`❌ R2 upload failed: ${uploadError}`)
-      logger.error(`❌ Upload error details:`, uploadError)
+      console.error(`❌ [mask-service] R2 upload failed:`, uploadError)
+      console.error(`❌ [mask-service] Error type: ${typeof uploadError}`)
+      console.error(`❌ [mask-service] Error message: ${uploadError instanceof Error ? uploadError.message : String(uploadError)}`)
+      if (uploadError instanceof Error && uploadError.stack) {
+        console.error(`❌ [mask-service] Stack trace:`, uploadError.stack)
+      }
       throw new Error(`R2 upload failed: ${uploadError instanceof Error ? uploadError.message : String(uploadError)}`)
     }
 
     // ④ DB 更新
     const maskUrl = `${r2PublicUrl}/${r2Key}`
-    logger.info(`🗄️ Updating DB: sku=${sku}, company=${companyId}, url=${maskUrl}`)
+    console.log(`🗄️ [mask-service] Updating DB: sku=${sku}, company=${companyId}`)
+    console.log(`🔗 [mask-service] Mask URL: ${maskUrl}`)
     await this.maskRepo.updateMaskUrl(db, sku, companyId, maskUrl)
-    logger.info(`✅ DB updated: mask_image_url_r2=${maskUrl}`)
+    console.log(`✅ [mask-service] DB updated successfully`)
 
     return { 
       maskUrl, 

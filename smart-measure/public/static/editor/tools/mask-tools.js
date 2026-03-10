@@ -398,14 +398,20 @@
                 ? window.authenticatedFetch
                 : fetch;
             
+            console.log(`🚀 [mask-tools] Sending mask to API: sku=${sku}, filenamePart=${filenamePart}`);
+            console.log(`📦 [mask-tools] Mask data size: ${maskDataUrl.length} characters`);
+            
             const maskRes = await fetchFn(`/api/save-mask/${sku}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ maskDataUrl, filenamePart })
             });
             
+            console.log(`📡 [mask-tools] API response status: ${maskRes.status} ${maskRes.statusText}`);
+            
             if (!maskRes.ok) {
                 const errorText = await maskRes.text();
+                console.error(`❌ [mask-tools] API error response:`, errorText);
                 let errorData;
                 try {
                     errorData = JSON.parse(errorText);
@@ -413,12 +419,32 @@
                     errorData = { error: errorText || 'Unknown error' };
                 }
                 const errorMsg = errorData.details || errorData.error || `Mask save failed (${maskRes.status})`;
-                window.logger && window.logger.error(`Mask save failed:`, errorMsg);
+                console.error(`❌ [mask-tools] Error message:`, errorMsg);
                 throw new Error(errorMsg);
             }
             
             const maskResult = await maskRes.json();
-            window.logger && window.logger.info(`Mask saved: ${maskResult.r2Key}`);
+            console.log(`✅ [mask-tools] API response:`, maskResult);
+            console.log(`✅ [mask-tools] Mask saved to R2: ${maskResult.r2Key}`);
+            console.log(`✅ [mask-tools] Mask URL: ${maskResult.maskUrl}`);
+            
+            // Verify R2 upload by trying to fetch the image
+            if (maskResult.maskUrl) {
+                console.log(`🔍 [mask-tools] Verifying R2 upload: ${maskResult.maskUrl}`);
+                try {
+                    const verifyRes = await fetch(maskResult.maskUrl);
+                    console.log(`🔍 [mask-tools] Verification status: ${verifyRes.status}`);
+                    if (verifyRes.ok) {
+                        console.log(`✅ [mask-tools] R2 verification SUCCESS - image is accessible`);
+                    } else {
+                        console.error(`❌ [mask-tools] R2 verification FAILED - status ${verifyRes.status}`);
+                        throw new Error(`Mask saved but not accessible on R2 (status: ${verifyRes.status})`);
+                    }
+                } catch (verifyError) {
+                    console.error(`❌ [mask-tools] R2 verification ERROR:`, verifyError);
+                    throw new Error(`Mask saved but verification failed: ${verifyError.message}`);
+                }
+            }
             
             // Store mask in memory for later use
             S.pendingMaskDataUrl = maskDataUrl;
