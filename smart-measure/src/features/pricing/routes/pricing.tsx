@@ -20,9 +20,9 @@ pricing.get('/pricing', (c) => {
                     <button id="tab-subscription" class="pricing-tab active px-8 py-3 rounded-md font-bold text-sm transition-all bg-white shadow-sm">
                         サブスクリプション
                     </button>
-                    <button id="tab-payasyougo" class="pricing-tab px-8 py-3 rounded-md font-bold text-sm transition-all text-gray-600">
+                    <a href="/pricing/credits" id="tab-payasyougo" class="pricing-tab px-8 py-3 rounded-md font-bold text-sm transition-all text-gray-600 hover:text-gray-900 cursor-pointer inline-block">
                         都度払い
-                    </button>
+                    </a>
                 </div>
             </div>
         </div>
@@ -497,10 +497,7 @@ pricing.get('/pricing', (c) => {
                 }
                 
                 tabSubscription.addEventListener('click', () => switchTab('subscription'));
-                // Redirect to dedicated credits page
-                tabPayAsYouGo.addEventListener('click', () => {
-                    window.location.href = '/pricing/credits';
-                });
+                // Note: tab-payasyougo is now an <a> tag with href, no JavaScript needed
             });
         `}</script>
 
