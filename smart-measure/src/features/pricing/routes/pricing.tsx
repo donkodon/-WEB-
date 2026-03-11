@@ -497,7 +497,10 @@ pricing.get('/pricing', (c) => {
                 }
                 
                 tabSubscription.addEventListener('click', () => switchTab('subscription'));
-                tabPayAsYouGo.addEventListener('click', () => switchTab('payasyougo'));
+                // Redirect to dedicated credits page
+                tabPayAsYouGo.addEventListener('click', () => {
+                    window.location.href = '/pricing/credits';
+                });
             });
         `}</script>
 

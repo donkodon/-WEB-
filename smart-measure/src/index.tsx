@@ -10,6 +10,7 @@ import dashboard from './features/dashboard/routes/dashboard'
 import editor from './features/image-editor/routes/editor'
 import settings from './features/dashboard/routes/settings'
 import pricing from './features/pricing/routes/pricing'
+import credits from './features/pricing/routes/credits'
 import landmarks from './features/measurement/routes/landmarks'
 import maskEditor from './features/mask/routes/mask-editor'
 import maskApi from './features/mask/api/mask'
@@ -37,6 +38,7 @@ app.route('/', dashboard)
 app.route('/', editor)
 app.route('/', settings)
 app.route('/', pricing)
+app.route('/', credits)
 app.route('/', landmarks)
 app.route('/', maskEditor)
 
