@@ -8,14 +8,27 @@ pricing.get('/pricing', (c) => {
   return c.render(
     <Layout active="pricing" title="料金プラン">
         {/* Header */}
-        <div class="text-center mb-12">
+        <div class="text-center mb-8">
             <h1 class="text-4xl font-bold text-gray-900 mb-4">シンプルで透明な料金体系</h1>
-            <p class="text-lg text-gray-600 max-w-3xl mx-auto">
+            <p class="text-lg text-gray-600 max-w-3xl mx-auto mb-8">
                 あなたにぴったりなプランを見つけよう。いつでもアップグレード、ダウングレード可能です。
             </p>
+            
+            {/* Tab Switcher */}
+            <div class="flex items-center justify-center mb-8">
+                <div class="inline-flex bg-gray-100 rounded-lg p-1">
+                    <button id="tab-subscription" class="pricing-tab active px-8 py-3 rounded-md font-bold text-sm transition-all bg-white shadow-sm">
+                        サブスクリプション
+                    </button>
+                    <button id="tab-payasyougo" class="pricing-tab px-8 py-3 rounded-md font-bold text-sm transition-all text-gray-600">
+                        都度払い
+                    </button>
+                </div>
+            </div>
         </div>
 
-        {/* Pricing Cards */}
+        {/* Subscription Pricing Cards */}
+        <div id="subscription-plans" class="pricing-content">
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
             {/* Free Plan */}
             <div class="bg-white border-2 border-gray-200 rounded-2xl p-6 hover:shadow-xl transition-all">
@@ -149,6 +162,157 @@ pricing.get('/pricing', (c) => {
                     </li>
                 </ul>
             </div>
+        </div>
+        </div>
+
+        {/* Pay-as-you-go Pricing Cards */}
+        <div id="payasyougo-plans" class="pricing-content hidden">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
+            {/* Pay-as-you-go Plan 1 */}
+            <div class="bg-white border-2 border-gray-200 rounded-2xl p-6 hover:shadow-xl transition-all">
+                <div class="text-center mb-6">
+                    <h3 class="text-lg font-bold text-gray-700 mb-2">スターター</h3>
+                    <div class="flex items-baseline justify-center">
+                        <span class="text-4xl font-bold text-gray-900">$15</span>
+                    </div>
+                    <div class="text-sm text-gray-500 mt-1">100クレジット</div>
+                    <div class="mt-4">
+                        <button class="w-full bg-gray-100 text-gray-700 py-3 rounded-lg font-bold hover:bg-gray-200 transition-all">
+                            購入する
+                        </button>
+                    </div>
+                </div>
+                <ul class="space-y-3 text-sm">
+                    <li class="flex items-start">
+                        <i class="fas fa-check text-blue-500 mr-2 mt-0.5"></i>
+                        <span class="text-gray-700">100クレジット</span>
+                    </li>
+                    <li class="flex items-start">
+                        <i class="fas fa-check text-blue-500 mr-2 mt-0.5"></i>
+                        <span class="text-gray-700">有効期限なし</span>
+                    </li>
+                    <li class="flex items-start">
+                        <i class="fas fa-check text-blue-500 mr-2 mt-0.5"></i>
+                        <span class="text-gray-700">HDダウンロード</span>
+                    </li>
+                </ul>
+            </div>
+
+            {/* Pay-as-you-go Plan 2 */}
+            <div class="bg-white border-2 border-gray-200 rounded-2xl p-6 hover:shadow-xl transition-all">
+                <div class="text-center mb-6">
+                    <h3 class="text-lg font-bold text-gray-700 mb-2">エッセンシャル</h3>
+                    <div class="flex items-baseline justify-center">
+                        <span class="text-4xl font-bold text-gray-900">$35</span>
+                    </div>
+                    <div class="text-sm text-gray-500 mt-1">300クレジット</div>
+                    <div class="mt-4">
+                        <button class="w-full bg-blue-50 text-blue-600 py-3 rounded-lg font-bold hover:bg-blue-100 transition-all">
+                            購入する
+                        </button>
+                    </div>
+                </div>
+                <ul class="space-y-3 text-sm">
+                    <li class="flex items-start">
+                        <i class="fas fa-check text-blue-500 mr-2 mt-0.5"></i>
+                        <span class="text-gray-700">300クレジット</span>
+                    </li>
+                    <li class="flex items-start">
+                        <i class="fas fa-check text-blue-500 mr-2 mt-0.5"></i>
+                        <span class="text-gray-700">有効期限なし</span>
+                    </li>
+                    <li class="flex items-start">
+                        <i class="fas fa-check text-blue-500 mr-2 mt-0.5"></i>
+                        <span class="text-gray-700">HDダウンロード</span>
+                    </li>
+                    <li class="flex items-start">
+                        <i class="fas fa-check text-blue-500 mr-2 mt-0.5"></i>
+                        <span class="text-gray-700">商用利用可能</span>
+                    </li>
+                </ul>
+            </div>
+
+            {/* Pay-as-you-go Plan 3 - Popular */}
+            <div class="bg-white border-4 border-blue-500 rounded-2xl p-6 shadow-2xl relative transform scale-105">
+                <div class="absolute -top-4 left-1/2 transform -translate-x-1/2">
+                    <span class="bg-blue-500 text-white text-xs font-bold px-4 py-1 rounded-full">
+                        最も人気
+                    </span>
+                </div>
+                <div class="text-center mb-6">
+                    <h3 class="text-lg font-bold text-blue-600 mb-2">プロフェッショナル</h3>
+                    <div class="flex items-baseline justify-center">
+                        <span class="text-4xl font-bold text-gray-900">$75</span>
+                    </div>
+                    <div class="text-sm text-gray-500 mt-1">750クレジット</div>
+                    <div class="mt-4">
+                        <button class="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition-all shadow-lg">
+                            購入する
+                        </button>
+                    </div>
+                </div>
+                <ul class="space-y-3 text-sm">
+                    <li class="flex items-start">
+                        <i class="fas fa-check text-blue-500 mr-2 mt-0.5"></i>
+                        <span class="text-gray-700">750クレジット</span>
+                    </li>
+                    <li class="flex items-start">
+                        <i class="fas fa-check text-blue-500 mr-2 mt-0.5"></i>
+                        <span class="text-gray-700">有効期限なし</span>
+                    </li>
+                    <li class="flex items-start">
+                        <i class="fas fa-check text-blue-500 mr-2 mt-0.5"></i>
+                        <span class="text-gray-700">HDダウンロード</span>
+                    </li>
+                    <li class="flex items-start">
+                        <i class="fas fa-check text-blue-500 mr-2 mt-0.5"></i>
+                        <span class="text-gray-700">商用利用可能</span>
+                    </li>
+                    <li class="flex items-start">
+                        <i class="fas fa-check text-blue-500 mr-2 mt-0.5"></i>
+                        <span class="text-gray-700">APIアクセス</span>
+                    </li>
+                </ul>
+            </div>
+
+            {/* Pay-as-you-go Plan 4 */}
+            <div class="bg-white border-2 border-gray-200 rounded-2xl p-6 hover:shadow-xl transition-all">
+                <div class="text-center mb-6">
+                    <h3 class="text-lg font-bold text-gray-700 mb-2">エンタープライズ</h3>
+                    <div class="flex items-baseline justify-center">
+                        <span class="text-4xl font-bold text-gray-900">$150</span>
+                    </div>
+                    <div class="text-sm text-gray-500 mt-1">1,800クレジット</div>
+                    <div class="mt-4">
+                        <button class="w-full bg-gray-100 text-gray-700 py-3 rounded-lg font-bold hover:bg-gray-200 transition-all">
+                            購入する
+                        </button>
+                    </div>
+                </div>
+                <ul class="space-y-3 text-sm">
+                    <li class="flex items-start">
+                        <i class="fas fa-check text-blue-500 mr-2 mt-0.5"></i>
+                        <span class="text-gray-700">1,800クレジット</span>
+                    </li>
+                    <li class="flex items-start">
+                        <i class="fas fa-check text-blue-500 mr-2 mt-0.5"></i>
+                        <span class="text-gray-700">有効期限なし</span>
+                    </li>
+                    <li class="flex items-start">
+                        <i class="fas fa-check text-blue-500 mr-2 mt-0.5"></i>
+                        <span class="text-gray-700">HDダウンロード</span>
+                    </li>
+                    <li class="flex items-start">
+                        <i class="fas fa-check text-blue-500 mr-2 mt-0.5"></i>
+                        <span class="text-gray-700">チーム機能</span>
+                    </li>
+                    <li class="flex items-start">
+                        <i class="fas fa-check text-blue-500 mr-2 mt-0.5"></i>
+                        <span class="text-gray-700">優先サポート</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
         </div>
 
         {/* Bulk Plan Section */}
@@ -301,6 +465,58 @@ pricing.get('/pricing', (c) => {
                 </div>
             </div>
         </div>
+
+        {/* Tab Switching JavaScript */}
+        <script>{`
+            document.addEventListener('DOMContentLoaded', function() {
+                const tabSubscription = document.getElementById('tab-subscription');
+                const tabPayAsYouGo = document.getElementById('tab-payasyougo');
+                const subscriptionPlans = document.getElementById('subscription-plans');
+                const payAsYouGoPlans = document.getElementById('payasyougo-plans');
+                
+                function switchTab(tab) {
+                    if (tab === 'subscription') {
+                        // Subscription tab active
+                        tabSubscription.classList.add('active', 'bg-white', 'shadow-sm', 'text-gray-900');
+                        tabSubscription.classList.remove('text-gray-600');
+                        tabPayAsYouGo.classList.remove('active', 'bg-white', 'shadow-sm', 'text-gray-900');
+                        tabPayAsYouGo.classList.add('text-gray-600');
+                        
+                        subscriptionPlans.classList.remove('hidden');
+                        payAsYouGoPlans.classList.add('hidden');
+                    } else {
+                        // Pay-as-you-go tab active
+                        tabPayAsYouGo.classList.add('active', 'bg-white', 'shadow-sm', 'text-gray-900');
+                        tabPayAsYouGo.classList.remove('text-gray-600');
+                        tabSubscription.classList.remove('active', 'bg-white', 'shadow-sm', 'text-gray-900');
+                        tabSubscription.classList.add('text-gray-600');
+                        
+                        payAsYouGoPlans.classList.remove('hidden');
+                        subscriptionPlans.classList.add('hidden');
+                    }
+                }
+                
+                tabSubscription.addEventListener('click', () => switchTab('subscription'));
+                tabPayAsYouGo.addEventListener('click', () => switchTab('payasyougo'));
+            });
+        `}</script>
+
+        {/* CSS for Tab Styling */}
+        <style>{`
+            .pricing-tab {
+                cursor: pointer;
+            }
+            .pricing-tab.active {
+                font-weight: 600;
+            }
+            .pricing-content {
+                animation: fadeIn 0.3s ease-in;
+            }
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(10px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+        `}</style>
     </Layout>
   )
 })
