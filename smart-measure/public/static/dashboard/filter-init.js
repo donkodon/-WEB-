@@ -1,11 +1,66 @@
 // Dashboard Filter Bar Initialization
 document.addEventListener('DOMContentLoaded', function() {
-    // Initialize date pickers
-    flatpickr(".date-picker", {
+    // Initialize date pickers with change event
+    const datePickers = document.querySelectorAll(".date-picker");
+    const startDatePicker = datePickers[0];
+    const endDatePicker = datePickers[1];
+    
+    flatpickr(startDatePicker, {
         locale: "ja",
         dateFormat: "Y/m/d",
-        allowInput: true
+        allowInput: true,
+        onChange: function(selectedDates, dateStr, instance) {
+            window.logger.debug('📅 Start date changed:', dateStr);
+            applyDateFilter();
+        }
     });
+    
+    flatpickr(endDatePicker, {
+        locale: "ja",
+        dateFormat: "Y/m/d",
+        allowInput: true,
+        onChange: function(selectedDates, dateStr, instance) {
+            window.logger.debug('📅 End date changed:', dateStr);
+            applyDateFilter();
+        }
+    });
+    
+    // Apply date filter function
+    function applyDateFilter() {
+        const startDate = startDatePicker.value;
+        const endDate = endDatePicker.value;
+        
+        if (!startDate && !endDate) {
+            window.logger.debug('⏭️ No date filter, skipping');
+            return;
+        }
+        
+        window.logger.debug('🔍 Applying date filter:', { startDate, endDate });
+        
+        // Convert YYYY/MM/DD to YYYY-MM-DD for API
+        const formatDateForApi = (dateStr) => {
+            if (!dateStr) return null;
+            return dateStr.replace(/\//g, '-');
+        };
+        
+        const params = new URLSearchParams(window.location.search);
+        params.set('page', '1'); // Reset to first page
+        
+        if (startDate) {
+            params.set('startDate', formatDateForApi(startDate));
+        } else {
+            params.delete('startDate');
+        }
+        
+        if (endDate) {
+            params.set('endDate', formatDateForApi(endDate));
+        } else {
+            params.delete('endDate');
+        }
+        
+        // Reload page with new filters
+        window.location.href = '/dashboard?' + params.toString();
+    }
     
     // Setup SKU checkbox event listeners
     window.logger.debug('🔘 Setting up SKU checkbox listeners...');
@@ -34,4 +89,19 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     window.logger.debug('✅ SKU and image checkbox listeners set up');
+    
+    // Restore date filters from URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlStartDate = urlParams.get('startDate');
+    const urlEndDate = urlParams.get('endDate');
+    
+    if (urlStartDate) {
+        startDatePicker.value = urlStartDate.replace(/-/g, '/');
+        window.logger.debug('📅 Restored start date from URL:', startDatePicker.value);
+    }
+    
+    if (urlEndDate) {
+        endDatePicker.value = urlEndDate.replace(/-/g, '/');
+        window.logger.debug('📅 Restored end date from URL:', endDatePicker.value);
+    }
 });

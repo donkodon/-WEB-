@@ -138,16 +138,33 @@ function buildSkuMap(
 export class DashboardRepository implements IDashboardRepository {
   async fetchDashboardProducts(
     db: D1Database, companyId: string, page: number, perPage: number, r2PublicUrl: string,
-    baseUrl?: string
+    baseUrl?: string,
+    startDate?: string | null,
+    endDate?: string | null
   ): Promise<DashboardDataResult> {
     // Default to production URL if not provided
     const finalBaseUrl = baseUrl || 'https://smart-measure.pages.dev'
-    logger.debug(`📊 Fetching dashboard: company_id=${companyId}, page=${page}, baseUrl=${finalBaseUrl}`)
+    logger.debug(`📊 Fetching dashboard: company_id=${companyId}, page=${page}, baseUrl=${finalBaseUrl}, startDate=${startDate}, endDate=${endDate}`)
+
+    // Build date filter conditions
+    let dateFilter = ''
+    const bindParams: (string | number)[] = [companyId]
+    
+    if (startDate && endDate) {
+      dateFilter = ' AND pi.photographed_at >= ? AND pi.photographed_at <= ?'
+      bindParams.push(startDate, endDate)
+    } else if (startDate) {
+      dateFilter = ' AND pi.photographed_at >= ?'
+      bindParams.push(startDate)
+    } else if (endDate) {
+      dateFilter = ' AND pi.photographed_at <= ?'
+      bindParams.push(endDate)
+    }
 
     const countResult = await db.prepare(`
       SELECT COUNT(DISTINCT pi.sku) as total FROM product_items pi
-      WHERE pi.company_id = ? AND pi.image_urls IS NOT NULL AND pi.image_urls != '[]'
-    `).bind(companyId).first<{ total: number }>()
+      WHERE pi.company_id = ? AND pi.image_urls IS NOT NULL AND pi.image_urls != '[]'${dateFilter}
+    `).bind(...bindParams).first<{ total: number }>()
 
     const total = countResult?.total || 0
     const totalPages = Math.ceil(total / perPage)
@@ -158,10 +175,12 @@ export class DashboardRepository implements IDashboardRepository {
 
     const offset = (page - 1) * perPage
     const paginatedSkus = await db.prepare(`
-      SELECT DISTINCT pi.sku FROM product_items pi
-      WHERE pi.company_id = ? AND pi.image_urls IS NOT NULL AND pi.image_urls != '[]'
-      ORDER BY pi.sku LIMIT ? OFFSET ?
-    `).bind(companyId, perPage, offset).all<{ sku: string }>()
+      SELECT DISTINCT pi.sku 
+      FROM product_items pi
+      WHERE pi.company_id = ? AND pi.image_urls IS NOT NULL AND pi.image_urls != '[]'${dateFilter}
+      ORDER BY pi.photographed_at DESC, pi.sku
+      LIMIT ? OFFSET ?
+    `).bind(...bindParams, perPage, offset).all<{ sku: string }>()
 
     const skuList = paginatedSkus.results.map((r: { sku: string }) => r.sku)
     if (skuList.length === 0) {

@@ -40,10 +40,12 @@ export class DashboardService {
     page: number,
     perPage: number,
     r2PublicUrl: string,
-    baseUrl?: string
+    baseUrl?: string,
+    startDate?: string | null,
+    endDate?: string | null
   ): Promise<DashboardDataResult> {
-    logger.debug(`📊 DashboardService.getDashboardProducts: company=${companyId}, page=${page}`)
-    return this.dashboardRepo.fetchDashboardProducts(db, companyId, page, perPage, r2PublicUrl, baseUrl)
+    logger.debug(`📊 DashboardService.getDashboardProducts: company=${companyId}, page=${page}, startDate=${startDate}, endDate=${endDate}`)
+    return this.dashboardRepo.fetchDashboardProducts(db, companyId, page, perPage, r2PublicUrl, baseUrl, startDate, endDate)
   }
 
   /**

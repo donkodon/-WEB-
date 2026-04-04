@@ -32,13 +32,15 @@ productsRouter.get('/api/dashboard/products', async (c) => {
 
     page = parseInt(c.req.query('page') || '1', 10)
     perPage = parseInt(c.req.query('perPage') || '12', 10)
+    const startDate = c.req.query('startDate') || null
+    const endDate = c.req.query('endDate') || null
 
     const validationError = dashboardService.validatePagination(page, perPage)
     if (validationError) {
       return c.json({ success: false, error: validationError }, 400)
     }
 
-    logger.debug(`📊 API Dashboard request: company_id=${companyId}, page=${page}, perPage=${perPage}`)
+    logger.debug(`📊 API Dashboard request: company_id=${companyId}, page=${page}, perPage=${perPage}, startDate=${startDate}, endDate=${endDate}`)
 
     // Get base URL from request headers
     const protocol = c.req.header('x-forwarded-proto') || 'https'
@@ -47,7 +49,16 @@ productsRouter.get('/api/dashboard/products', async (c) => {
     logger.debug(`🌐 Base URL: ${baseUrl}`)
 
     const r2PublicUrl = getR2PublicUrl(c.env)
-    const result = await dashboardService.getDashboardProducts(c.env.DB, companyId, page, perPage, r2PublicUrl, baseUrl)
+    const result = await dashboardService.getDashboardProducts(
+      c.env.DB, 
+      companyId, 
+      page, 
+      perPage, 
+      r2PublicUrl, 
+      baseUrl,
+      startDate,
+      endDate
+    )
 
     return c.json({ success: true, ...result })
 
