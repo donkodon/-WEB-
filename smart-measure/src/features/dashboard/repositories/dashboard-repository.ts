@@ -151,13 +151,16 @@ export class DashboardRepository implements IDashboardRepository {
     const bindParams: (string | number)[] = [companyId]
     
     if (startDate && endDate) {
-      dateFilter = ' AND pi.photographed_at >= ? AND pi.photographed_at <= ?'
+      // Date range filter: startDate 00:00:00 to endDate 23:59:59
+      dateFilter = ' AND DATE(pi.photographed_at) >= DATE(?) AND DATE(pi.photographed_at) <= DATE(?)'
       bindParams.push(startDate, endDate)
     } else if (startDate) {
-      dateFilter = ' AND pi.photographed_at >= ?'
+      // Single date filter: exact date match (00:00:00 to 23:59:59)
+      dateFilter = ' AND DATE(pi.photographed_at) = DATE(?)'
       bindParams.push(startDate)
     } else if (endDate) {
-      dateFilter = ' AND pi.photographed_at <= ?'
+      // End date only: up to end date
+      dateFilter = ' AND DATE(pi.photographed_at) <= DATE(?)'
       bindParams.push(endDate)
     }
 

@@ -46,16 +46,23 @@ document.addEventListener('DOMContentLoaded', function() {
         const params = new URLSearchParams(window.location.search);
         params.set('page', '1'); // Reset to first page
         
-        if (startDate) {
+        // If only start date is selected, filter for that single day
+        if (startDate && !endDate) {
+            window.logger.debug('📅 Single date filter: showing only', startDate);
             params.set('startDate', formatDateForApi(startDate));
-        } else {
-            params.delete('startDate');
-        }
-        
-        if (endDate) {
-            params.set('endDate', formatDateForApi(endDate));
-        } else {
             params.delete('endDate');
+        } 
+        // If both dates are selected, use date range
+        else if (startDate && endDate) {
+            window.logger.debug('📅 Date range filter:', startDate, '~', endDate);
+            params.set('startDate', formatDateForApi(startDate));
+            params.set('endDate', formatDateForApi(endDate));
+        }
+        // If only end date is selected
+        else if (!startDate && endDate) {
+            window.logger.debug('📅 End date only filter: up to', endDate);
+            params.delete('startDate');
+            params.set('endDate', formatDateForApi(endDate));
         }
         
         // Reload page with new filters
