@@ -9,12 +9,8 @@ import { logger } from '../../../shared/helpers/logger'
 
 const csv = new Hono<AppEnv>()
 
-// Apply Firebase authentication to all CSV endpoints
-// IMPORTANT: Match specific CSV/export routes, not all routes
-csv.use('/api/import-csv', requireFirebaseAuth)
-csv.use('/api/export-csv', requireFirebaseAuth)
-csv.use('/api/export-product-items', requireFirebaseAuth)
-csv.use('/api/download-product-data/*', requireFirebaseAuth)
+// Apply Firebase authentication to CSV endpoints
+// Note: Auth is applied per-route below instead of using csv.use()
 
 // Helper function to escape CSV values
 function escapeCSV(value: string): string {
@@ -577,7 +573,7 @@ csv.post('/api/export-selected-csv', async (c) => {
 
 // 新しいCSV出力API: product_itemsテーブルから直接データ取得
   // eslint-disable-next-line max-lines-per-function
-csv.post('/api/export-product-items', async (c) => {
+csv.post('/api/export-product-items', requireFirebaseAuth, async (c) => {
     try {
         const body = await c.req.json();
         const imageIds = body.imageIds as string[];
@@ -726,7 +722,7 @@ csv.post('/api/export-product-items', async (c) => {
 
 
   // eslint-disable-next-line max-lines-per-function
-csv.get('/api/download-product-data/:imageId', async (c) => {
+csv.get('/api/download-product-data/:imageId', requireFirebaseAuth, async (c) => {
     try {
         const imageId = c.req.param('imageId');
         
