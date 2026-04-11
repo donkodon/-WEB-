@@ -144,7 +144,7 @@ window.updateSkuCheckbox = function(productId) {
             
             for (const imageId of imageIds) {
                 try {
-                    const response = await fetch('/api/download-image/' + imageId);
+                    const response = await window.authenticatedFetch('/api/download-image/' + imageId);
                     if (!response.ok) {
                         window.logger.error('Failed to download image:', imageId);
                         continue;
@@ -292,7 +292,7 @@ window.updateSkuCheckbox = function(productId) {
             for (const imageId of imageIds) {
                 try {
                     window.logger.debug('🔄 Processing imageId:', imageId);
-                    const response = await fetch('/api/download-product-data/' + imageId);
+                    const response = await window.authenticatedFetch('/api/download-product-data/' + imageId);
                     if (!response.ok) {
                         window.logger.error('Failed to download product image:', imageId);
                         imageSkipCount++;
@@ -407,7 +407,7 @@ window.updateSkuCheckbox = function(productId) {
             btnDownloadProcessed.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>CSV生成中...';
             
             try {
-                const csvResponse = await fetch('/api/export-product-items', {
+                const csvResponse = await window.authenticatedFetch('/api/export-product-items', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
