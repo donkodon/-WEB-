@@ -10,7 +10,11 @@ import { logger } from '../../../shared/helpers/logger'
 const csv = new Hono<AppEnv>()
 
 // Apply Firebase authentication to all CSV endpoints
-csv.use('*', requireFirebaseAuth)
+// IMPORTANT: Match specific CSV/export routes, not all routes
+csv.use('/api/import-csv', requireFirebaseAuth)
+csv.use('/api/export-csv', requireFirebaseAuth)
+csv.use('/api/export-product-items', requireFirebaseAuth)
+csv.use('/api/download-product-data/*', requireFirebaseAuth)
 
 // Helper function to escape CSV values
 function escapeCSV(value: string): string {
