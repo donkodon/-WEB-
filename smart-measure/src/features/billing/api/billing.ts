@@ -11,7 +11,8 @@ import { logError, createSafeErrorResponse, ErrorCode } from '../../../shared/he
 const billing = new Hono<AppEnv>();
 
 // Apply Firebase authentication to all billing endpoints
-billing.use('*', requireFirebaseAuth)
+// IMPORTANT: Use '/api/billing/*' instead of '*' to match only billing routes
+billing.use('/api/billing/*', requireFirebaseAuth)
 
 /**
  * POST /api/billing/track-download
