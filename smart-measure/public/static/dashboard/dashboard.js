@@ -239,6 +239,10 @@ window.updateSkuCheckbox = function(productId) {
         
         try {
             btnDownloadProcessed.disabled = true;
+            
+            // DISABLED: Billing API temporarily disabled due to auth issues
+            // TODO: Re-enable after fixing billing API authentication
+            /*
             btnDownloadProcessed.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>課金処理中...';
             
             // Track billing BEFORE starting download
@@ -270,6 +274,7 @@ window.updateSkuCheckbox = function(productId) {
             } catch (billingError) {
                 window.logger.error('❌ Billing error (continuing download):', billingError);
             }
+            */
             
             btnDownloadProcessed.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>商品データ作成中...';
             
