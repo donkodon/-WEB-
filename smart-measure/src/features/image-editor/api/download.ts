@@ -52,6 +52,15 @@ download.get('/api/download-processed-image/:imageId', async (c) => {
         const filenamePart = parts.slice(1).join('_');
         const companyId = getCompanyId(c);
 
+        // 🚨 CRITICAL: Log company_id for debugging
+        const user = c.get('user') as { companyId?: string; email?: string } | undefined;
+        logger.debug('🏢 [DOWNLOAD-PROCESSED] Company ID Resolution:', {
+            resolvedCompanyId: companyId,
+            userContext: user ? { email: user.email, companyId: user.companyId } : null,
+            imageId: imageId,
+            sku: sku
+        });
+
         const processedKey = `${companyId}/${sku}/${filenamePart}_p.png`;
         let processedUrl = null;
 

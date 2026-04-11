@@ -751,6 +751,15 @@ csv.get('/api/download-product-data/:imageId', async (c) => {
         let key = '';
         const companyId = getCompanyId(c);
         
+        // 🚨 CRITICAL: Log company_id for debugging
+        const user = c.get('user') as { companyId?: string; email?: string } | undefined;
+        logger.debug('🏢 [DOWNLOAD] Company ID Resolution:', {
+            resolvedCompanyId: companyId,
+            userContext: user ? { email: user.email, companyId: user.companyId } : null,
+            imageId: imageId,
+            sku: sku
+        });
+        
         // 1. 最優先: 編集済み画像をチェック（{company_id}/{sku}/{filename}_f.png）⭐ (Phase 1: Dynamic company_id)
         const finalKey = `${companyId}/${sku}/${filenamePart}_f.png`;
         logger.debug('🔍 Step 1: Checking final edited image:', finalKey);
