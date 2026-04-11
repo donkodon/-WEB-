@@ -29,6 +29,10 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig)
 const auth = getAuth(app)
 
+// CRITICAL: Set window.firebaseAuth for global access
+// This is required for auth-guard.js and other scripts
+window.firebaseAuth = auth
+
 // Export Firebase modules
 export { 
   auth, 

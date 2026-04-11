@@ -80,8 +80,13 @@ export const Layout = (props: { children: any; active?: string; title?: string }
         {props.children}
       </main>
       
-      {/* Firebase Authentication Guard - Must be loaded on all protected pages */}
+      {/* Firebase Authentication - Load in correct order */}
+      {/* 1. Firebase Config (defines auth instance) */}
+      <script type="module" src="/static/auth/firebase-config.js"></script>
+      {/* 2. Auth Guard (depends on firebase-config.js) */}
       <script type="module" src="/static/auth/auth-guard.js"></script>
+      {/* 3. Client Logger */}
+      <script src="/static/shared/client-logger.js"></script>
     </div>
   );
 };
